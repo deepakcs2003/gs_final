@@ -1,0 +1,48 @@
+{
+  "name": "backend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "dev:local": "tsx src/dev/local.ts",
+    "dev:qwen": "tsx src/dev/qwen-check.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "seed": "tsx src/seed/cli.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "axios": "1.7.9",
+    "bcryptjs": "2.4.3",
+    "cloudinary": "2.5.1",
+    "compression": "1.7.5",
+    "cookie-parser": "1.4.7",
+    "cors": "2.8.5",
+    "dotenv": "16.4.7",
+    "express": "5.1.0",
+    "express-rate-limit": "7.5.0",
+    "google-auth-library": "9.15.0",
+    "helmet": "8.0.0",
+    "jsonwebtoken": "9.0.2",
+    "mongoose": "8.9.5",
+    "multer": "2.0.1",
+    "pino": "9.6.0",
+    "pino-http": "10.4.0",
+    "razorpay": "2.9.5",
+    "zod": "3.24.1"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "2.4.6",
+    "@types/compression": "1.7.5",
+    "@types/cookie-parser": "1.4.8",
+    "@types/cors": "2.8.17",
+    "@types/express": "5.0.0",
+    "@types/jsonwebtoken": "9.0.7",
+    "@types/multer": "1.4.12",
+    "@types/node": "22.10.5",
+    "mongodb-memory-server": "^10.1.4",
+    "tsx": "4.19.2",
+    "typescript": "5.7.3"
+  }
+}

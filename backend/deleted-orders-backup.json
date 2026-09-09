@@ -1,0 +1,617 @@
+[
+  {
+    "_id": "6a9bf36aa12a6b597266aa93",
+    "orderNumber": "GS-MTO9EQL2-XMNS",
+    "userId": "6a9bf369a12a6b597266aa91",
+    "status": "PLACED",
+    "subtotal": 1849,
+    "discount": 0,
+    "shipping": 0,
+    "tax": 0,
+    "total": 3248,
+    "createdAt": "2026-09-05T10:48:10.264Z",
+    "updatedAt": "2026-09-05T10:48:10.264Z",
+    "customer": {
+      "name": "Test Buyer",
+      "mobile": "9876543210",
+      "email": null,
+      "address": "12 Main Road",
+      "city": "Mumbai",
+      "state": "Maharashtra",
+      "pincode": "400001"
+    },
+    "items": [
+      {
+        "productName": "Georgette Saree Blouse",
+        "productDesignId": "GS-204",
+        "variantId": null,
+        "sku": null,
+        "productType": "CUSTOMIZE",
+        "color": "Ivory",
+        "size": null,
+        "fiber": "Georgette",
+        "embroidery": null,
+        "quantity": 1,
+        "unitPrice": 1849,
+        "discount": null,
+        "measurementSnapshot": {
+          "values": [
+            {
+              "fieldId": "6a9bf30a29352f5ef9c395f4",
+              "fieldKey": "bust",
+              "label": "Bust",
+              "value": 30,
+              "unit": "INCHES"
+            },
+            {
+              "fieldId": "6a9bf30a29352f5ef9c395f5",
+              "fieldKey": "under-bust",
+              "label": "Under Bust",
+              "value": 30,
+              "unit": "INCHES"
+            },
+            {
+              "fieldId": "6a9bf30a29352f5ef9c395f6",
+              "fieldKey": "waist",
+              "label": "Waist",
+              "value": 30,
+              "unit": "INCHES"
+            },
+            {
+              "fieldId": "6a9bf30a29352f5ef9c395f7",
+              "fieldKey": "shoulder",
+              "label": "Shoulder",
+              "value": 30,
+              "unit": "INCHES"
+            },
+            {
+              "fieldId": "6a9bf30a29352f5ef9c395f8",
+              "fieldKey": "blouse-length",
+              "label": "Blouse Length",
+              "value": 30,
+              "unit": "INCHES"
+            },
+            {
+              "fieldId": "6a9bf30a29352f5ef9c395f9",
+              "fieldKey": "sleeve-length",
+              "label": "Sleeve Length",
+              "value": 30,
+              "unit": "INCHES"
+            },
+            {
+              "fieldId": "6a9bf30a29352f5ef9c395fa",
+              "fieldKey": "armhole",
+              "label": "Armhole",
+              "value": 30,
+              "unit": "INCHES"
+            },
+            {
+              "fieldId": "6a9bf30a29352f5ef9c395fb",
+              "fieldKey": "upper-arm",
+              "label": "Upper Arm",
+              "value": 30,
+              "unit": "INCHES"
+            },
+            {
+              "fieldId": "6a9bf30a29352f5ef9c395fc",
+              "fieldKey": "sleeve-opening",
+              "label": "Sleeve Opening",
+              "value": 30,
+              "unit": "INCHES"
+            },
+            {
+              "fieldId": "6a9bf30b29352f5ef9c395fd",
+              "fieldKey": "front-neck-depth",
+              "label": "Front Neck Depth",
+              "value": 30,
+              "unit": "INCHES"
+            },
+            {
+              "fieldId": "6a9bf30b29352f5ef9c395fe",
+              "fieldKey": "back-neck-depth",
+              "label": "Back Neck Depth",
+              "value": 30,
+              "unit": "INCHES"
+            }
+          ],
+          "measurementInstructionVersion": 1,
+          "sourceProfileId": null
+        },
+        "styleOptions": {
+          "neckline": "V-neck",
+          "sleeveStyle": "Full sleeve",
+          "fitting": "Body fit"
+        },
+        "customizationNotes": null,
+        "total": 1849
+      }
+    ],
+    "payment": {
+      "method": "COD",
+      "status": "PENDING",
+      "transactionId": null,
+      "amount": 3248,
+      "paidAt": null
+    },
+    "coupon": null,
+    "offer": null,
+    "addons": [
+      {
+        "addonId": "6a9bf30b29352f5ef9c39600",
+        "name": "Blouse stitching (your fabric)",
+        "price": 800
+      },
+      {
+        "addonId": "6a9bf30b29352f5ef9c39601",
+        "name": "Petticoat",
+        "price": 599
+      }
+    ]
+  },
+  {
+    "_id": "6a9bf5d743e06631a2a27dfc",
+    "orderNumber": "GS-MTO9S26X-LQEA",
+    "userId": "6a9bf5d643e06631a2a27df6",
+    "status": "PLACED",
+    "subtotal": 2399,
+    "discount": 0,
+    "shipping": 0,
+    "tax": 0,
+    "total": 3548,
+    "createdAt": "2026-09-05T10:58:31.835Z",
+    "updatedAt": "2026-09-05T10:58:31.835Z",
+    "customer": {
+      "name": "E2E Buyer",
+      "mobile": "9876543211",
+      "email": null,
+      "address": "22 Test Lane",
+      "city": "Delhi",
+      "state": "Delhi",
+      "pincode": "110001"
+    },
+    "items": [
+      {
+        "productName": "Silk Designer Neck Party Blouse",
+        "productDesignId": "GS-205",
+        "variantId": "6a9baea78dd096c8bff4c054",
+        "sku": null,
+        "productType": "READY_MADE",
+        "color": "Black",
+        "size": "S",
+        "fiber": null,
+        "embroidery": null,
+        "quantity": 1,
+        "unitPrice": 2399,
+        "discount": null,
+        "measurementSnapshot": null,
+        "styleOptions": null,
+        "customizationNotes": null,
+        "total": 2399
+      }
+    ],
+    "payment": {
+      "method": "COD",
+      "status": "PENDING",
+      "transactionId": null,
+      "amount": 3548,
+      "paidAt": null
+    },
+    "coupon": null,
+    "offer": null,
+    "addons": [
+      {
+        "addonId": "6a9bf30b29352f5ef9c395ff",
+        "name": "Fall & Pico",
+        "price": 250
+      },
+      {
+        "addonId": "6a9bf30b29352f5ef9c39603",
+        "name": "Matching blouse piece",
+        "price": 899
+      }
+    ]
+  },
+  {
+    "_id": "6a9bf732f54143c67c8492c3",
+    "orderNumber": "GS-MTO9ZHY0-R1Y6",
+    "userId": "6a9bf732f54143c67c8492c1",
+    "status": "PLACED",
+    "subtotal": 2399,
+    "discount": 0,
+    "shipping": 0,
+    "tax": 0,
+    "total": 2399,
+    "createdAt": "2026-09-05T11:04:18.842Z",
+    "updatedAt": "2026-09-05T11:04:19.373Z",
+    "customer": {
+      "name": "Pay Test",
+      "mobile": "9876543212",
+      "email": null,
+      "address": "1 Pay Lane",
+      "city": "Pune",
+      "state": "Maharashtra",
+      "pincode": "411001"
+    },
+    "items": [
+      {
+        "productName": "Silk Designer Neck Party Blouse",
+        "productDesignId": "GS-205",
+        "variantId": "6a9baea78dd096c8bff4c054",
+        "sku": null,
+        "productType": "READY_MADE",
+        "color": "Black",
+        "size": "S",
+        "fiber": null,
+        "embroidery": null,
+        "quantity": 1,
+        "unitPrice": 2399,
+        "discount": null,
+        "measurementSnapshot": null,
+        "styleOptions": null,
+        "customizationNotes": null,
+        "total": 2399
+      }
+    ],
+    "payment": {
+      "method": "RAZORPAY",
+      "status": "PENDING",
+      "transactionId": "order_TYKfSPd2RCuZRK",
+      "amount": 2399,
+      "paidAt": null
+    },
+    "coupon": null,
+    "offer": null,
+    "addons": []
+  },
+  {
+    "_id": "6a9c009c9f761adaf8646aaa",
+    "orderNumber": "GS-MTOBF5MD-POKS",
+    "userId": "6a9c009c9f761adaf8646aa8",
+    "status": "CONFIRMED",
+    "subtotal": 2399,
+    "discount": 0,
+    "shipping": 0,
+    "tax": 0,
+    "total": 2399,
+    "notes": "Automated local E2E test - do not dispatch",
+    "createdAt": "2026-09-05T11:44:28.983Z",
+    "updatedAt": "2026-09-05T11:44:29.750Z",
+    "customer": {
+      "name": "Local E2E Ready Test",
+      "mobile": "9999999999",
+      "email": "e2e-ready@example.test",
+      "address": "Local test order - do not dispatch",
+      "city": "Pune",
+      "state": "Maharashtra",
+      "pincode": "411001"
+    },
+    "items": [
+      {
+        "productName": "Silk Designer Neck Party Blouse",
+        "productDesignId": "GS-205",
+        "variantId": "6a9baea78dd096c8bff4c054",
+        "sku": null,
+        "productType": "READY_MADE",
+        "color": "Black",
+        "size": "S",
+        "fiber": null,
+        "embroidery": null,
+        "quantity": 1,
+        "unitPrice": 2399,
+        "discount": null,
+        "measurementSnapshot": null,
+        "styleOptions": null,
+        "customizationNotes": null,
+        "total": 2399
+      }
+    ],
+    "payment": {
+      "method": "COD",
+      "status": "PENDING",
+      "transactionId": null,
+      "amount": 2399,
+      "paidAt": null
+    },
+    "coupon": null,
+    "offer": null,
+    "addons": []
+  },
+  {
+    "_id": "6a9c00c69f761adaf8646ab2",
+    "orderNumber": "GS-MTOBG1Q0-6BO9",
+    "userId": "6a9c00c69f761adaf8646ab0",
+    "status": "PLACED",
+    "subtotal": 2199,
+    "discount": 0,
+    "shipping": 0,
+    "tax": 0,
+    "total": 2199,
+    "notes": "Automated local custom E2E test - do not dispatch",
+    "createdAt": "2026-09-05T11:45:10.586Z",
+    "updatedAt": "2026-09-05T11:45:10.586Z",
+    "customer": {
+      "name": "Local E2E Custom Test",
+      "mobile": "9999999998",
+      "email": "e2e-custom@example.test",
+      "address": "Local test order - do not dispatch",
+      "city": "Pune",
+      "state": "Maharashtra",
+      "pincode": "411001"
+    },
+    "items": [
+      {
+        "productName": "Georgette Saree Blouse",
+        "productDesignId": "GS-204",
+        "variantId": null,
+        "sku": null,
+        "productType": "CUSTOMIZE",
+        "color": "Ivory",
+        "size": null,
+        "fiber": "Georgette",
+        "embroidery": "Stone Work",
+        "quantity": 1,
+        "unitPrice": 2199,
+        "discount": null,
+        "measurementSnapshot": {
+          "values": [
+            {
+              "fieldId": "6a9bf30a29352f5ef9c395f4",
+              "fieldKey": "bust",
+              "label": "Bust",
+              "value": 30,
+              "unit": "INCHES"
+            },
+            {
+              "fieldId": "6a9bf30a29352f5ef9c395f5",
+              "fieldKey": "under-bust",
+              "label": "Under Bust",
+              "value": 30,
+              "unit": "INCHES"
+            },
+            {
+              "fieldId": "6a9bf30a29352f5ef9c395f6",
+              "fieldKey": "waist",
+              "label": "Waist",
+              "value": 30,
+              "unit": "INCHES"
+            },
+            {
+              "fieldId": "6a9bf30a29352f5ef9c395f7",
+              "fieldKey": "shoulder",
+              "label": "Shoulder",
+              "value": 30,
+              "unit": "INCHES"
+            },
+            {
+              "fieldId": "6a9bf30a29352f5ef9c395f8",
+              "fieldKey": "blouse-length",
+              "label": "Blouse Length",
+              "value": 30,
+              "unit": "INCHES"
+            },
+            {
+              "fieldId": "6a9bf30a29352f5ef9c395f9",
+              "fieldKey": "sleeve-length",
+              "label": "Sleeve Length",
+              "value": 30,
+              "unit": "INCHES"
+            },
+            {
+              "fieldId": "6a9bf30a29352f5ef9c395fa",
+              "fieldKey": "armhole",
+              "label": "Armhole",
+              "value": 30,
+              "unit": "INCHES"
+            },
+            {
+              "fieldId": "6a9bf30a29352f5ef9c395fb",
+              "fieldKey": "upper-arm",
+              "label": "Upper Arm",
+              "value": 30,
+              "unit": "INCHES"
+            },
+            {
+              "fieldId": "6a9bf30a29352f5ef9c395fc",
+              "fieldKey": "sleeve-opening",
+              "label": "Sleeve Opening",
+              "value": 30,
+              "unit": "INCHES"
+            },
+            {
+              "fieldId": "6a9bf30b29352f5ef9c395fd",
+              "fieldKey": "front-neck-depth",
+              "label": "Front Neck Depth",
+              "value": 30,
+              "unit": "INCHES"
+            },
+            {
+              "fieldId": "6a9bf30b29352f5ef9c395fe",
+              "fieldKey": "back-neck-depth",
+              "label": "Back Neck Depth",
+              "value": 30,
+              "unit": "INCHES"
+            }
+          ],
+          "measurementInstructionVersion": 1,
+          "sourceProfileId": null
+        },
+        "styleOptions": {
+          "neckline": "Round neck",
+          "sleeveStyle": "Full sleeve",
+          "fitting": "Comfort fit"
+        },
+        "customizationNotes": null,
+        "total": 2199
+      }
+    ],
+    "payment": {
+      "method": "COD",
+      "status": "PENDING",
+      "transactionId": null,
+      "amount": 2199,
+      "paidAt": null
+    },
+    "coupon": null,
+    "offer": null,
+    "addons": []
+  },
+  {
+    "_id": "6a9c0301cd24f2d25f2feb27",
+    "orderNumber": "GS-MTOBSACB-CIZX",
+    "userId": "6a9c0301cd24f2d25f2feb25",
+    "status": "PLACED",
+    "subtotal": 2399,
+    "discount": 0,
+    "shipping": 0,
+    "tax": 0,
+    "total": 2399,
+    "notes": "Automated Razorpay test order - do not dispatch",
+    "createdAt": "2026-09-05T11:54:41.628Z",
+    "updatedAt": "2026-09-05T11:54:42.219Z",
+    "customer": {
+      "name": "Local Razorpay Test",
+      "mobile": "9999999997",
+      "email": "razorpay-e2e@example.test",
+      "address": "Local Razorpay test - do not dispatch",
+      "city": "Pune",
+      "state": "Maharashtra",
+      "pincode": "411001"
+    },
+    "items": [
+      {
+        "productName": "Silk Designer Neck Party Blouse",
+        "productDesignId": "GS-205",
+        "variantId": "6a9baea78dd096c8bff4c054",
+        "sku": null,
+        "productType": "READY_MADE",
+        "color": "Black",
+        "size": "S",
+        "fiber": null,
+        "embroidery": null,
+        "quantity": 1,
+        "unitPrice": 2399,
+        "discount": null,
+        "measurementSnapshot": null,
+        "styleOptions": null,
+        "customizationNotes": null,
+        "total": 2399
+      }
+    ],
+    "payment": {
+      "method": "UPI",
+      "status": "PENDING",
+      "transactionId": "order_TYLWfxy40uyyAw",
+      "amount": 2399,
+      "paidAt": null
+    },
+    "coupon": null,
+    "offer": null,
+    "addons": []
+  },
+  {
+    "_id": "6a9c16cc549e9e144acb3fd1",
+    "orderNumber": "GS-MTOESW3C-UUD2",
+    "userId": "6a9c03adcd24f2d25f2feb2b",
+    "status": "PLACED",
+    "subtotal": 3499,
+    "discount": 0,
+    "shipping": 0,
+    "tax": 0,
+    "total": 3499,
+    "notes": "",
+    "createdAt": "2026-09-05T13:19:08.666Z",
+    "updatedAt": "2026-09-05T13:19:09.279Z",
+    "customer": {
+      "name": "Subodh",
+      "mobile": "9322240998",
+      "email": "subodhkangale@gmail.com",
+      "address": "Income Tax Society ",
+      "city": "Nagpur",
+      "state": "Maharashtra",
+      "pincode": "440023"
+    },
+    "items": [
+      {
+        "productName": "Embroidered Velvet Full Sleeve Blouse",
+        "productDesignId": "GS-203",
+        "variantId": "6a9baea68dd096c8bff4c04e",
+        "sku": null,
+        "productType": "READY_MADE",
+        "color": "Maroon",
+        "size": "M",
+        "fiber": null,
+        "embroidery": null,
+        "quantity": 1,
+        "unitPrice": 3499,
+        "discount": null,
+        "measurementSnapshot": null,
+        "styleOptions": null,
+        "customizationNotes": null,
+        "total": 3499
+      }
+    ],
+    "payment": {
+      "method": "UPI",
+      "status": "PENDING",
+      "transactionId": "order_TYMxsuRXALCvvo",
+      "amount": 3499,
+      "paidAt": null
+    },
+    "coupon": null,
+    "offer": null,
+    "addons": []
+  },
+  {
+    "_id": "6a9c1a512a9ef6872706f118",
+    "orderNumber": "GS-MTOFC6TP-WTL9",
+    "userId": "6a9c03adcd24f2d25f2feb2b",
+    "status": "PLACED",
+    "subtotal": 3499,
+    "discount": 0,
+    "shipping": 0,
+    "tax": 0,
+    "total": 3499,
+    "notes": "",
+    "createdAt": "2026-09-05T13:34:09.039Z",
+    "updatedAt": "2026-09-05T13:34:09.039Z",
+    "customer": {
+      "name": "Subodh",
+      "mobile": "9322240998",
+      "email": "subodhkangale@gmail.com",
+      "address": "ydtsdfghjk",
+      "city": "ngp",
+      "state": "mh",
+      "pincode": "440023"
+    },
+    "items": [
+      {
+        "productName": "Embroidered Velvet Full Sleeve Blouse",
+        "productDesignId": "GS-203",
+        "variantId": "6a9baea68dd096c8bff4c04e",
+        "sku": null,
+        "productType": "READY_MADE",
+        "color": "Maroon",
+        "size": "M",
+        "fiber": null,
+        "embroidery": null,
+        "quantity": 1,
+        "unitPrice": 3499,
+        "discount": null,
+        "measurementSnapshot": null,
+        "styleOptions": null,
+        "customizationNotes": null,
+        "total": 3499
+      }
+    ],
+    "payment": {
+      "method": "COD",
+      "status": "PENDING",
+      "transactionId": null,
+      "amount": 3499,
+      "paidAt": null
+    },
+    "coupon": null,
+    "offer": null,
+    "addons": []
+  }
+]

@@ -1,0 +1,21 @@
+node_modules/
+dist/
+build/
+coverage/
+
+# Secrets — never commit these
+# .env
+# .env.*
+
+*.log
+npm-debug.log*
+.DS_Store
+.vscode/
+.idea/
+uploads/
+
+.env
+.env.*
+!.env.example
+node_modules/
+dist/

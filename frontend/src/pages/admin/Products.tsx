@@ -1,0 +1,542 @@
+import { useEffect, useMemo, useState } from 'react';
+import { api, ApiError } from '../../lib/api';
+import { Badge, BtnGhost, BtnOutline, BtnPrimary, Checkbox, ColorPaletteSelect, Field, ImagePicker, Modal, PaletteColor, Select, StringListEditor, TextArea, TextInput, Toolbar, Toggle, inr, slugify } from './shared';
+import { Archive, Copy, Plus, Pencil, X, Check, Sparkles, Layers } from 'lucide-react';
+
+export interface AdminCategory { _id: string; name: string; slug: string }
+export interface AdminProduct {
+  _id: string; designId: string; slug: string; name: string; description: string;
+  type: 'READY_MADE' | 'CUSTOMIZE' | 'SHOWCASE';
+  category: string | { _id: string; name: string };
+  subCategory: string | null;
+  tags: string[]; mrpInr: number; sellingPriceInr: number;
+  images: Array<{ url: string; alt: string; kind: string }>;
+  videoUrl: string; colors: Array<{ name: string; slug: string; hex: string }>;
+  sizes: number[]; variants: Array<{ colorSlug: string; size: number; stock: number; sku: string }>;
+  fabricOptions: string[]; laceOptions: string[]; defaultLaceCount: number; latkanOptions: string[]; defaultLatkanCount: number; stitchingChargeInr: number;
+  fabricInfo: string; embroidery: string[]; careInstructions: string; stitchingInfo: string; stitchingDays: number;
+  expectedAvailability: string; comingSoon: boolean;
+  isActive: boolean; seo: { title: string; description: string; keywords: string[]; ogImage: string };
+  stats?: Record<string, number>;
+  createdAt?: string; updatedAt?: string;
+  createdBy?: { _id?: string; name?: string; mobile?: string } | string | null;
+}
+
+/** A catalog item shown in "Add Material" (fabric / lace / latkan). */
+interface MaterialOption {
+  _id: string;
+  name: string;
+  isActive?: boolean;
+  inStock?: boolean;
+}
+
+const emptyProduct = (category = ''): AdminProduct => ({
+  _id: '', designId: '', slug: '', name: '', description: '', type: 'READY_MADE', category,
+  subCategory: null, tags: [], mrpInr: 0, sellingPriceInr: 0, images: [], videoUrl: '',
+  colors: [], sizes: [], variants: [], fabricOptions: [], laceOptions: [], defaultLaceCount: 2, latkanOptions: [], defaultLatkanCount: 2, stitchingChargeInr: 0,
+  fabricInfo: '', embroidery: [], careInstructions: '', stitchingInfo: '', stitchingDays: 7,
+  expectedAvailability: '', comingSoon: false, isActive: true, seo: { title: '', description: '', keywords: [], ogImage: '' },
+});
+
+/** What the backend's Qwen helper is allowed to fill — a subset of AdminProduct. */
+interface QwenSuggestion {
+  name: string | null;
+  description: string | null;
+  tags: string[] | null;
+  embroidery: string[] | null;
+  colors: Array<{ name: string; hex: string }> | null;
+  categoryNames: string[] | null;
+  priceInr: number | null;
+  careInstructions: string | null;
+  seo: { title: string | null; description: string | null; keywords: string[] | null } | null;
+  categoryIds?: string[];
+}
+
+export function ProductsModule() {
+  const [items, setItems] = useState<AdminProduct[]>([]);
+  const [categories, setCategories] = useState<AdminCategory[]>([]);
+  const [palette, setPalette] = useState<PaletteColor[]>([]);
+  const [materialFabrics, setMaterialFabrics] = useState<MaterialOption[]>([]);
+  const [materialLaces, setMaterialLaces] = useState<MaterialOption[]>([]);
+  const [materialLatkans, setMaterialLatkans] = useState<MaterialOption[]>([]);
+  const [query, setQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState('ALL');
+  const [form, setForm] = useState<AdminProduct | null>(null);
+  const [newEditor, setNewEditor] = useState(false);
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  const [qwenBusy, setQwenBusy] = useState(false);
+  const [qwenMsg, setQwenMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  /** Snapshot of what the last Qwen run wrote, so regenerating never clobbers manual edits. */
+  const [lastGen, setLastGen] = useState<Record<string, unknown>>({});
+
+  const load = async () => {
+    setError('');
+    try {
+      const [productData, categoryData, colorData, fabricData, laceData, latkanData] = await Promise.all([
+        api<{ items: AdminProduct[] }>('/admin/products?includeArchived=true'),
+        api<{ items: AdminCategory[] }>('/admin/categories'),
+        api<{ items: PaletteColor[] }>('/admin/colors'),
+        api<{ items: MaterialOption[] }>('/admin/fabrics'),
+        api<{ items: MaterialOption[] }>('/admin/laces'),
+        api<{ items: MaterialOption[] }>('/admin/latkans'),
+      ]);
+      setItems(productData.items);
+      setCategories(categoryData.items);
+      setPalette(colorData.items);
+      setMaterialFabrics(fabricData.items);
+      setMaterialLaces(laceData.items);
+      setMaterialLatkans(latkanData.items);
+    } catch (err) { setError(err instanceof ApiError ? err.message : 'Products load nahi hue.'); }
+  };
+  useEffect(() => { void load(); }, []);
+
+  const isEmptyVal = (value: unknown): boolean => {
+    if (value === null || value === undefined || value === '') return true;
+    if (Array.isArray(value)) return value.length === 0;
+    return value === 0;
+  };
+
+  /** Keeps a manual edit unless the current value is empty or still the last AI value. */
+  const mergeSuggest = (key: string, current: string | number, suggested: string | number | null | undefined) => {
+    if (suggested === null || suggested === undefined) return current;
+    if (isEmptyVal(current) || JSON.stringify(lastGen[key]) === JSON.stringify(current)) return suggested;
+    return current;
+  };
+  const mergeArray = (key: string, current: string[], suggested: string[] | null | undefined) => {
+    if (suggested === null || suggested === undefined) return current;
+    if (current.length === 0 || JSON.stringify(lastGen[key]) === JSON.stringify(current)) return suggested;
+    return current;
+  };
+
+  const generateWithQwen = async () => {
+    if (!form) return;
+    const imageUrls = form.images.map((img) => img.url);
+    if (imageUrls.length === 0) { setQwenMsg({ type: 'err', text: 'Pehle product ki images add/upload karein.' }); return; }
+    setQwenBusy(true);
+    setQwenMsg(null);
+    try {
+      const res = await api<{ suggestion: QwenSuggestion }>('/admin/products/generate-with-qwen', {
+        method: 'POST',
+        body: { imageUrls },
+      });
+      const s = res.suggestion;
+      const categoryIds = s.categoryIds ?? [];
+      // Estimated price is only a guess — it fills the price field but never
+      // touches MRP unless both are still empty, and is re-applied on regen
+      // without clobbering a manual number. Showcase (upcoming) products have
+      // no price editable in the form, so Qwen never touches it there.
+      const aiPrice = typeof s.priceInr === 'number' && s.priceInr > 0 ? s.priceInr : null;
+      const sellingPriceInr =
+        form.type === 'SHOWCASE'
+          ? form.sellingPriceInr
+          : (aiPrice === null
+              ? form.sellingPriceInr
+              : (isEmptyVal(form.sellingPriceInr) || JSON.stringify(lastGen.sellingPriceInr) === JSON.stringify(form.sellingPriceInr)
+                  ? aiPrice
+                  : form.sellingPriceInr));
+      const mrpInr = form.type === 'SHOWCASE' ? form.mrpInr : (form.mrpInr >= sellingPriceInr ? form.mrpInr : (form.mrpInr || sellingPriceInr));
+      const next: AdminProduct = {
+        ...form,
+        mrpInr,
+        sellingPriceInr,
+        name: mergeSuggest('name', form.name, s.name) as string,
+        description: mergeSuggest('description', form.description, s.description) as string,
+        tags: mergeArray('tags', form.tags, s.tags ?? []),
+        embroidery: mergeArray('embroidery', form.embroidery, s.embroidery ?? []),
+        careInstructions: mergeSuggest('careInstructions', form.careInstructions, s.careInstructions) as string,
+        colors: form.type === 'CUSTOMIZE'
+          ? form.colors
+          : (() => {
+            if (!s.colors) return form.colors;
+            // Only the FIRST (dominant) blouse colour is ever applied.
+            const colors = s.colors.slice(0, 1).map((c) => ({ name: c.name, slug: slugify(c.name), hex: c.hex }));
+            if (form.colors.length === 0 || JSON.stringify(lastGen.colors) === JSON.stringify(form.colors)) return colors;
+            return form.colors;
+          })(),
+        category: mergeSuggest('category', String(form.category ?? ''), categoryIds[0] ?? '') as string,
+        subCategory: (form.category ?? '') === (categoryIds[0] ?? '')
+          ? form.subCategory
+          : (form.subCategory ?? categoryIds[1] ?? form.subCategory),
+        seo: {
+          ...form.seo,
+          title: mergeSuggest('seoTitle', form.seo.title, s.seo?.title ?? null) as string,
+          description: mergeSuggest('seoDescription', form.seo.description, s.seo?.description ?? null) as string,
+          keywords: mergeArray('seoKeywords', form.seo.keywords, s.seo?.keywords ?? []),
+        },
+      };
+      setForm(next);
+      setLastGen({
+        name: next.name,
+        description: next.description,
+        tags: next.tags,
+        embroidery: next.embroidery,
+        careInstructions: next.careInstructions,
+        colors: next.colors,
+        category: String(next.category ?? ''),
+        sellingPriceInr: next.sellingPriceInr,
+        mrpInr: next.mrpInr,
+        seoTitle: next.seo.title,
+        seoDescription: next.seo.description,
+        seoKeywords: next.seo.keywords,
+      });
+      setQwenMsg({ type: 'ok', text: 'Product details generated successfully.' });
+    } catch (err) {
+      setQwenMsg({ type: 'err', text: err instanceof ApiError ? err.message : 'Qwen generate nahi kar paya.' });
+    } finally {
+      setQwenBusy(false);
+    }
+  };
+
+  const filtered = useMemo(() => items.filter((item) =>
+    (typeFilter === 'ALL' || item.type === typeFilter) &&
+    `${item.designId} ${item.name} ${item.slug}`.toLowerCase().includes(query.toLowerCase()),
+  ), [items, query, typeFilter]);
+
+  const run = async (key: string, action: () => Promise<void>) => {
+    setBusy(key);
+    try { await action(); } catch (err) { setError(err instanceof ApiError ? err.message : 'Action complete nahi hua.'); } finally { setBusy(''); }
+  };
+
+  const save = () => {
+    if (!form) return;
+    if (form.type === 'CUSTOMIZE' && form.fabricOptions.length === 0) {
+      setError('Customize blouse ke liye kam se kam ek fabric choose karna zaroori hai (Add Material).');
+      return;
+    }
+    void run(form._id || 'new', async () => {
+      // `seo` is editable; the rest are server-managed and would trip the
+      // backend's strict schema (they come back from GET with the doc).
+      const { _id, stats, createdAt, updatedAt, createdBy, ...values } = form;
+      const body = {
+        ...values,
+        mrpInr: Number(values.mrpInr), sellingPriceInr: Number(values.sellingPriceInr),
+        stitchingChargeInr: Number(values.stitchingChargeInr), stitchingDays: Number(values.stitchingDays),
+        defaultLaceCount: Number(values.defaultLaceCount), defaultLatkanCount: Number(values.defaultLatkanCount),
+        colors: values.colors.filter((c) => c.name),
+        variants: values.variants.map((v) => ({ ...v, size: Number(v.size), stock: Number(v.stock) })),
+        images: values.images.filter((img) => img.url),
+        category: typeof values.category === 'object' ? values.category._id : values.category,
+      };
+      if (_id) {
+        const response = await api<{ product: AdminProduct }>(`/admin/products/${_id}`, { method: 'PATCH', body });
+        setItems((items) => items.map((item) => item._id === response.product._id ? { ...response.product, category: categories.find((c) => c._id === response.product.category) ?? response.product.category } : item));
+      } else {
+        // Reload the list so the new row shows its auto design ID/slug plus the
+        // creator + created date populated by the server.
+        await api<{ product: AdminProduct }>('/admin/products', { method: 'POST', body });
+        await load();
+      }
+      setForm(null);
+      setNewEditor(false);
+    });
+  };
+
+  const duplicate = (product: AdminProduct) => run(`dup-${product._id}`, async () => {
+    const res = await api<{ product: AdminProduct }>(`/admin/products/${product._id}/duplicate`, { method: 'POST' });
+    setItems((items) => [res.product, ...items]);
+  });
+  const archive = (product: AdminProduct) => run(`arc-${product._id}`, async () => {
+    await api(`/admin/products/${product._id}`, { method: 'DELETE' });
+    setItems((items) => items.map((item) => item._id === product._id ? { ...item, isActive: false } : item));
+  });
+  const toggleActive = (product: AdminProduct) => run(`tog-${product._id}`, async () => {
+    const res = await api<{ product: AdminProduct }>(`/admin/products/${product._id}`, { method: 'PATCH', body: { isActive: !product.isActive } });
+    setItems((items) => items.map((item) => item._id === res.product._id ? { ...item, isActive: res.product.isActive } : item));
+  });
+
+  const openNew = () => {
+    // By default a CUSTOMIZE blouse offers every fabric ("Add Material").
+    setForm({ ...emptyProduct(categories[0]?._id ?? ''), fabricOptions: materialFabrics.map((f) => f._id) });
+    setNewEditor(true); setQwenMsg(null); setLastGen({});
+  };
+  const openEdit = (product: AdminProduct) => {
+    setForm({
+      ...product,
+      category: typeof product.category === 'object' ? product.category._id : product.category,
+      images: (product.images ?? []).map((img) => ({ ...img })),
+      colors: (product.colors ?? []).map((c) => ({ ...c })),
+      variants: (product.variants ?? []).map((v) => ({ ...v })),
+      seo: product.seo ?? { title: '', description: '', keywords: [], ogImage: '' },
+    });
+    setNewEditor(false);
+    setQwenMsg(null);
+    setLastGen({});
+  };
+
+  const addVariant = () => {
+    if (!form) return;
+    const color = form.colors[0]?.slug ?? '';
+    const size = form.sizes[0] ?? 34;
+    setForm({ ...form, variants: [...form.variants, { colorSlug: color, size, stock: 0, sku: '' }] });
+  };
+
+  return (
+    <section className="card overflow-hidden">
+      <Toolbar title="Product catalogue" count={filtered.length} searchPlaceholder="Search design, name or slug"
+        query={query} onQuery={setQuery} onAdd={openNew} addLabel="New product" />
+      <div className="flex flex-wrap gap-2 border-b border-maroon-100 px-5 py-3">
+        {['ALL', 'READY_MADE', 'CUSTOMIZE', 'SHOWCASE'].map((type) => (
+          <button key={type} onClick={() => setTypeFilter(type)}
+            className={`chip whitespace-nowrap ${typeFilter === type ? 'chip-active' : ''}`}>{type.replace('_', ' ')}</button>
+        ))}
+      </div>
+      {error ? <div className="m-4 rounded-xl border border-alert/30 bg-alert/10 p-4 text-sm font-semibold text-alert">{error}</div> : null}
+      <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+        {filtered.map((product) => (
+          <article key={product._id} className={`rounded-xl border p-4 ${product.isActive ? 'border-maroon-100 bg-white' : 'border-dashed border-ink-light/40 bg-ink-light/5 opacity-60'}`}>
+            <div className="flex items-start gap-3">
+              {product.images?.[0]?.url ? (
+                <img src={product.images[0].url} alt={product.name} loading="lazy" className="h-16 w-16 shrink-0 rounded-lg border border-maroon-100 object-cover" />
+              ) : (
+                <div className="grid h-16 w-16 shrink-0 place-items-center rounded-lg border border-dashed border-ink-light/40 bg-maroon-50/40 text-xs font-semibold text-ink-light">No img</div>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-bold tracking-wider text-maroon-600">{product.designId}</p>
+                <h4 className="mt-0.5 truncate font-semibold">{product.name}</h4>
+                {product.createdAt ? (
+                  <p className="mt-1 text-[11px] text-ink-muted">Added {new Date(product.createdAt).toLocaleDateString('en-IN')}
+                    {product.createdBy && typeof product.createdBy === 'object' && product.createdBy.mobile ? <> · by <span className="font-semibold">{product.createdBy.mobile}</span></> : null}
+                  </p>
+                ) : null}
+              </div>
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                <Badge label={product.type.replace('_', ' ')} />
+                {product.isActive ? <Badge label="Live" /> : <Badge label="Archived" />}
+                {product.comingSoon ? <Badge label="Coming soon" /> : null}
+              </div>
+            </div>
+            {product.type === 'SHOWCASE' && product.sellingPriceInr <= 0
+              ? <p className="mt-3 text-lg font-bold">Price on request</p>
+              : <p className="mt-3 text-lg font-bold">{inr(product.sellingPriceInr * 100)} <span className="text-sm font-normal text-ink-light line-through">{inr(product.mrpInr * 100)}</span></p>}
+            {(product.colors?.length ?? 0) > 0 ? (
+              <div className="mt-2 flex flex-wrap gap-1.5">{product.colors.map((c) => <span key={c.slug} title={c.name} className="h-4 w-4 rounded-full border border-ink-light/40" style={{ backgroundColor: c.hex }} />)}</div>
+            ) : null}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <BtnOutline className="flex-1 px-3" onClick={() => openEdit(product)}><Pencil size={15} />Edit</BtnOutline>
+              <BtnGhost className="px-3" onClick={() => void duplicate(product)} disabled={busy === `dup-${product._id}`}><Copy size={15} /></BtnGhost>
+              {product.isActive
+                ? <BtnGhost className="px-3" onClick={() => void archive(product)} disabled={busy === `arc-${product._id}`} title="Archive"><Archive size={15} /></BtnGhost>
+                : <BtnGhost className="px-3" onClick={() => void toggleActive(product)} disabled={busy === `tog-${product._id}`}><Check size={15} /></BtnGhost>}
+            </div>
+          </article>
+        ))}
+        {filtered.length === 0 ? <p className="col-span-full p-6 text-center text-ink-muted">Koi product nahi mila.</p> : null}
+      </div>
+
+      {form ? (
+        <Modal open onClose={() => setForm(null)} title={form._id ? 'Edit product' : 'New product'}
+          subtitle="Storefront details, pricing, variants aur SEO" maxWidth="sm:max-w-4xl"
+          footer={<div className="flex justify-end gap-2"><BtnPrimary onClick={save} disabled={busy === (form._id || 'new')}>{busy === (form._id || 'new') ? 'Saving...' : <><Check size={16} />Save product</>}</BtnPrimary></div>}>
+          <form onSubmit={(e) => { e.preventDefault(); save(); }} className="grid gap-4 sm:grid-cols-2">
+            <Field label="Design ID" hint="Khaali chhorein — auto generate hoga, e.g. GS-207"><TextInput value={form.designId} onChange={(e) => setForm({ ...form, designId: e.target.value.toUpperCase() })} /></Field>
+            <Field label="Slug" hint="Khaali chhorein — name se auto generate hoga"><TextInput value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} /></Field>
+            <Field label="Product name" className="sm:col-span-2"><TextInput required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+            <Field label="Type"><Select value={form.type} onChange={(e) => {
+              const type = e.target.value as AdminProduct['type'];
+              // Switching to CUSTOMIZE with no fabrics chosen defaults to "all fabrics".
+              setForm({ ...form, type, fabricOptions: type === 'CUSTOMIZE' && form.fabricOptions.length === 0 ? materialFabrics.map((f) => f._id) : form.fabricOptions });
+            }}>
+              <option value="READY_MADE">Ready to Buy</option><option value="CUSTOMIZE">Customize</option><option value="SHOWCASE">Showcase / Upcoming</option>
+            </Select></Field>
+            <Field label="Category"><Select required value={typeof form.category === 'string' ? form.category : ''} onChange={(e) => setForm({ ...form, category: e.target.value, subCategory: null })}>
+              <option value="">Select category</option>{categories.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}
+            </Select></Field>
+            {form.type === 'SHOWCASE' ? null : (
+              <>
+                <Field label="MRP (INR)"><TextInput type="number" min={0} required value={form.mrpInr} onChange={(e) => setForm({ ...form, mrpInr: Number(e.target.value) })} /></Field>
+                <Field label="Selling price (INR)"><TextInput type="number" min={0} required value={form.sellingPriceInr} onChange={(e) => setForm({ ...form, sellingPriceInr: Number(e.target.value) })} /></Field>
+                {(form.mrpInr > form.sellingPriceInr) ? <p className="text-sm font-bold text-leaf sm:col-span-2">Discount: {Math.round(((form.mrpInr - form.sellingPriceInr) / form.mrpInr) * 100)}% off</p> : null}
+              </>
+            )}
+            <Field label="Description" className="sm:col-span-2"><TextArea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
+            <Field label="Tags" className="sm:col-span-2"><StringListEditor values={form.tags} onChange={(tags) => setForm({ ...form, tags })} placeholder="Add tag..." /></Field>
+            <Field label="Embroidery" className="sm:col-span-2"><StringListEditor values={form.embroidery} onChange={(embroidery) => setForm({ ...form, embroidery })} placeholder="Add embroidery type..." /></Field>
+
+            {form.type !== 'CUSTOMIZE' ? (
+              <div className="sm:col-span-2 rounded-xl border border-maroon-100 bg-maroon-50/30 p-4">
+                <h4 className="text-sm font-bold text-maroon-700">Colors</h4>
+                <Field label="Product colors" hint="Admin → Catalog → Colour se banaaye gaye palette se select karein. Multiple colours choose kar sakte hain — warranty/size se sirf pehla colour blouse ki dominant colour maana jaata hai.">
+                  <ColorPaletteSelect palette={palette} value={form.colors}
+                    onChange={(colors) => setForm({ ...form, colors: colors.map((c) => ({ ...c, slug: slugify(c.name) })) })} />
+                </Field>
+              </div>
+            ) : null}
+
+            {form.type === 'READY_MADE' ? (
+              <>
+                <div className="sm:col-span-2 rounded-xl border border-maroon-100 bg-maroon-50/30 p-4">
+                  <h4 className="text-sm font-bold text-maroon-700">Sizes</h4>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {form.sizes.map((size, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1.5 text-sm font-semibold">{size}
+                        <button type="button" onClick={() => setForm({ ...form, sizes: form.sizes.filter((_, j) => j !== i), variants: form.variants.filter((v) => v.size !== size) })}><X size={12} /></button>
+                      </span>
+                    ))}
+                    <input type="number" min={18} max={60} placeholder="Add size" className="field min-h-[38px] w-28 px-3 py-1.5 text-sm" onKeyDown={(e) => {
+                      if (e.key === 'Enter' && (e.target as HTMLInputElement).value) { const size = Number((e.target as HTMLInputElement).value); e.preventDefault(); if (!form.sizes.includes(size)) setForm({ ...form, sizes: [...form.sizes, size].sort((a, b) => a - b) }); (e.target as HTMLInputElement).value = ''; }
+                    }} />
+                  </div>
+                </div>
+
+                <div className="sm:col-span-2 rounded-xl border border-maroon-100 bg-maroon-50/30 p-4">
+                  <h4 className="text-sm font-bold text-maroon-700">Inventory (size × color stock)</h4>
+                  <div className="mt-3 space-y-2">
+                    {form.variants.map((variant, i) => (
+                      <div className="flex items-center gap-2" key={i}>
+                        <select className="field min-h-[40px] w-36 px-3 py-1.5 text-sm" value={variant.colorSlug} onChange={(e) => setForm({ ...form, variants: form.variants.map((v, j) => j === i ? { ...v, colorSlug: e.target.value } : v) })}>
+                          <option value="">Color</option>{form.colors.map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
+                        </select>
+                        <select className="field min-h-[40px] w-24 px-3 py-1.5 text-sm" value={variant.size} onChange={(e) => setForm({ ...form, variants: form.variants.map((v, j) => j === i ? { ...v, size: Number(e.target.value) } : v) })}>
+                          {form.sizes.map((s) => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                        <TextInput type="number" min={0} className="w-24" placeholder="Stock" value={variant.stock} onChange={(e) => setForm({ ...form, variants: form.variants.map((v, j) => j === i ? { ...v, stock: Number(e.target.value) } : v) })} />
+                        <TextInput className="flex-1" placeholder="SKU" value={variant.sku} onChange={(e) => setForm({ ...form, variants: form.variants.map((v, j) => j === i ? { ...v, sku: e.target.value } : v) })} />
+                        <BtnGhost className="px-3" onClick={() => setForm({ ...form, variants: form.variants.filter((_, j) => j !== i) })}><X size={15} /></BtnGhost>
+                      </div>
+                    ))}
+                  </div>
+                  <button type="button" onClick={addVariant} className="btn-outline mt-3 min-h-[40px] w-full text-sm"><Plus size={14} />Add variant</button>
+                </div>
+              </>
+            ) : null}
+
+            {form.type === 'CUSTOMIZE' ? (
+              <div className="sm:col-span-2 rounded-xl border border-maroon-100 bg-maroon-50/30 p-4">
+                <h4 className="text-sm font-bold text-maroon-700">Customize options</h4>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <Field label="Default lace count" hint="Customer kitni laces select kar sakta hai (max 6)"><TextInput type="number" min={0} max={6} value={form.defaultLaceCount} onChange={(e) => setForm({ ...form, defaultLaceCount: Number(e.target.value) })} /></Field>
+                  <Field label="Default latkan count" hint="Customer kitne latkan select kar sakta hai (max 6)"><TextInput type="number" min={0} max={6} value={form.defaultLatkanCount} onChange={(e) => setForm({ ...form, defaultLatkanCount: Number(e.target.value) })} /></Field>
+                  <Field label="Stitching charge (INR)"><TextInput type="number" min={0} value={form.stitchingChargeInr} onChange={(e) => setForm({ ...form, stitchingChargeInr: Number(e.target.value) })} /></Field>
+                  <Field label="Stitching days" hint="Custom blouse kitne din mein ready hota hai"><TextInput type="number" min={0} max={90} value={form.stitchingDays} onChange={(e) => setForm({ ...form, stitchingDays: Number(e.target.value) })} /></Field>
+                  <Field label="Fabric info"><TextInput value={form.fabricInfo} onChange={(e) => setForm({ ...form, fabricInfo: e.target.value })} /></Field>
+                  <Field label="Stitching info" className="sm:col-span-2"><TextArea value={form.stitchingInfo} onChange={(e) => setForm({ ...form, stitchingInfo: e.target.value })} /></Field>
+                  <Field label="Care instructions" className="sm:col-span-2"><TextArea value={form.careInstructions} onChange={(e) => setForm({ ...form, careInstructions: e.target.value })} /></Field>
+                </div>
+
+                {/* Add Material — admin decides which materials this blouse offers */}
+                <div className="mt-4 rounded-xl border border-maroon-100 bg-white/60 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h5 className="flex items-center gap-1.5 text-[13px] font-bold text-maroon-700"><Layers size={14} />Add Material — is blouse ke liye</h5>
+                    <span className="text-[11px] font-semibold text-ink-muted">Customer ko sirf yehi materials choose karne milenge</span>
+                  </div>
+                  <div className="mt-2.5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <MaterialPicker
+                      label="Fabric" required
+                      options={materialFabrics} selected={form.fabricOptions}
+                      onChange={(ids) => setForm({ ...form, fabricOptions: ids })}
+                    />
+                    <MaterialPicker
+                      label="Laces"
+                      options={materialLaces} selected={form.laceOptions}
+                      onChange={(ids) => setForm({ ...form, laceOptions: ids })}
+                    />
+                    <MaterialPicker
+                      label="Latkans"
+                      options={materialLatkans} selected={form.latkanOptions}
+                      onChange={(ids) => setForm({ ...form, latkanOptions: ids })}
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {form.type === 'SHOWCASE' ? (
+              <div className="sm:col-span-2 rounded-xl border border-maroon-100 bg-maroon-50/30 p-4">
+                <h4 className="text-sm font-bold text-maroon-700">Showcase options</h4>
+                <div className="mt-3 space-y-3">
+                  <Field label="Expected availability"><TextInput value={form.expectedAvailability} onChange={(e) => setForm({ ...form, expectedAvailability: e.target.value })} /></Field>
+                  <Checkbox label="Coming soon (pre-order show only)" checked={form.comingSoon} onChange={(comingSoon) => setForm({ ...form, comingSoon })} />
+                </div>
+              </div>
+            ) : null}
+
+            <Field label="Video URL" className="sm:col-span-2"><TextInput value={form.videoUrl} onChange={(e) => setForm({ ...form, videoUrl: e.target.value })} /></Field>
+            <Field label="Product images" hint="Computer se upload karein ya URL se add karein. Pehli image main image hoti hai." className="sm:col-span-2">
+              <ImagePicker value={form.images.map((img) => img.url)} max={10}
+                onChange={(urls) => setForm({ ...form, images: urls.map((url) => ({ url, alt: form.name, kind: form.images.find((img) => img.url === url)?.kind ?? 'other' })) })} />
+              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-maroon-200 bg-maroon-50/40 p-3">
+                <BtnPrimary type="button" onClick={() => void generateWithQwen()} disabled={qwenBusy || !form.images[0]?.url}>
+                  <Sparkles size={16} />{qwenBusy ? 'Analyzing image...' : '✨ Generate with Qwen'}
+                </BtnPrimary>
+                <p className="text-xs text-ink-muted">Selected sabhi images (front/back/sleeve) se: name, description, tags, SINGLE dominant blouse colour, categories (pehla category, doosra sub-category), embroidery, approximate price, care instructions aur SEO auto-fill honge. Stock, sizes, SKU aur design ID aap khud bharo — ye kabhi overwrite nahi honge.</p>
+              </div>
+              {qwenMsg ? <p className={`mt-2 text-sm font-semibold ${qwenMsg.type === 'ok' ? 'text-leaf' : 'text-alert'}`}>{qwenMsg.type === 'ok' ? <><Check size={14} className="mr-1 inline" />{qwenMsg.text}</> : qwenMsg.text}</p> : null}
+            </Field>
+
+            <div className="sm:col-span-2 rounded-xl border border-maroon-100 bg-maroon-50/30 p-4">
+              <h4 className="text-sm font-bold text-maroon-700">SEO</h4>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <Field label="SEO title" className="sm:col-span-2"><TextInput value={form.seo.title} onChange={(e) => setForm({ ...form, seo: { ...form.seo, title: e.target.value } })} /></Field>
+                <Field label="Meta description" className="sm:col-span-2"><TextArea value={form.seo.description} onChange={(e) => setForm({ ...form, seo: { ...form.seo, description: e.target.value } })} /></Field>
+                <Field label="Keywords" className="sm:col-span-2"><StringListEditor values={form.seo.keywords} onChange={(keywords) => setForm({ ...form, seo: { ...form.seo, keywords } })} placeholder="Add keyword..." /></Field>
+                <Field label="OG image URL" className="sm:col-span-2"><TextInput value={form.seo.ogImage} onChange={(e) => setForm({ ...form, seo: { ...form.seo, ogImage: e.target.value } })} /></Field>
+              </div>
+            </div>
+
+            <div className="sm:col-span-2 flex flex-wrap items-center justify-between gap-4">
+              <Toggle label="Product active (visible on storefront)" checked={form.isActive} onChange={(isActive) => setForm({ ...form, isActive })} />
+              {newEditor ? null : <button type="button" className="text-sm font-semibold text-alert" onClick={() => { if (confirm('Archive this product?')) { archive(form); setForm(null); } }}>Archive product</button>}
+            </div>
+          </form>
+        </Modal>
+      ) : null}
+    </section>
+  );
+}
+
+/** Chip-style multi-select used by "Add Material". */
+function MaterialPicker({
+  label,
+  required,
+  options,
+  selected,
+  onChange,
+}: {
+  label: string;
+  required?: boolean;
+  options: MaterialOption[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const toggle = (id: string) =>
+    onChange(selected.includes(id) ? selected.filter((v) => v !== id) : [...selected, id]);
+
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <p className="text-[12px] font-bold uppercase tracking-wide text-ink">
+          {label} ({selected.length}/{options.length})
+          {required ? <span className="ml-1 text-alert">*</span> : null}
+        </p>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button type="button" onClick={() => onChange(options.map((o) => o._id))}
+            className="text-[11px] font-semibold text-maroon-700 hover:underline">Select all</button>
+          <span className="text-ink-light">·</span>
+          <button type="button" onClick={() => onChange([])}
+            className="text-[11px] font-semibold text-ink-muted hover:underline">Clear</button>
+        </div>
+      </div>
+      {options.length === 0 ? (
+        <p className="text-[11px] font-semibold text-ink-muted">Koi {label} nahi banaaya — pehle Catalog mein add karein.</p>
+      ) : (
+        <div className="flex max-h-44 flex-wrap gap-1.5 overflow-y-auto">
+          {options.map((option) => {
+            const active = selected.includes(option._id);
+            return (
+              <button
+                key={option._id}
+                type="button"
+                title={option.inStock === false ? 'Out of stock' : option.name}
+                onClick={() => toggle(option._id)}
+                className={`chip whitespace-nowrap ${active ? 'chip-active' : ''}`}
+              >
+                {option.name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}

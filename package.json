@@ -1,0 +1,28 @@
+{
+  "name": "guddi-silai",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Guddi Silai — blouse storefront (ready-to-buy, custom-stitched, showcase)",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "scripts": {
+    "dev": "concurrently -n api,web -c magenta,yellow \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:real": "concurrently -n api,web -c magenta,yellow \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm run dev --workspace backend",
+    "dev:api:local": "npm run dev:local --workspace backend",
+    "dev:web": "npm run dev --workspace frontend",
+    "dev:local": "concurrently -n api,web -c magenta,yellow \"npm:dev:api:local\" \"npm:dev:web\"",
+    "build": "npm run build --workspace backend && npm run build --workspace frontend",
+    "seed": "npm run seed --workspace backend",
+    "seed:real": "npm run seed --workspace backend",
+    "typecheck": "npm run typecheck --workspace backend && npm run typecheck --workspace frontend"
+  },
+  "devDependencies": {
+    "concurrently": "9.1.2"
+  }
+}
