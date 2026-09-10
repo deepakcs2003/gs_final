@@ -121,6 +121,26 @@ export const readLimiter = makeLimiter({ prefix: 'read', windowMs: 60_000, limit
 export const writeLimiter = makeLimiter({ prefix: 'write', windowMs: 60_000, limit: 40 });
 
 /**
+ * Session refresh is the next-most sensitive endpoint after OTP: a stolen
+ * refresh cookie is a complete takeover, and unrestricted refresh also turns
+ * the endpoint into a free energy sink. Bounded per IP, 10 per 10 minutes.
+ */
+export const refreshLimiter = makeLimiter({ prefix: 'ref', windowMs: 10 * 60_000, limit: 10 });
+
+/** Auth writes that escalate an anonymous session (Google login, logout). */
+export const authWriteLimiter = makeLimiter({ prefix: 'authw', windowMs: 10 * 60_000, limit: 20 });
+
+/**
+ * Admin endpoints are higher-value targets than the storefront: a single
+ * session here can change prices, stock and orders. Reads are one admin's
+ * normal pace, writes are deliberately tighter than the customer write
+ * limiter because every admin write shows up in the activity log.
+ */
+export const adminReadLimiter = makeLimiter({ prefix: 'aread', windowMs: 60_000, limit: 120 });
+
+export const adminWriteLimiter = makeLimiter({ prefix: 'awrite', windowMs: 10 * 60_000, limit: 40 });
+
+/**
  * OTP send is the most abusable endpoint on the site: it costs money per call
  * and can be used to harass a phone number. Limited per IP *and* per mobile.
  */

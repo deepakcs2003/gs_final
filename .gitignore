@@ -1,21 +1,22 @@
+# Dependencies
 node_modules/
 dist/
 build/
 coverage/
 
 # Secrets — never commit these
-# .env
-# .env.*
-
-*.log
-npm-debug.log*
-.DS_Store
-.vscode/
-.idea/
-uploads/
-
 .env
 .env.*
 !.env.example
-node_modules/
-dist/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Uploads
+uploads/

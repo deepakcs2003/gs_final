@@ -3,6 +3,8 @@ import helmet from 'helmet';
 import cors from 'cors';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { pinoHttp } from 'pino-http';
 import { env, isProd } from './config/env.js';
 import { logger } from './utils/logger.js';
@@ -119,6 +121,32 @@ export function createApp(): Express {
   app.use('/api/orders', ordersRouter);
   app.use('/api', catalogRouter);
   app.use('/api', miscRouter);
+
+  // Production serves the built SPA on the same origin so the single `/api`
+  // cookie domain from the frontend keeps working. Non-API GET requests fall
+  // through to index.html for client-side routing.
+  if (env.PUBLIC_DIR) {
+    const publicRoot = resolve(process.cwd(), env.PUBLIC_DIR);
+    if (existsSync(publicRoot)) {
+      app.use(
+        express.static(publicRoot, {
+          index: 'index.html',
+          maxAge: '1h',
+          immutable: false,
+          etag: true,
+        }),
+      );
+      app.use((req, res, next) => {
+        if (req.method !== 'GET' || req.path.startsWith('/api')) {
+          next();
+          return;
+        }
+        res.sendFile(resolve(publicRoot, 'index.html'));
+      });
+    } else {
+      console.error(`PUBLIC_DIR "${env.PUBLIC_DIR}" not found — SPA hosting disabled; API-only.`);
+    }
+  }
 
   app.use(notFoundHandler);
   app.use(errorHandler);

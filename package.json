@@ -20,6 +20,7 @@
     "build": "npm run build --workspace backend && npm run build --workspace frontend",
     "seed": "npm run seed --workspace backend",
     "seed:real": "npm run seed --workspace backend",
+    "clean:test-data": "npm run clean:test-data --workspace backend",
     "typecheck": "npm run typecheck --workspace backend && npm run typecheck --workspace frontend"
   },
   "devDependencies": {

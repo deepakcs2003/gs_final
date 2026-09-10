@@ -7,7 +7,7 @@ import { User } from '../models/user.js';
 import { OtpToken } from '../models/user.js';
 import { validate } from '../middleware/validate.js';
 import { requireAuth } from '../middleware/auth.js';
-import { otpSendLimiter, otpVerifyLimiter, writeLimiter } from '../middleware/rateLimit.js';
+import { otpSendLimiter, otpVerifyLimiter, refreshLimiter, authWriteLimiter, writeLimiter } from '../middleware/rateLimit.js';
 import { clearAuthCookies, cookieNames, hashRefreshToken, issueSession, revokeRefreshToken } from '../services/tokens.js';
 import { getSmsProvider, maskMobile } from '../services/sms/index.js';
 import { hashIp } from '../services/geo.js';
@@ -160,7 +160,7 @@ const googleSchema = z.object({ credential: z.string().min(20).max(4096) }).stri
 
 let googleClient: OAuth2Client | null = null;
 
-router.post('/google', writeLimiter, validate({ body: googleSchema }), async (req: Request, res: Response) => {
+router.post('/google', authWriteLimiter, validate({ body: googleSchema }), async (req: Request, res: Response) => {
   if (!integrations.google) throw serviceUnavailable('Google login abhi available nahi hai.');
 
   const { credential } = (req as Request & { validated: { body: { credential: string } } }).validated.body;
@@ -205,7 +205,7 @@ router.post('/google', writeLimiter, validate({ body: googleSchema }), async (re
 /* POST /api/auth/refresh — rotating refresh tokens                            */
 /* -------------------------------------------------------------------------- */
 
-router.post('/refresh', writeLimiter, async (req: Request, res: Response) => {
+router.post('/refresh', refreshLimiter, async (req: Request, res: Response) => {
   const presented = req.cookies?.[cookieNames.refresh];
   if (typeof presented !== 'string' || !presented) throw unauthorized();
 
@@ -237,7 +237,7 @@ router.post('/refresh', writeLimiter, async (req: Request, res: Response) => {
 /* POST /api/auth/logout                                                       */
 /* -------------------------------------------------------------------------- */
 
-router.post('/logout', async (req: Request, res: Response) => {
+router.post('/logout', authWriteLimiter, async (req: Request, res: Response) => {
   const presented = req.cookies?.[cookieNames.refresh];
   if (typeof presented === 'string' && presented && req.auth) {
     await revokeRefreshToken(req.auth.userId, presented);

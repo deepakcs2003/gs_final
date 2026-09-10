@@ -128,7 +128,7 @@ export function OfferPopupHost() {
       aria-modal="true"
       onClick={dismiss}
     >
-      <div className="w-full max-w-sm overflow-hidden rounded-xl2 bg-surface shadow-lift" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-sm overflow-hidden rounded-xl2 bg-white shadow-lift" onClick={(e) => e.stopPropagation()}>
         <div className="relative aspect-[16/9] overflow-hidden bg-maroon-50">
           {popup.product.image ? (
             <SmartImage src={popup.product.image} alt={popup.product.name} className="absolute inset-0 h-full w-full object-cover" />

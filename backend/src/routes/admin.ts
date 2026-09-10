@@ -2,7 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import multer, { MulterError } from 'multer';
 import { z } from 'zod';
 import { requireAdmin, requireAuth } from '../middleware/auth.js';
-import { readLimiter, writeLimiter } from '../middleware/rateLimit.js';
+import { adminReadLimiter, adminWriteLimiter } from '../middleware/rateLimit.js';
 import { Category, Fabric, Lace, Latkan, Product } from '../models/catalog.js';
 import { Coupon, Enquiry, Order, Review } from '../models/commerce.js';
 import { MeasurementField, User } from '../models/user.js';
@@ -319,7 +319,7 @@ function runImageUpload(req: Request, res: Response, next: NextFunction): void {
   });
 }
 
-router.post('/upload', writeLimiter, runImageUpload, async (req: Request, res: Response) => {
+router.post('/upload', adminWriteLimiter, runImageUpload, async (req: Request, res: Response) => {
   const files = (req.files as Express.Multer.File[] | undefined) ?? [];
   if (files.length === 0) throw badRequest('Koi image select nahi hui.');
   const uploaded = await Promise.all(
@@ -336,7 +336,7 @@ router.post('/upload', writeLimiter, runImageUpload, async (req: Request, res: R
 /* Dashboard — 85.2                                                           */
 /* ========================================================================== */
 
-router.get('/dashboard', readLimiter, async (req: Request, res: Response) => {
+router.get('/dashboard', adminReadLimiter, async (req: Request, res: Response) => {
   const from = req.query.from ? new Date(String(req.query.from)) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const to = req.query.to ? new Date(String(req.query.to)) : new Date();
   const range = { $gte: from, $lte: to };
@@ -369,11 +369,11 @@ router.get('/dashboard', readLimiter, async (req: Request, res: Response) => {
 /* Orders — 85.19–85.23                                                       */
 /* ========================================================================== */
 
-router.get('/orders', readLimiter, async (req: Request, res: Response) => {
+router.get('/orders', adminReadLimiter, async (req: Request, res: Response) => {
   const filter: Record<string, unknown> = {};
   if (req.query.status && ORDER_STATUSES.includes(String(req.query.status) as OrderStatus)) filter.status = req.query.status;
   if (req.query.q) {
-    const q = String(req.query.q).trim();
+    const q = String(req.query.q).trim().slice(0, 80).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     if (q) filter.$or = [{ orderNumber: new RegExp(q, 'i') }, { 'contact.name': new RegExp(q, 'i') }, { 'contact.mobile': new RegExp(q, 'i') }];
   }
   if (req.query.from || req.query.to) {
@@ -386,16 +386,16 @@ router.get('/orders', readLimiter, async (req: Request, res: Response) => {
   res.json({ items });
 });
 
-router.get('/orders/search', readLimiter, async (_req: Request, res: Response) => res.json({ ok: true }));
+router.get('/orders/search', adminReadLimiter, async (_req: Request, res: Response) => res.json({ ok: true }));
 
-router.get('/orders/:orderNumber', readLimiter, validate({ params: orderNumberSchema }), async (req: Request, res: Response) => {
+router.get('/orders/:orderNumber', adminReadLimiter, validate({ params: orderNumberSchema }), async (req: Request, res: Response) => {
   const { orderNumber } = (req as ValidatedRequest<unknown, unknown, { orderNumber: string }>).validated.params;
   const order = await Order.findOne({ orderNumber }).lean();
   if (!order) throw notFound('Order nahi mila.');
   res.json({ order });
 });
 
-router.patch('/orders/:orderNumber/status', writeLimiter, validate({ params: orderNumberSchema, body: statusSchema }), async (req: Request, res: Response) => {
+router.patch('/orders/:orderNumber/status', adminWriteLimiter, validate({ params: orderNumberSchema, body: statusSchema }), async (req: Request, res: Response) => {
   const { orderNumber } = (req as ValidatedRequest<unknown, unknown, { orderNumber: string }>).validated.params;
   const { status, note } = (req as ValidatedRequest<{ status: OrderStatus; note: string }>).validated.body;
   const order = await Order.findOneAndUpdate({ orderNumber }, { $set: { status }, $push: { statusHistory: { status, note, at: new Date() } } }, { new: true });
@@ -404,7 +404,7 @@ router.patch('/orders/:orderNumber/status', writeLimiter, validate({ params: ord
   res.json({ order });
 });
 
-router.patch('/orders/:orderNumber/shipping', writeLimiter, validate({
+router.patch('/orders/:orderNumber/shipping', adminWriteLimiter, validate({
   params: orderNumberSchema,
   body: z.object({
     shiprocketOrderId: z.string().max(60).default(''),
@@ -453,7 +453,7 @@ function maskEmail(email: string): string {
   return email.slice(0, 2) + '***' + email.slice(at);
 }
 
-router.get('/shipping/shiprocket/status', readLimiter, async (req: Request, res: Response) => {
+router.get('/shipping/shiprocket/status', adminReadLimiter, async (req: Request, res: Response) => {
   const [settings, countDoc, lastAtDoc] = await Promise.all([
     getShiprocketSettings(),
     Setting.findOne({ key: 'shiprocketWebhookCount' }).lean(),
@@ -479,27 +479,27 @@ router.get('/shipping/shiprocket/status', readLimiter, async (req: Request, res:
   });
 });
 
-router.patch('/shipping/shiprocket/settings', writeLimiter, validate({ body: shiprocketSettingsSchema }), async (req: Request, res: Response) => {
+router.patch('/shipping/shiprocket/settings', adminWriteLimiter, validate({ body: shiprocketSettingsSchema }), async (req: Request, res: Response) => {
   const body = (req as ValidatedRequest<Partial<ShiprocketSettings>>).validated.body;
   const settings = await updateShiprocketSettings(body);
   await logAction(req, 'UPDATE', 'SHIPROCKET_SETTINGS', 'settings', 'Shiprocket settings updated');
   res.json({ settings });
 });
 
-router.post('/shipping/shiprocket/test-connection', writeLimiter, async (req: Request, res: Response) => {
+router.post('/shipping/shiprocket/test-connection', adminWriteLimiter, async (req: Request, res: Response) => {
   const result = await testConnection();
   await logAction(req, 'TEST_CONNECTION', 'SHIPROCKET_SETTINGS', 'settings', `Shiprocket test: ${result.message}`);
   res.json(result);
 });
 
-router.post('/shipping/shiprocket/test-webhook', writeLimiter, async (req: Request, res: Response) => {
+router.post('/shipping/shiprocket/test-webhook', adminWriteLimiter, async (req: Request, res: Response) => {
   await recordWebhookReceipt('shiprocket');
   await logAction(req, 'TEST_WEBHOOK', 'SHIPROCKET_SETTINGS', 'settings', 'Shiprocket webhook test receipt recorded');
   res.json({ ok: true, message: 'Webhook receipt recorded (test). Shippedrocket panel "Webhook connected" update hoga.' });
 });
 
 /** Recommended courier list pre-filled by the admin AWB form. */
-router.get('/orders/:orderNumber/shiprocket/recommend', readLimiter, validate({ params: orderNumberSchema }), async (req: Request, res: Response) => {
+router.get('/orders/:orderNumber/shiprocket/recommend', adminReadLimiter, validate({ params: orderNumberSchema }), async (req: Request, res: Response) => {
   const { orderNumber } = (req as ValidatedRequest<unknown, unknown, { orderNumber: string }>).validated.params;
   const order = await Order.findOne({ orderNumber }).lean();
   if (!order) throw notFound('Order nahi mila.');
@@ -534,7 +534,7 @@ async function autoAssignAndPickup(
   }
 }
 
-router.post('/orders/:orderNumber/shiprocket/create', writeLimiter, validate({ params: orderNumberSchema }), async (req: Request, res: Response) => {
+router.post('/orders/:orderNumber/shiprocket/create', adminWriteLimiter, validate({ params: orderNumberSchema }), async (req: Request, res: Response) => {
   const { orderNumber } = (req as ValidatedRequest<unknown, unknown, { orderNumber: string }>).validated.params;
   const [order, settings] = await Promise.all([
     Order.findOne({ orderNumber }),
@@ -562,7 +562,7 @@ const awbSchema = z.object({
   courierName: z.string().trim().max(60).optional(),
 }).strict();
 
-router.post('/orders/:orderNumber/shiprocket/awb', writeLimiter, validate({ params: orderNumberSchema, body: awbSchema }), async (req: Request, res: Response) => {
+router.post('/orders/:orderNumber/shiprocket/awb', adminWriteLimiter, validate({ params: orderNumberSchema, body: awbSchema }), async (req: Request, res: Response) => {
   const { orderNumber } = (req as ValidatedRequest<unknown, unknown, { orderNumber: string }>).validated.params;
   const body = (req as ValidatedRequest<{ courierId?: string; courierName?: string }>).validated.body;
   const order = await Order.findOne({ orderNumber });
@@ -592,7 +592,7 @@ router.post('/orders/:orderNumber/shiprocket/awb', writeLimiter, validate({ para
   res.json({ order: fresh, result });
 });
 
-router.post('/orders/:orderNumber/shiprocket/pickup', writeLimiter, validate({ params: orderNumberSchema }), async (req: Request, res: Response) => {
+router.post('/orders/:orderNumber/shiprocket/pickup', adminWriteLimiter, validate({ params: orderNumberSchema }), async (req: Request, res: Response) => {
   const { orderNumber } = (req as ValidatedRequest<unknown, unknown, { orderNumber: string }>).validated.params;
   const [order, settings] = await Promise.all([Order.findOne({ orderNumber }), getShiprocketSettings()]);
   if (!order) throw notFound('Order nahi mila.');
@@ -608,7 +608,7 @@ router.post('/orders/:orderNumber/shiprocket/pickup', writeLimiter, validate({ p
   res.json({ order: fresh, result });
 });
 
-router.post('/orders/:orderNumber/shiprocket/label', writeLimiter, validate({ params: orderNumberSchema }), async (req: Request, res: Response) => {
+router.post('/orders/:orderNumber/shiprocket/label', adminWriteLimiter, validate({ params: orderNumberSchema }), async (req: Request, res: Response) => {
   const { orderNumber } = (req as ValidatedRequest<unknown, unknown, { orderNumber: string }>).validated.params;
   const order = await Order.findOne({ orderNumber }).lean();
   if (!order) throw notFound('Order nahi mila.');
@@ -633,21 +633,21 @@ async function doSyncOrderTracking(
   if (mode === 'SYNC') await logAction(req, 'SHIPROCKET_SYNC', 'ORDER', orderNumber, `${orderNumber} -> ${track.status}`);
 }
 
-router.get('/orders/:orderNumber/shiprocket/tracking', readLimiter, validate({ params: orderNumberSchema }), async (req: Request, res: Response) => {
+router.get('/orders/:orderNumber/shiprocket/tracking', adminReadLimiter, validate({ params: orderNumberSchema }), async (req: Request, res: Response) => {
   const { orderNumber } = (req as ValidatedRequest<unknown, unknown, { orderNumber: string }>).validated.params;
   await doSyncOrderTracking(req, orderNumber, 'VIEW');
   const fresh = await Order.findOne({ orderNumber }).lean();
   res.json({ tracking: fresh?.shipping ?? {}, order: fresh });
 });
 
-router.post('/orders/:orderNumber/shiprocket/sync', writeLimiter, validate({ params: orderNumberSchema }), async (req: Request, res: Response) => {
+router.post('/orders/:orderNumber/shiprocket/sync', adminWriteLimiter, validate({ params: orderNumberSchema }), async (req: Request, res: Response) => {
   const { orderNumber } = (req as ValidatedRequest<unknown, unknown, { orderNumber: string }>).validated.params;
   await doSyncOrderTracking(req, orderNumber, 'SYNC');
   const fresh = await Order.findOne({ orderNumber }).lean();
   res.json({ tracking: fresh?.shipping ?? {}, order: fresh });
 });
 
-router.post('/orders/:orderNumber/shiprocket/cancel', writeLimiter, validate({ params: orderNumberSchema }), async (req: Request, res: Response) => {
+router.post('/orders/:orderNumber/shiprocket/cancel', adminWriteLimiter, validate({ params: orderNumberSchema }), async (req: Request, res: Response) => {
   const { orderNumber } = (req as ValidatedRequest<unknown, unknown, { orderNumber: string }>).validated.params;
   const order = await Order.findOne({ orderNumber });
   if (!order) throw notFound('Order nahi mila.');
@@ -665,10 +665,10 @@ router.post('/orders/:orderNumber/shiprocket/cancel', writeLimiter, validate({ p
 /* Products — 85.3                                                            */
 /* ========================================================================== */
 
-router.get('/products', readLimiter, async (req: Request, res: Response) => {
+router.get('/products', adminReadLimiter, async (req: Request, res: Response) => {
   const filter: Record<string, unknown> = {};
   if (req.query.q) {
-    const q = String(req.query.q).trim();
+    const q = String(req.query.q).trim().slice(0, 80).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     if (q) filter.$or = [{ designId: new RegExp(q, 'i') }, { name: new RegExp(q, 'i') }, { slug: new RegExp(q, 'i') }];
   }
   if (req.query.type) filter.type = String(req.query.type);
@@ -677,7 +677,7 @@ router.get('/products', readLimiter, async (req: Request, res: Response) => {
   res.json({ items });
 });
 
-router.post('/products', writeLimiter, validate({ body: productSchema }), async (req: Request, res: Response) => {
+router.post('/products', adminWriteLimiter, validate({ body: productSchema }), async (req: Request, res: Response) => {
   const body = (req as ValidatedRequest<z.infer<typeof productSchema>>).validated.body;
   // Blank design ID / slug are fine — they are generated automatically.
   const designId = body.designId?.trim() ? body.designId.trim() : await nextDesignId();
@@ -697,7 +697,7 @@ const productQwenBodySchema = z
   .object({ imageUrls: z.array(z.string().url().max(500)).min(1).max(10) })
   .strict();
 
-router.post('/products/generate-with-qwen', writeLimiter, validate({ body: productQwenBodySchema }), async (req: Request, res: Response) => {
+router.post('/products/generate-with-qwen', adminWriteLimiter, validate({ body: productQwenBodySchema }), async (req: Request, res: Response) => {
   const { imageUrls } = (req as ValidatedRequest<{ imageUrls: string[] }>).validated.body;
 
   const suggestion = await generateProductSuggestions(imageUrls);
@@ -724,35 +724,35 @@ router.post('/products/generate-with-qwen', writeLimiter, validate({ body: produ
 /* Qwen auto-fill for the Catalog module — fabric / lace / latkan. Suggest
  * only catalog-ready fields; business numbers always stay review-before-save. */
 
-router.post('/fabrics/generate-with-qwen', writeLimiter, validate({ body: qwenBodySchema }), async (req: Request, res: Response) => {
+router.post('/fabrics/generate-with-qwen', adminWriteLimiter, validate({ body: qwenBodySchema }), async (req: Request, res: Response) => {
   const { imageUrl } = (req as ValidatedRequest<{ imageUrl: string }>).validated.body;
   const suggestion = await generateFabricSuggestion(imageUrl);
   await logAction(req, 'GENERATE_WITH_QWEN', 'FABRIC', 'preview', `Suggested from image for ${imageUrl.slice(0, 80)}`);
   res.json({ suggestion });
 });
 
-router.post('/laces/generate-with-qwen', writeLimiter, validate({ body: qwenBodySchema }), async (req: Request, res: Response) => {
+router.post('/laces/generate-with-qwen', adminWriteLimiter, validate({ body: qwenBodySchema }), async (req: Request, res: Response) => {
   const { imageUrl } = (req as ValidatedRequest<{ imageUrl: string }>).validated.body;
   const suggestion = await generateLaceSuggestion(imageUrl);
   await logAction(req, 'GENERATE_WITH_QWEN', 'LACE', 'preview', `Suggested from image for ${imageUrl.slice(0, 80)}`);
   res.json({ suggestion });
 });
 
-router.post('/latkans/generate-with-qwen', writeLimiter, validate({ body: qwenBodySchema }), async (req: Request, res: Response) => {
+router.post('/latkans/generate-with-qwen', adminWriteLimiter, validate({ body: qwenBodySchema }), async (req: Request, res: Response) => {
   const { imageUrl } = (req as ValidatedRequest<{ imageUrl: string }>).validated.body;
   const suggestion = await generateLatkanSuggestion(imageUrl);
   await logAction(req, 'GENERATE_WITH_QWEN', 'LATKAN', 'preview', `Suggested from image for ${imageUrl.slice(0, 80)}`);
   res.json({ suggestion });
 });
 
-router.get('/products/:id', readLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
+router.get('/products/:id', adminReadLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const product = await Product.findById(id).populate('category', 'name slug').populate('subCategory', 'name slug').populate('createdBy', 'name mobile').lean();
   if (!product) throw notFound('Product nahi mila.');
   res.json({ product });
 });
 
-router.patch('/products/:id', writeLimiter, validate({ params: idSchema, body: productPatchSchema }), async (req: Request, res: Response) => {
+router.patch('/products/:id', adminWriteLimiter, validate({ params: idSchema, body: productPatchSchema }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const body = (req as ValidatedRequest<Record<string, unknown>>).validated.body;
   const product = await Product.findById(id);
@@ -772,7 +772,7 @@ router.patch('/products/:id', writeLimiter, validate({ params: idSchema, body: p
   res.json({ product: updated });
 });
 
-router.delete('/products/:id', writeLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
+router.delete('/products/:id', adminWriteLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const product = await Product.findByIdAndUpdate(id, { $set: { isActive: false } }, { new: true });
   if (!product) throw notFound('Product nahi mila.');
@@ -780,7 +780,7 @@ router.delete('/products/:id', writeLimiter, validate({ params: idSchema }), asy
   res.json({ ok: true });
 });
 
-router.post('/products/:id/duplicate', writeLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
+router.post('/products/:id/duplicate', adminWriteLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const product = await Product.findById(id).lean();
   if (!product) throw notFound('Product nahi mila.');
@@ -794,21 +794,21 @@ router.post('/products/:id/duplicate', writeLimiter, validate({ params: idSchema
 /* Categories — 85.9                                                          */
 /* ========================================================================== */
 
-router.get('/categories', readLimiter, async (_req: Request, res: Response) => {
+router.get('/categories', adminReadLimiter, async (_req: Request, res: Response) => {
   const items = await Category.find().sort({ order: 1, name: 1 }).lean();
   const counts = await Product.aggregate([{ $group: { _id: '$category', count: { $sum: 1 } } }]);
   const countMap = new Map(counts.map((c) => [String(c._id), c.count]));
   res.json({ items: items.map((c) => ({ ...c, productCount: countMap.get(String(c._id)) ?? 0 })) });
 });
 
-router.post('/categories', writeLimiter, validate({ body: categorySchema }), async (req: Request, res: Response) => {
+router.post('/categories', adminWriteLimiter, validate({ body: categorySchema }), async (req: Request, res: Response) => {
   const body = (req as ValidatedRequest<z.infer<typeof categorySchema>>).validated.body;
   const category = await Category.create(body);
   await logAction(req, 'CREATE', 'CATEGORY', String(category._id), category.name);
   res.status(201).json({ category });
 });
 
-router.patch('/categories/:id', writeLimiter, validate({ params: idSchema, body: categorySchema.partial() }), async (req: Request, res: Response) => {
+router.patch('/categories/:id', adminWriteLimiter, validate({ params: idSchema, body: categorySchema.partial() }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const body = (req as ValidatedRequest<Record<string, unknown>>).validated.body;
   const category = await Category.findByIdAndUpdate(id, { $set: body }, { new: true, runValidators: true });
@@ -817,7 +817,7 @@ router.patch('/categories/:id', writeLimiter, validate({ params: idSchema, body:
   res.json({ category });
 });
 
-router.delete('/categories/:id', writeLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
+router.delete('/categories/:id', adminWriteLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const used = await Product.countDocuments({ category: id });
   if (used > 0) throw conflict('Is category mein products hain. Pehle unhe move karein.');
@@ -831,19 +831,19 @@ router.delete('/categories/:id', writeLimiter, validate({ params: idSchema }), a
 /* Fabrics — 85.4                                                             */
 /* ========================================================================== */
 
-router.get('/fabrics', readLimiter, async (_req: Request, res: Response) => {
+router.get('/fabrics', adminReadLimiter, async (_req: Request, res: Response) => {
   const items = await Fabric.find().sort({ order: 1, name: 1 }).lean();
   res.json({ items });
 });
 
-router.post('/fabrics', writeLimiter, validate({ body: fabricSchema }), async (req: Request, res: Response) => {
+router.post('/fabrics', adminWriteLimiter, validate({ body: fabricSchema }), async (req: Request, res: Response) => {
   const body = (req as ValidatedRequest<z.infer<typeof fabricSchema>>).validated.body;
   const fabric = await Fabric.create(body);
   await logAction(req, 'CREATE', 'FABRIC', String(fabric._id), fabric.name);
   res.status(201).json({ fabric });
 });
 
-router.patch('/fabrics/:id', writeLimiter, validate({ params: idSchema, body: fabricSchema.partial() }), async (req: Request, res: Response) => {
+router.patch('/fabrics/:id', adminWriteLimiter, validate({ params: idSchema, body: fabricSchema.partial() }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const body = (req as ValidatedRequest<Record<string, unknown>>).validated.body;
   const fabric = await Fabric.findByIdAndUpdate(id, { $set: body }, { new: true, runValidators: true });
@@ -852,7 +852,7 @@ router.patch('/fabrics/:id', writeLimiter, validate({ params: idSchema, body: fa
   res.json({ fabric });
 });
 
-router.delete('/fabrics/:id', writeLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
+router.delete('/fabrics/:id', adminWriteLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const fabric = await Fabric.findByIdAndDelete(id);
   if (!fabric) throw notFound('Fabric nahi mila.');
@@ -860,7 +860,7 @@ router.delete('/fabrics/:id', writeLimiter, validate({ params: idSchema }), asyn
   res.json({ ok: true });
 });
 
-router.post('/fabrics/:id/duplicate', writeLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
+router.post('/fabrics/:id/duplicate', adminWriteLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const fabric = await Fabric.findById(id).lean();
   if (!fabric) throw notFound('Fabric nahi mila.');
@@ -874,19 +874,19 @@ router.post('/fabrics/:id/duplicate', writeLimiter, validate({ params: idSchema 
 /* Laces — 85.5                                                               */
 /* ========================================================================== */
 
-router.get('/laces', readLimiter, async (_req: Request, res: Response) => {
+router.get('/laces', adminReadLimiter, async (_req: Request, res: Response) => {
   const items = await Lace.find().sort({ order: 1, name: 1 }).lean();
   res.json({ items });
 });
 
-router.post('/laces', writeLimiter, validate({ body: laceSchema }), async (req: Request, res: Response) => {
+router.post('/laces', adminWriteLimiter, validate({ body: laceSchema }), async (req: Request, res: Response) => {
   const body = (req as ValidatedRequest<z.infer<typeof laceSchema>>).validated.body;
   const lace = await Lace.create(body);
   await logAction(req, 'CREATE', 'LACE', String(lace._id), lace.name);
   res.status(201).json({ lace });
 });
 
-router.patch('/laces/:id', writeLimiter, validate({ params: idSchema, body: laceSchema.partial() }), async (req: Request, res: Response) => {
+router.patch('/laces/:id', adminWriteLimiter, validate({ params: idSchema, body: laceSchema.partial() }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const body = (req as ValidatedRequest<Record<string, unknown>>).validated.body;
   const lace = await Lace.findByIdAndUpdate(id, { $set: body }, { new: true, runValidators: true });
@@ -895,7 +895,7 @@ router.patch('/laces/:id', writeLimiter, validate({ params: idSchema, body: lace
   res.json({ lace });
 });
 
-router.delete('/laces/:id', writeLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
+router.delete('/laces/:id', adminWriteLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const lace = await Lace.findByIdAndDelete(id);
   if (!lace) throw notFound('Lace nahi mila.');
@@ -903,7 +903,7 @@ router.delete('/laces/:id', writeLimiter, validate({ params: idSchema }), async 
   res.json({ ok: true });
 });
 
-router.post('/laces/:id/duplicate', writeLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
+router.post('/laces/:id/duplicate', adminWriteLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const lace = await Lace.findById(id).lean();
   if (!lace) throw notFound('Lace nahi mila.');
@@ -917,19 +917,19 @@ router.post('/laces/:id/duplicate', writeLimiter, validate({ params: idSchema })
 /* Latkans — blouse danglers (same catalogue role as lace)                    */
 /* ========================================================================== */
 
-router.get('/latkans', readLimiter, async (_req: Request, res: Response) => {
+router.get('/latkans', adminReadLimiter, async (_req: Request, res: Response) => {
   const items = await Latkan.find().sort({ order: 1, name: 1 }).lean();
   res.json({ items });
 });
 
-router.post('/latkans', writeLimiter, validate({ body: latkanSchema }), async (req: Request, res: Response) => {
+router.post('/latkans', adminWriteLimiter, validate({ body: latkanSchema }), async (req: Request, res: Response) => {
   const body = (req as ValidatedRequest<z.infer<typeof latkanSchema>>).validated.body;
   const latkan = await Latkan.create(body);
   await logAction(req, 'CREATE', 'LATKAN', String(latkan._id), latkan.name);
   res.status(201).json({ latkan });
 });
 
-router.patch('/latkans/:id', writeLimiter, validate({ params: idSchema, body: latkanSchema.partial() }), async (req: Request, res: Response) => {
+router.patch('/latkans/:id', adminWriteLimiter, validate({ params: idSchema, body: latkanSchema.partial() }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const body = (req as ValidatedRequest<Record<string, unknown>>).validated.body;
   const latkan = await Latkan.findByIdAndUpdate(id, { $set: body }, { new: true, runValidators: true });
@@ -938,7 +938,7 @@ router.patch('/latkans/:id', writeLimiter, validate({ params: idSchema, body: la
   res.json({ latkan });
 });
 
-router.delete('/latkans/:id', writeLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
+router.delete('/latkans/:id', adminWriteLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const latkan = await Latkan.findByIdAndDelete(id);
   if (!latkan) throw notFound('Latkan nahi mila.');
@@ -946,7 +946,7 @@ router.delete('/latkans/:id', writeLimiter, validate({ params: idSchema }), asyn
   res.json({ ok: true });
 });
 
-router.post('/latkans/:id/duplicate', writeLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
+router.post('/latkans/:id/duplicate', adminWriteLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const latkan = await Latkan.findById(id).lean();
   if (!latkan) throw notFound('Latkan nahi mila.');
@@ -960,19 +960,19 @@ router.post('/latkans/:id/duplicate', writeLimiter, validate({ params: idSchema 
 /* Colors — 85.6                                                              */
 /* ========================================================================== */
 
-router.get('/colors', readLimiter, async (_req: Request, res: Response) => {
+router.get('/colors', adminReadLimiter, async (_req: Request, res: Response) => {
   const items = await Color.find().sort({ order: 1, name: 1 }).lean();
   res.json({ items });
 });
 
-router.post('/colors', writeLimiter, validate({ body: colorSchema }), async (req: Request, res: Response) => {
+router.post('/colors', adminWriteLimiter, validate({ body: colorSchema }), async (req: Request, res: Response) => {
   const body = (req as ValidatedRequest<z.infer<typeof colorSchema>>).validated.body;
   const color = await Color.create(body);
   await logAction(req, 'CREATE', 'COLOR', String(color._id), color.name);
   res.status(201).json({ color });
 });
 
-router.patch('/colors/:id', writeLimiter, validate({ params: idSchema, body: colorSchema.partial() }), async (req: Request, res: Response) => {
+router.patch('/colors/:id', adminWriteLimiter, validate({ params: idSchema, body: colorSchema.partial() }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const body = (req as ValidatedRequest<Record<string, unknown>>).validated.body;
   const color = await Color.findByIdAndUpdate(id, { $set: body }, { new: true, runValidators: true });
@@ -981,7 +981,7 @@ router.patch('/colors/:id', writeLimiter, validate({ params: idSchema, body: col
   res.json({ color });
 });
 
-router.delete('/colors/:id', writeLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
+router.delete('/colors/:id', adminWriteLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const color = await Color.findByIdAndDelete(id);
   if (!color) throw notFound('Color nahi mila.');
@@ -993,19 +993,19 @@ router.delete('/colors/:id', writeLimiter, validate({ params: idSchema }), async
 /* Sizes — 85.7                                                               */
 /* ========================================================================== */
 
-router.get('/sizes', readLimiter, async (_req: Request, res: Response) => {
+router.get('/sizes', adminReadLimiter, async (_req: Request, res: Response) => {
   const items = await Size.find().sort({ order: 1, value: 1 }).lean();
   res.json({ items });
 });
 
-router.post('/sizes', writeLimiter, validate({ body: sizeSchema }), async (req: Request, res: Response) => {
+router.post('/sizes', adminWriteLimiter, validate({ body: sizeSchema }), async (req: Request, res: Response) => {
   const body = (req as ValidatedRequest<z.infer<typeof sizeSchema>>).validated.body;
   const size = await Size.create(body);
   await logAction(req, 'CREATE', 'SIZE', String(size._id), size.label);
   res.status(201).json({ size });
 });
 
-router.patch('/sizes/:id', writeLimiter, validate({ params: idSchema, body: sizeSchema.partial() }), async (req: Request, res: Response) => {
+router.patch('/sizes/:id', adminWriteLimiter, validate({ params: idSchema, body: sizeSchema.partial() }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const body = (req as ValidatedRequest<Record<string, unknown>>).validated.body;
   const size = await Size.findByIdAndUpdate(id, { $set: body }, { new: true, runValidators: true });
@@ -1014,7 +1014,7 @@ router.patch('/sizes/:id', writeLimiter, validate({ params: idSchema, body: size
   res.json({ size });
 });
 
-router.delete('/sizes/:id', writeLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
+router.delete('/sizes/:id', adminWriteLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const size = await Size.findByIdAndDelete(id);
   if (!size) throw notFound('Size nahi mila.');
@@ -1026,19 +1026,19 @@ router.delete('/sizes/:id', writeLimiter, validate({ params: idSchema }), async 
 /* Coupons — 85.15                                                            */
 /* ========================================================================== */
 
-router.get('/coupons', readLimiter, async (_req: Request, res: Response) => {
+router.get('/coupons', adminReadLimiter, async (_req: Request, res: Response) => {
   const items = await Coupon.find().sort({ createdAt: -1 }).lean();
   res.json({ items });
 });
 
-router.post('/coupons', writeLimiter, validate({ body: couponSchema }), async (req: Request, res: Response) => {
+router.post('/coupons', adminWriteLimiter, validate({ body: couponSchema }), async (req: Request, res: Response) => {
   const body = (req as ValidatedRequest<z.infer<typeof couponSchema>>).validated.body;
   const coupon = await Coupon.create({ ...body, code: body.code.toUpperCase() });
   await logAction(req, 'CREATE', 'COUPON', String(coupon._id), coupon.code);
   res.status(201).json({ coupon });
 });
 
-router.patch('/coupons/:id', writeLimiter, validate({ params: idSchema, body: couponSchema.partial() }), async (req: Request, res: Response) => {
+router.patch('/coupons/:id', adminWriteLimiter, validate({ params: idSchema, body: couponSchema.partial() }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const body = (req as ValidatedRequest<Record<string, unknown>>).validated.body;
   const coupon = await Coupon.findByIdAndUpdate(id, { $set: body }, { new: true, runValidators: true });
@@ -1047,7 +1047,7 @@ router.patch('/coupons/:id', writeLimiter, validate({ params: idSchema, body: co
   res.json({ coupon });
 });
 
-router.delete('/coupons/:id', writeLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
+router.delete('/coupons/:id', adminWriteLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const coupon = await Coupon.findByIdAndDelete(id);
   if (!coupon) throw notFound('Coupon nahi mila.');
@@ -1059,19 +1059,19 @@ router.delete('/coupons/:id', writeLimiter, validate({ params: idSchema }), asyn
 /* Banners — 85.13                                                            */
 /* ========================================================================== */
 
-router.get('/banners', readLimiter, async (_req: Request, res: Response) => {
+router.get('/banners', adminReadLimiter, async (_req: Request, res: Response) => {
   const items = await Banner.find().sort({ order: 1, createdAt: -1 }).lean();
   res.json({ items });
 });
 
-router.post('/banners', writeLimiter, validate({ body: bannerSchema }), async (req: Request, res: Response) => {
+router.post('/banners', adminWriteLimiter, validate({ body: bannerSchema }), async (req: Request, res: Response) => {
   const body = (req as ValidatedRequest<z.infer<typeof bannerSchema>>).validated.body;
   const banner = await Banner.create(body);
   await logAction(req, 'CREATE', 'BANNER', String(banner._id), banner.title);
   res.status(201).json({ banner });
 });
 
-router.patch('/banners/:id', writeLimiter, validate({ params: idSchema, body: bannerSchema.partial() }), async (req: Request, res: Response) => {
+router.patch('/banners/:id', adminWriteLimiter, validate({ params: idSchema, body: bannerSchema.partial() }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const body = (req as ValidatedRequest<Record<string, unknown>>).validated.body;
   const banner = await Banner.findByIdAndUpdate(id, { $set: body }, { new: true, runValidators: true });
@@ -1080,7 +1080,7 @@ router.patch('/banners/:id', writeLimiter, validate({ params: idSchema, body: ba
   res.json({ banner });
 });
 
-router.delete('/banners/:id', writeLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
+router.delete('/banners/:id', adminWriteLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const banner = await Banner.findByIdAndDelete(id);
   if (!banner) throw notFound('Banner nahi mila.');
@@ -1092,7 +1092,7 @@ router.delete('/banners/:id', writeLimiter, validate({ params: idSchema }), asyn
 /* Offer popups — 85.14                                                       */
 /* ========================================================================== */
 
-router.get('/offer-popups', readLimiter, async (_req: Request, res: Response) => {
+router.get('/offer-popups', adminReadLimiter, async (_req: Request, res: Response) => {
   const items = await OfferPopup.find()
     .sort({ order: 1, createdAt: -1 })
     .populate('productId', 'designId name slug images sellingPriceInr mrpInr type')
@@ -1100,14 +1100,14 @@ router.get('/offer-popups', readLimiter, async (_req: Request, res: Response) =>
   res.json({ items });
 });
 
-router.post('/offer-popups', writeLimiter, validate({ body: offerPopupSchema }), async (req: Request, res: Response) => {
+router.post('/offer-popups', adminWriteLimiter, validate({ body: offerPopupSchema }), async (req: Request, res: Response) => {
   const body = (req as ValidatedRequest<z.infer<typeof offerPopupSchema>>).validated.body;
   const popup = await OfferPopup.create(body);
   await logAction(req, 'CREATE', 'OFFER_POPUP', String(popup._id), popup.offerType);
   res.status(201).json({ popup });
 });
 
-router.patch('/offer-popups/:id', writeLimiter, validate({ params: idSchema, body: offerPopupSchema.partial() }), async (req: Request, res: Response) => {
+router.patch('/offer-popups/:id', adminWriteLimiter, validate({ params: idSchema, body: offerPopupSchema.partial() }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const body = (req as ValidatedRequest<Record<string, unknown>>).validated.body;
   const popup = await OfferPopup.findByIdAndUpdate(id, { $set: body }, { new: true, runValidators: true });
@@ -1116,7 +1116,7 @@ router.patch('/offer-popups/:id', writeLimiter, validate({ params: idSchema, bod
   res.json({ popup });
 });
 
-router.delete('/offer-popups/:id', writeLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
+router.delete('/offer-popups/:id', adminWriteLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const popup = await OfferPopup.findByIdAndDelete(id);
   if (!popup) throw notFound('Offer popup nahi mila.');
@@ -1128,19 +1128,19 @@ router.delete('/offer-popups/:id', writeLimiter, validate({ params: idSchema }),
 /* Pages / Content — 85.12                                                    */
 /* ========================================================================== */
 
-router.get('/pages', readLimiter, async (_req: Request, res: Response) => {
+router.get('/pages', adminReadLimiter, async (_req: Request, res: Response) => {
   const items = await Page.find().sort({ createdAt: -1 }).lean();
   res.json({ items });
 });
 
-router.post('/pages', writeLimiter, validate({ body: pageSchema }), async (req: Request, res: Response) => {
+router.post('/pages', adminWriteLimiter, validate({ body: pageSchema }), async (req: Request, res: Response) => {
   const body = (req as ValidatedRequest<z.infer<typeof pageSchema>>).validated.body;
   const page = await Page.create(body);
   await logAction(req, 'CREATE', 'PAGE', String(page._id), page.slug);
   res.status(201).json({ page });
 });
 
-router.patch('/pages/:id', writeLimiter, validate({ params: idSchema, body: pageSchema.partial() }), async (req: Request, res: Response) => {
+router.patch('/pages/:id', adminWriteLimiter, validate({ params: idSchema, body: pageSchema.partial() }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const body = (req as ValidatedRequest<Record<string, unknown>>).validated.body;
   const page = await Page.findByIdAndUpdate(id, { $set: body }, { new: true, runValidators: true });
@@ -1149,7 +1149,7 @@ router.patch('/pages/:id', writeLimiter, validate({ params: idSchema, body: page
   res.json({ page });
 });
 
-router.delete('/pages/:id', writeLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
+router.delete('/pages/:id', adminWriteLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const page = await Page.findByIdAndDelete(id);
   if (!page) throw notFound('Page nahi mila.');
@@ -1185,19 +1185,19 @@ function sortHomeSections<T extends { order: number; key: string }>(items: T[]):
     .map(({ section }) => section);
 }
 
-router.get('/homepage-sections', readLimiter, async (_req: Request, res: Response) => {
+router.get('/homepage-sections', adminReadLimiter, async (_req: Request, res: Response) => {
   const items = await HomepageSection.find().sort({ order: 1 }).lean();
   res.json({ items: sortHomeSections(items) });
 });
 
-router.post('/homepage-sections', writeLimiter, validate({ body: homepageSectionSchema }), async (req: Request, res: Response) => {
+router.post('/homepage-sections', adminWriteLimiter, validate({ body: homepageSectionSchema }), async (req: Request, res: Response) => {
   const body = (req as ValidatedRequest<z.infer<typeof homepageSectionSchema>>).validated.body;
   const section = await HomepageSection.create(body);
   await logAction(req, 'CREATE', 'HOME_SECTION', String(section._id), section.title);
   res.status(201).json({ section });
 });
 
-router.patch('/homepage-sections/:id', writeLimiter, validate({ params: idSchema, body: homepageSectionSchema.partial() }), async (req: Request, res: Response) => {
+router.patch('/homepage-sections/:id', adminWriteLimiter, validate({ params: idSchema, body: homepageSectionSchema.partial() }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const body = (req as ValidatedRequest<Record<string, unknown>>).validated.body;
   const section = await HomepageSection.findByIdAndUpdate(id, { $set: body }, { new: true, runValidators: true });
@@ -1206,7 +1206,7 @@ router.patch('/homepage-sections/:id', writeLimiter, validate({ params: idSchema
   res.json({ section });
 });
 
-router.delete('/homepage-sections/:id', writeLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
+router.delete('/homepage-sections/:id', adminWriteLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const section = await HomepageSection.findByIdAndDelete(id);
   if (!section) throw notFound('Section nahi mila.');
@@ -1218,7 +1218,7 @@ router.delete('/homepage-sections/:id', writeLimiter, validate({ params: idSchem
 /* Customers — 85.28                                                          */
 /* ========================================================================== */
 
-router.get('/customers', readLimiter, async (req: Request, res: Response) => {
+router.get('/customers', adminReadLimiter, async (req: Request, res: Response) => {
   const filter: Record<string, unknown> = {};
   if (req.query.q) {
     const q = String(req.query.q).trim();
@@ -1237,7 +1237,7 @@ router.get('/customers', readLimiter, async (req: Request, res: Response) => {
   res.json({ items });
 });
 
-router.get('/customers/:id', readLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
+router.get('/customers/:id', adminReadLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const user = await User.findById(id).select('-refreshTokens').lean();
   if (!user) throw notFound('Customer nahi mila.');
@@ -1248,7 +1248,7 @@ router.get('/customers/:id', readLimiter, validate({ params: idSchema }), async 
   res.json({ user, orders, wishlistCount: wishlistCount?.products?.length ?? 0 });
 });
 
-router.patch('/customers/:id', writeLimiter, validate({
+router.patch('/customers/:id', adminWriteLimiter, validate({
   params: idSchema,
   body: z.object({ isBlocked: z.boolean().optional(), name: z.string().max(80).optional() }).strict(),
 }), async (req: Request, res: Response) => {
@@ -1264,11 +1264,11 @@ router.patch('/customers/:id', writeLimiter, validate({
 /* Reviews — 85.29                                                            */
 /* ========================================================================== */
 
-router.get('/reviews', readLimiter, async (req: Request, res: Response) => {
+router.get('/reviews', adminReadLimiter, async (req: Request, res: Response) => {
   const status = ['PENDING', 'APPROVED', 'REJECTED'].includes(String(req.query.status)) ? String(req.query.status) : undefined;
   res.json({ items: await Review.find(status ? { status } : {}).sort({ createdAt: -1 }).limit(200).populate('product', 'designId name').lean() });
 });
-router.patch('/reviews/:id/status', writeLimiter, validate({ params: idSchema, body: reviewStatusSchema }), async (req: Request, res: Response) => {
+router.patch('/reviews/:id/status', adminWriteLimiter, validate({ params: idSchema, body: reviewStatusSchema }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const { status } = (req as ValidatedRequest<{ status: string }>).validated.body;
   const review = await Review.findByIdAndUpdate(id, { $set: { status } }, { new: true });
@@ -1281,14 +1281,14 @@ router.patch('/reviews/:id/status', writeLimiter, validate({ params: idSchema, b
 /* Measurements — 85.21–85.22                                                 */
 /* ========================================================================== */
 
-router.get('/measurements', readLimiter, async (_req: Request, res: Response) => res.json({ items: await MeasurementField.find().sort({ order: 1 }).lean() }));
-router.post('/measurements', writeLimiter, validate({ body: measurementSchema }), async (req: Request, res: Response) => {
+router.get('/measurements', adminReadLimiter, async (_req: Request, res: Response) => res.json({ items: await MeasurementField.find().sort({ order: 1 }).lean() }));
+router.post('/measurements', adminWriteLimiter, validate({ body: measurementSchema }), async (req: Request, res: Response) => {
   const body = (req as ValidatedRequest<z.infer<typeof measurementSchema>>).validated.body;
   const field = await MeasurementField.create(body);
   await logAction(req, 'CREATE', 'MEASUREMENT_FIELD', String(field._id), field.key);
   res.status(201).json({ field });
 });
-router.patch('/measurements/:id', writeLimiter, validate({ params: idSchema, body: measurementSchema.partial() }), async (req: Request, res: Response) => {
+router.patch('/measurements/:id', adminWriteLimiter, validate({ params: idSchema, body: measurementSchema.partial() }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const body = (req as ValidatedRequest<Record<string, unknown>>).validated.body;
   const field = await MeasurementField.findByIdAndUpdate(id, { $set: body }, { new: true, runValidators: true });
@@ -1296,7 +1296,7 @@ router.patch('/measurements/:id', writeLimiter, validate({ params: idSchema, bod
   await logAction(req, 'UPDATE', 'MEASUREMENT_FIELD', id, String(field.key));
   res.json({ field });
 });
-router.delete('/measurements/:id', writeLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
+router.delete('/measurements/:id', adminWriteLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const field = await MeasurementField.findByIdAndDelete(id);
   if (!field) throw notFound('Measurement field nahi mila.');
@@ -1308,14 +1308,14 @@ router.delete('/measurements/:id', writeLimiter, validate({ params: idSchema }),
 /* Enquiries — WhatsApp & contact (85.30)                                     */
 /* ========================================================================== */
 
-router.get('/enquiries', readLimiter, async (req: Request, res: Response) => {
+router.get('/enquiries', adminReadLimiter, async (req: Request, res: Response) => {
   const filter: Record<string, unknown> = {};
   if (req.query.channel) filter.channel = String(req.query.channel);
   const items = await Enquiry.find(filter).sort({ createdAt: -1 }).limit(200).populate('product', 'designId name').lean();
   res.json({ items });
 });
 
-router.delete('/enquiries/:id', writeLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
+router.delete('/enquiries/:id', adminWriteLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const enquiry = await Enquiry.findByIdAndDelete(id);
   if (!enquiry) throw notFound('Enquiry nahi mili.');
@@ -1327,7 +1327,7 @@ router.delete('/enquiries/:id', writeLimiter, validate({ params: idSchema }), as
 /* Analytics — 85.2 deep drill / module 29                                    */
 /* ========================================================================== */
 
-router.get('/analytics/overview', readLimiter, async (req: Request, res: Response) => {
+router.get('/analytics/overview', adminReadLimiter, async (req: Request, res: Response) => {
   const from = req.query.from ? new Date(String(req.query.from)) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const to = req.query.to ? new Date(String(req.query.to)) : new Date();
   const range = { $gte: from, $lte: to };
@@ -1342,7 +1342,7 @@ router.get('/analytics/overview', readLimiter, async (req: Request, res: Respons
   res.json({ from, to, eventBreakdown, topPages, topSearches, sourceBreakdown, deviceBreakdown, uniqueSessions: uniqueSessions.length });
 });
 
-router.get('/analytics/products', readLimiter, async (req: Request, res: Response) => {
+router.get('/analytics/products', adminReadLimiter, async (req: Request, res: Response) => {
   const from = req.query.from ? new Date(String(req.query.from)) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const to = req.query.to ? new Date(String(req.query.to)) : new Date();
   const range = { $gte: from, $lte: to };
@@ -1364,12 +1364,12 @@ router.get('/analytics/products', readLimiter, async (req: Request, res: Respons
 /* Admin users & roles — 85.1 / module 31                                     */
 /* ========================================================================== */
 
-router.get('/admin-users', readLimiter, async (_req: Request, res: Response) => {
-  const items = await User.find({ adminRoles: { $size: { $gte: 1 } } }).select('name mobile email adminRoles isBlocked lastLoginAt createdAt').lean();
+router.get('/admin-users', adminReadLimiter, async (_req: Request, res: Response) => {
+  const items = await User.find({ adminRoles: { $exists: true, $ne: [] } }).select('name mobile email adminRoles isBlocked lastLoginAt createdAt').lean();
   res.json({ items });
 });
 
-router.post('/admin-users', writeLimiter, validate({ body: userAdminSchema }), async (req: Request, res: Response) => {
+router.post('/admin-users', adminWriteLimiter, validate({ body: userAdminSchema }), async (req: Request, res: Response) => {
   const body = (req as ValidatedRequest<z.infer<typeof userAdminSchema>>).validated.body;
   const me = await User.findById(adminId(req)).lean();
   if (!me?.adminRoles?.includes('SUPER_ADMIN')) throw forbidden('Sirf Super Admin staff add kar sakta hai.');
@@ -1383,7 +1383,7 @@ router.post('/admin-users', writeLimiter, validate({ body: userAdminSchema }), a
   res.status(201).json({ user });
 });
 
-router.patch('/admin-users/:id', writeLimiter, validate({
+router.patch('/admin-users/:id', adminWriteLimiter, validate({
   params: idSchema,
   body: z.object({
     roles: z.array(z.enum([...ADMIN_ROLES] as [AdminRole, ...AdminRole[]])).optional(),
@@ -1402,7 +1402,7 @@ router.patch('/admin-users/:id', writeLimiter, validate({
   res.json({ user });
 });
 
-router.delete('/admin-users/:id', writeLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
+router.delete('/admin-users/:id', adminWriteLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   if (id === adminId(req)) throw conflict('Aap khud ko remove nahi kar sakte.');
   const me = await User.findById(adminId(req)).lean();
@@ -1417,8 +1417,8 @@ router.delete('/admin-users/:id', writeLimiter, validate({ params: idSchema }), 
 /* Settings — 85.32                                                           */
 /* ========================================================================== */
 
-router.get('/settings', readLimiter, async (_req: Request, res: Response) => res.json({ items: await Setting.find().sort({ key: 1 }).lean() }));
-router.put('/settings/:key', writeLimiter, validate({ body: settingSchema }), async (req: Request, res: Response) => {
+router.get('/settings', adminReadLimiter, async (_req: Request, res: Response) => res.json({ items: await Setting.find().sort({ key: 1 }).lean() }));
+router.put('/settings/:key', adminWriteLimiter, validate({ body: settingSchema }), async (req: Request, res: Response) => {
   const key = String(req.params.key).trim().slice(0, 60);
   const setting = await Setting.findOneAndUpdate({ key }, { $set: { value: (req as ValidatedRequest<{ value: unknown }>).validated.body.value, updatedBy: adminId(req) } }, { upsert: true, new: true });
   invalidateSettingsCache();
@@ -1430,16 +1430,16 @@ router.put('/settings/:key', writeLimiter, validate({ body: settingSchema }), as
 /* Activity log — 85.34                                                       */
 /* ========================================================================== */
 
-router.get('/activity', readLimiter, async (_req: Request, res: Response) => res.json({ items: await AdminActivityLog.find().sort({ at: -1 }).limit(200).lean() }));
+router.get('/activity', adminReadLimiter, async (_req: Request, res: Response) => res.json({ items: await AdminActivityLog.find().sort({ at: -1 }).limit(200).lean() }));
 
 /* ========================================================================== */
 /* Backups & export — 85.35–85.36                                             */
 /* ========================================================================== */
 
-router.get('/export/products', readLimiter, async (_req: Request, res: Response) => res.json({ items: await Product.find().lean() }));
-router.get('/export/orders', readLimiter, async (_req: Request, res: Response) => res.json({ items: await Order.find().sort({ placedAt: -1 }).limit(500).lean() }));
-router.get('/export/customers', readLimiter, async (_req: Request, res: Response) => res.json({ items: await User.find().select('-refreshTokens').lean() }));
-router.get('/export/inventory', readLimiter, async (_req: Request, res: Response) => {
+router.get('/export/products', adminReadLimiter, async (_req: Request, res: Response) => res.json({ items: await Product.find().lean() }));
+router.get('/export/orders', adminReadLimiter, async (_req: Request, res: Response) => res.json({ items: await Order.find().sort({ placedAt: -1 }).limit(500).lean() }));
+router.get('/export/customers', adminReadLimiter, async (_req: Request, res: Response) => res.json({ items: await User.find().select('-refreshTokens').lean() }));
+router.get('/export/inventory', adminReadLimiter, async (_req: Request, res: Response) => {
   const [fabrics, laces, latkans, products] = await Promise.all([
     Fabric.find().select('name material colorName stockMeters inStock slug').lean(),
     Lace.find().select('name colorName inStock slug priceInr').lean(),

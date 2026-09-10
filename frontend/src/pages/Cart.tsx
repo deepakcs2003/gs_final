@@ -339,7 +339,7 @@ function CartRow({
                 type="button"
                 aria-label="Zyada karein"
                 className="h-9 w-9 text-lg font-bold text-maroon-700 disabled:opacity-40"
-                disabled={line.quantity >= 10}
+                disabled={line.quantity >= 20}
                 onClick={() => onQuantity(line.quantity + 1)}
               >
                 +
