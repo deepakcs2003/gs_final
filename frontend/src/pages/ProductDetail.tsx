@@ -373,7 +373,7 @@ export function ProductDetailPage() {
                 </li>
               </ol>
               <p className="mt-2.5 rounded-lg bg-white/70 px-2.5 py-2 text-[12px] font-semibold text-maroon-700">
-                Is blouse ke liye available: {product.fabricOptionIds.length} fabrics · {product.laceOptionIds.length} laces · {product.latkanOptionIds.length} latkans
+                Is blouse ke liye: {product.minFabricCount}-{product.maxFabricCount} fabrics · {product.minLaceCount}-{product.maxLaceCount} laces · {product.minLatkanCount}-{product.maxLatkanCount} latkans
               </p>
             </div>
           ) : null}
@@ -512,11 +512,12 @@ export function ProductDetailPage() {
           onClose={() => setFabricOpen(false)}
           product={product}
           currency={currency}
-          onConfirm={({ fabric, laces, latkans }) => {
+              onConfirm={({ fabrics, laces, latkans }) => {
               const key = addToCart({
                 product,
-                fabricId: fabric.id,
-                fabricName: `${fabric.colorName} ${fabric.name}`,
+                fabricId: fabrics[0].id,
+                fabricIds: fabrics.map((fabric) => fabric.id),
+                fabricName: fabrics.map((fabric) => `${fabric.colorName} ${fabric.name}`).join(', '),
                 laceIds: laces.map((l) => l.id),
                 laceColors: laces.map(({ id, colorName, colorHex }) => ({ id, colorName, colorHex })),
                 laceName: laces

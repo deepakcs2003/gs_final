@@ -52,8 +52,12 @@ interface ProductLike {
   fabricOptions?: unknown[] | null;
   laceOptions?: unknown[] | null;
   latkanOptions?: unknown[] | null;
-  defaultLaceCount?: number | null;
-  defaultLatkanCount?: number | null;
+  minFabricCount?: number | null;
+  maxFabricCount?: number | null;
+  minLaceCount?: number | null;
+  maxLaceCount?: number | null;
+  minLatkanCount?: number | null;
+  maxLatkanCount?: number | null;
   fabricInfo?: string | null;
   embroidery?: string[] | null;
   careInstructions?: string | null;
@@ -89,6 +93,12 @@ export function presentProductCard(product: ProductLike, currency: Currency, fxR
     comingSoon: Boolean(product.comingSoon),
     expectedAvailability: product.expectedAvailability ?? '',
     inStock: isReadyMade ? totalStock > 0 : true,
+    minFabricCount: product.minFabricCount ?? 1,
+    maxFabricCount: product.maxFabricCount ?? 1,
+    minLaceCount: product.minLaceCount ?? 1,
+    maxLaceCount: product.maxLaceCount ?? 1,
+    minLatkanCount: product.minLatkanCount ?? 1,
+    maxLatkanCount: product.maxLatkanCount ?? 1,
     // Coarse signal only — never the raw inventory count.
     lowStock: isReadyMade && totalStock > 0 && totalStock <= LOW_STOCK_THRESHOLD ? totalStock : null,
   };
@@ -125,10 +135,14 @@ export function presentProductDetail(product: ProductLike, currency: Currency, f
     videoUrl: product.videoUrl ?? '',
     availability,
     fabricOptionIds: (product.fabricOptions ?? []).map(String),
+    minFabricCount: product.minFabricCount ?? 1,
+    maxFabricCount: product.maxFabricCount ?? 1,
     laceOptionIds: (product.laceOptions ?? []).map(String),
-    defaultLaceCount: product.defaultLaceCount ?? 2,
+    minLaceCount: product.minLaceCount ?? 1,
+    maxLaceCount: product.maxLaceCount ?? 1,
     latkanOptionIds: (product.latkanOptions ?? []).map(String),
-    defaultLatkanCount: product.defaultLatkanCount ?? 2,
+    minLatkanCount: product.minLatkanCount ?? 1,
+    maxLatkanCount: product.maxLatkanCount ?? 1,
     fabricInfo: product.fabricInfo ?? '',
     embroidery: product.embroidery ?? [],
     careInstructions: product.careInstructions ?? '',

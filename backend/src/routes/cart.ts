@@ -67,6 +67,7 @@ router.put('/', requireAuth, writeLimiter, validate({ body: saveCartSchema }), a
     colorSlug: line.colorSlug ?? '',
     size: line.size ?? null,
     fabric: line.fabricId ?? null,
+    fabrics: line.fabricIds ?? (line.fabricId ? [line.fabricId] : []),
     laces: line.laceIds ?? [],
     laceColors: (line.laceColors ?? []).map((c) => ({ id: c.laceId, colorName: c.colorName, colorHex: c.colorHex ?? '' })),
     latkans: line.latkanIds ?? [],

@@ -25,6 +25,7 @@ export interface CartLineInput {
   colorSlug?: string;
   size?: number | null;
   fabricId?: string | null;
+  fabricIds?: string[];
   laceIds?: string[];
   /** Chosen colour per lace — folded into `laceNames` as "Name (Colour)". */
   laceColors?: Array<{ laceId: string; colorName: string; colorHex?: string }>;
@@ -126,7 +127,10 @@ export async function quoteCart(inputLines: CartLineInput[], ctx: QuoteContext):
   // Bulk-load everything referenced, so pricing is a fixed number of queries
   // no matter how many lines the cart has.
   const productIds = lines.map((l) => objectIdOrNull(l.productId)).filter((id): id is Types.ObjectId => id !== null);
-  const fabricIds = lines.map((l) => objectIdOrNull(l.fabricId)).filter((id): id is Types.ObjectId => id !== null);
+  const fabricIds = lines
+    .flatMap((l) => l.fabricIds?.length ? l.fabricIds : [l.fabricId])
+    .map(objectIdOrNull)
+    .filter((id): id is Types.ObjectId => id !== null);
   const laceIds = lines
     .flatMap((l) => l.laceIds ?? [])
     .map(objectIdOrNull)
@@ -215,26 +219,30 @@ export async function quoteCart(inputLines: CartLineInput[], ctx: QuoteContext):
     const chosenLatkanIds: string[] = [];
 
     if (type === 'CUSTOMIZE') {
-      const fabric = line.fabricId ? fabricMap.get(String(line.fabricId)) : undefined;
+      const requestedFabricIds = (line.fabricIds?.length ? line.fabricIds : line.fabricId ? [line.fabricId] : []).slice(0, 6);
+      const fabrics = requestedFabricIds.map((id) => fabricMap.get(String(id))).filter((fabric): fabric is NonNullable<typeof fabric> => Boolean(fabric));
 
-      if (!fabric) {
+      if (fabrics.length === 0) {
         issues.push('Fabric choose karein.');
       } else {
-        const allowed =
-          !product.fabricOptions?.length || product.fabricOptions.some((id) => String(id) === String(fabric._id));
-        if (!allowed) {
-          issues.push('Yeh fabric is design ke liye available nahi hai.');
-        } else if (!fabric.inStock) {
-          issues.push(`${fabric.colorName} ${fabric.name} abhi out of stock hai.`);
-        } else {
-          fabricUnitInr = fabric.priceInr;
-          fabricName = fabric.name;
-          fabricMaterial = fabric.material;
-          fabricColorName = fabric.colorName;
+        if (fabrics.length < (product.minFabricCount ?? 1)) issues.push(`Is blouse mein minimum ${product.minFabricCount ?? 1} fabric choose karein.`);
+        if (fabrics.length > (product.maxFabricCount ?? 1)) issues.push(`Is blouse mein maximum ${product.maxFabricCount ?? 1} fabric choose kar sakte hain.`);
+        for (const fabric of fabrics) {
+          const allowed = !product.fabricOptions?.length || product.fabricOptions.some((id) => String(id) === String(fabric._id));
+          if (!allowed) issues.push('Yeh fabric is design ke liye available nahi hai.');
+          else if (!fabric.inStock) issues.push(`${fabric.colorName} ${fabric.name} abhi out of stock hai.`);
+          else {
+            fabricUnitInr += fabric.priceInr;
+            fabricName = fabricName ? `${fabricName}, ${fabric.name}` : fabric.name;
+            fabricMaterial = fabricMaterial ? `${fabricMaterial}, ${fabric.material}` : fabric.material;
+            fabricColorName = fabricColorName ? `${fabricColorName}, ${fabric.colorName}` : fabric.colorName;
+          }
         }
       }
 
       const laceColorBy = new Map((line.laceColors ?? []).slice(0, 6).map((c) => [String(c.laceId), c.colorName]));
+      if ((line.laceIds ?? []).length < (product.minLaceCount ?? 1)) issues.push(`Is blouse mein minimum ${product.minLaceCount ?? 1} lace choose karein.`);
+      if ((line.laceIds ?? []).length > (product.maxLaceCount ?? 1)) issues.push(`Is blouse mein maximum ${product.maxLaceCount ?? 1} laces choose kar sakte hain.`);
       for (const rawId of (line.laceIds ?? []).slice(0, 6)) {
         const lace = laceMap.get(String(rawId));
         if (!lace) continue;
@@ -250,6 +258,8 @@ export async function quoteCart(inputLines: CartLineInput[], ctx: QuoteContext):
       }
 
       const latkanColorBy = new Map((line.latkanColors ?? []).slice(0, 6).map((c) => [String(c.latkanId), c.colorName]));
+      if ((line.latkanIds ?? []).length < (product.minLatkanCount ?? 1)) issues.push(`Is blouse mein minimum ${product.minLatkanCount ?? 1} latkan choose karein.`);
+      if ((line.latkanIds ?? []).length > (product.maxLatkanCount ?? 1)) issues.push(`Is blouse mein maximum ${product.maxLatkanCount ?? 1} latkans choose kar sakte hain.`);
       for (const rawId of (line.latkanIds ?? []).slice(0, 6)) {
         const latkan = latkanMap.get(String(rawId));
         if (!latkan) continue;

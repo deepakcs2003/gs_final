@@ -47,6 +47,7 @@ const cartItemSchema = new Schema(
 
     // CUSTOMIZE
     fabric: { type: Schema.Types.ObjectId, ref: 'Fabric', default: null },
+    fabrics: { type: [{ type: Schema.Types.ObjectId, ref: 'Fabric' }], default: [] },
     laces: { type: [{ type: Schema.Types.ObjectId, ref: 'Lace' }], default: [] },
     laceColors: { type: [accessoryColorSchema], default: [] },
     latkans: { type: [{ type: Schema.Types.ObjectId, ref: 'Latkan' }], default: [] },

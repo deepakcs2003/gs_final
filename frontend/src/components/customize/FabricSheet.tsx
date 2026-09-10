@@ -40,9 +40,9 @@ interface FabricSheetProps {
    * limited to these when configured (READY_MADE/product-id restricted set
    * comes server-side via /fabrics?productId, see §14).
    */
-  product: ProductCard & { laceOptionIds?: string[]; latkanOptionIds?: string[]; fabricOptionIds?: string[] };
+  product: ProductCard & { laceOptionIds?: string[]; latkanOptionIds?: string[]; fabricOptionIds?: string[]; minFabricCount?: number; maxFabricCount?: number; minLaceCount?: number; maxLaceCount?: number; minLatkanCount?: number; maxLatkanCount?: number };
   currency: Currency;
-  onConfirm: (selection: { fabric: Fabric; laces: AccessoryPick[]; latkans: AccessoryPick[] }) => void;
+  onConfirm: (selection: { fabrics: Fabric[]; laces: AccessoryPick[]; latkans: AccessoryPick[] }) => void;
 }
 
 const PRICE_BUCKETS = [
@@ -58,7 +58,7 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
   const [embroidery, setEmbroidery] = useState<string[]>([]);
   const [maxPriceInr, setMaxPriceInr] = useState<number | undefined>();
 
-  const [fabricId, setFabricId] = useState<string>('');
+  const [fabricIds, setFabricIds] = useState<string[]>([]);
   const [laceIds, setLaceIds] = useState<string[]>([]);
   const [latkanIds, setLatkanIds] = useState<string[]>([]);
   /** Colour choice per selected lace/latkan, keyed by item id. */
@@ -76,7 +76,8 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
 
   const fabrics = data?.items ?? [];
   const facets = data?.facets;
-  const selectedFabric = fabrics.find((f) => f.id === fabricId);
+  const selectedFabrics = fabrics.filter((f) => fabricIds.includes(f.id));
+  const selectedFabric = selectedFabrics[0];
 
   const activeFilterCount = colors.length + materials.length + embroidery.length + (maxPriceInr ? 1 : 0);
 
@@ -101,6 +102,14 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
 
   const toggle = (list: string[], setList: (next: string[]) => void, value: string) => {
     setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
+  };
+
+  const toggleFabric = (fabric: Fabric) => {
+    if (fabricIds.includes(fabric.id)) {
+      setFabricIds(fabricIds.filter((id) => id !== fabric.id));
+    } else if (fabric.inStock && fabricIds.length < (product.maxFabricCount ?? 1)) {
+      setFabricIds([...fabricIds, fabric.id]);
+    }
   };
 
   const fabricColor: AccessoryColor | null = selectedFabric
@@ -143,7 +152,9 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
       });
       setColorSheetFor((prev) => (prev?.itemId === itemId ? null : prev));
     } else {
-      setList([...list, itemId].slice(0, 6));
+      const limit = kind === 'lace' ? (product.maxLaceCount ?? 1) : (product.maxLatkanCount ?? 1);
+      if (list.length >= limit) return;
+      setList([...list, itemId]);
       // New taps default to "same colour as fabric".
       setMap((prev) => ({ ...prev, [itemId]: { mode: 'fabric' } }));
       setColorSheetFor({ kind, itemId });
@@ -151,7 +162,7 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
   };
 
   const totalMinor =
-    (selectedFabric?.priceMinor ?? 0) +
+    selectedFabrics.reduce((sum, fabric) => sum + fabric.priceMinor, 0) +
     (laces ?? []).filter((l) => laceIds.includes(l.id)).reduce((sum, l) => sum + l.priceMinor, 0) +
     (latkans ?? []).filter((l) => latkanIds.includes(l.id)).reduce((sum, l) => sum + l.priceMinor, 0);
 
@@ -227,11 +238,15 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
           <button
             type="button"
             className="btn-primary btn-lg shrink-0 px-7"
-            disabled={!selectedFabric}
+            disabled={
+              selectedFabrics.length < (product.minFabricCount ?? 1) ||
+              laceIds.length < (product.minLaceCount ?? 1) ||
+              latkanIds.length < (product.minLatkanCount ?? 1)
+            }
             onClick={() => {
               if (!selectedFabric) return;
               onConfirm({
-                fabric: selectedFabric,
+                fabrics: selectedFabrics,
                 laces: resolvePicks(laces ?? [], laceColors, laceIds),
                 latkans: resolvePicks(latkans ?? [], latkanColors, latkanIds),
               });
@@ -295,7 +310,7 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
         </div>
 
         {/* Fabrics (available for this blouse) */}
-        {!isLoading && fabrics.length > 0 ? <h3 className="label">Fabrics ({fabrics.length})</h3> : null}
+        {!isLoading && fabrics.length > 0 ? <h3 className="label">Fabrics ({selectedFabrics.length}/{product.minFabricCount ?? 1}-{product.maxFabricCount ?? 1})</h3> : null}
         {isLoading ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {Array.from({ length: 6 }).map((_, index) => (
@@ -309,13 +324,13 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {fabrics.map((fabric) => {
-              const isSelected = fabric.id === fabricId;
+              const isSelected = fabricIds.includes(fabric.id);
               return (
                 <button
                   key={fabric.id}
                   type="button"
                   disabled={!fabric.inStock}
-                  onClick={() => setFabricId(fabric.id)}
+                  onClick={() => toggleFabric(fabric)}
                   className={clsx(
                     'group relative overflow-hidden rounded-xl2 border-2 bg-white text-left transition',
                     isSelected ? 'border-maroon-600 shadow-lift' : 'border-transparent shadow-card',
@@ -353,7 +368,7 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
         {availableLaces.length > 0 ? (
           <section className={clsx('transition', fabricLocked && 'pointer-events-none select-none')}>
             <h3 className="label">
-              Laces ({availableLaces.length}) <span className="font-normal text-ink-muted">— is blouse ke liye available</span>
+              Laces ({availableLaces.length}) <span className="font-normal text-ink-muted">— {laceIds.length}/{product.minLaceCount ?? 1}-{product.maxLaceCount ?? 1} select</span>
             </h3>
             <p className="mb-2 mt-0.5 text-[11px] text-ink-muted">
               Kisi bhi lace par tap karein — uska colour chunne ka option khul jayega.
@@ -403,7 +418,7 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
         {availableLatkans.length > 0 ? (
           <section className={clsx('transition', fabricLocked && 'pointer-events-none select-none')}>
             <h3 className="label">
-              Latkans ({availableLatkans.length}) <span className="font-normal text-ink-muted">— is blouse ke liye available</span>
+              Latkans ({availableLatkans.length}) <span className="font-normal text-ink-muted">— {latkanIds.length}/{product.minLatkanCount ?? 1}-{product.maxLatkanCount ?? 1} select</span>
             </h3>
             <p className="mb-2 mt-0.5 text-[11px] text-ink-muted">
               Kisi bhi latkan par tap karein — uska colour chunne ka option khul jayega.

@@ -60,6 +60,7 @@ export const cartLineSchema = z
       .optional(),
     size: z.number().int().min(20).max(60).nullable().optional(),
     fabricId: objectId.nullable().optional(),
+    fabricIds: z.array(objectId).min(1).max(6).optional(),
     laceIds: z.array(objectId).max(6).optional(),
     laceColors: z.array(laceColorSchema).max(6).optional(),
     latkanIds: z.array(objectId).max(6).optional(),

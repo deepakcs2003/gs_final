@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, ApiError } from '../../lib/api';
 import { Badge, BtnGhost, BtnOutline, BtnPrimary, Checkbox, ColorPaletteSelect, Field, ImagePicker, Modal, PaletteColor, Select, StringListEditor, TextArea, TextInput, Toolbar, Toggle, inr, slugify } from './shared';
-import { Archive, Copy, Plus, Pencil, X, Check, Sparkles, Layers } from 'lucide-react';
+import { Archive, Copy, Plus, Pencil, X, Check, Sparkles } from 'lucide-react';
 
 export interface AdminCategory { _id: string; name: string; slug: string }
 export interface AdminProduct {
@@ -13,7 +13,7 @@ export interface AdminProduct {
   images: Array<{ url: string; alt: string; kind: string }>;
   videoUrl: string; colors: Array<{ name: string; slug: string; hex: string }>;
   sizes: number[]; variants: Array<{ colorSlug: string; size: number; stock: number; sku: string }>;
-  fabricOptions: string[]; laceOptions: string[]; defaultLaceCount: number; latkanOptions: string[]; defaultLatkanCount: number; stitchingChargeInr: number;
+  fabricOptions: string[]; laceOptions: string[]; latkanOptions: string[]; minFabricCount: number; maxFabricCount: number; minLaceCount: number; maxLaceCount: number; minLatkanCount: number; maxLatkanCount: number; stitchingChargeInr: number;
   fabricInfo: string; embroidery: string[]; careInstructions: string; stitchingInfo: string; stitchingDays: number;
   expectedAvailability: string; comingSoon: boolean;
   isActive: boolean; seo: { title: string; description: string; keywords: string[]; ogImage: string };
@@ -22,18 +22,10 @@ export interface AdminProduct {
   createdBy?: { _id?: string; name?: string; mobile?: string } | string | null;
 }
 
-/** A catalog item shown in "Add Material" (fabric / lace / latkan). */
-interface MaterialOption {
-  _id: string;
-  name: string;
-  isActive?: boolean;
-  inStock?: boolean;
-}
-
 const emptyProduct = (category = ''): AdminProduct => ({
   _id: '', designId: '', slug: '', name: '', description: '', type: 'READY_MADE', category,
   subCategory: null, tags: [], mrpInr: 0, sellingPriceInr: 0, images: [], videoUrl: '',
-  colors: [], sizes: [], variants: [], fabricOptions: [], laceOptions: [], defaultLaceCount: 2, latkanOptions: [], defaultLatkanCount: 2, stitchingChargeInr: 0,
+  colors: [], sizes: [], variants: [], fabricOptions: [], laceOptions: [], latkanOptions: [], minFabricCount: 1, maxFabricCount: 1, minLaceCount: 1, maxLaceCount: 1, minLatkanCount: 1, maxLatkanCount: 1, stitchingChargeInr: 0,
   fabricInfo: '', embroidery: [], careInstructions: '', stitchingInfo: '', stitchingDays: 7,
   expectedAvailability: '', comingSoon: false, isActive: true, seo: { title: '', description: '', keywords: [], ogImage: '' },
 });
@@ -56,9 +48,6 @@ export function ProductsModule() {
   const [items, setItems] = useState<AdminProduct[]>([]);
   const [categories, setCategories] = useState<AdminCategory[]>([]);
   const [palette, setPalette] = useState<PaletteColor[]>([]);
-  const [materialFabrics, setMaterialFabrics] = useState<MaterialOption[]>([]);
-  const [materialLaces, setMaterialLaces] = useState<MaterialOption[]>([]);
-  const [materialLatkans, setMaterialLatkans] = useState<MaterialOption[]>([]);
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('ALL');
   const [form, setForm] = useState<AdminProduct | null>(null);
@@ -73,20 +62,14 @@ export function ProductsModule() {
   const load = async () => {
     setError('');
     try {
-      const [productData, categoryData, colorData, fabricData, laceData, latkanData] = await Promise.all([
+      const [productData, categoryData, colorData] = await Promise.all([
         api<{ items: AdminProduct[] }>('/admin/products?includeArchived=true'),
         api<{ items: AdminCategory[] }>('/admin/categories'),
         api<{ items: PaletteColor[] }>('/admin/colors'),
-        api<{ items: MaterialOption[] }>('/admin/fabrics'),
-        api<{ items: MaterialOption[] }>('/admin/laces'),
-        api<{ items: MaterialOption[] }>('/admin/latkans'),
       ]);
       setItems(productData.items);
       setCategories(categoryData.items);
       setPalette(colorData.items);
-      setMaterialFabrics(fabricData.items);
-      setMaterialLaces(laceData.items);
-      setMaterialLatkans(latkanData.items);
     } catch (err) { setError(err instanceof ApiError ? err.message : 'Products load nahi hue.'); }
   };
   useEffect(() => { void load(); }, []);
@@ -200,8 +183,10 @@ export function ProductsModule() {
 
   const save = () => {
     if (!form) return;
-    if (form.type === 'CUSTOMIZE' && form.fabricOptions.length === 0) {
-      setError('Customize blouse ke liye kam se kam ek fabric choose karna zaroori hai (Add Material).');
+    if (form.type === 'CUSTOMIZE' && (
+      form.minFabricCount > form.maxFabricCount || form.minLaceCount > form.maxLaceCount || form.minLatkanCount > form.maxLatkanCount
+    )) {
+      setError('Har material ka minimum count maximum count se kam ya barabar hona chahiye.');
       return;
     }
     void run(form._id || 'new', async () => {
@@ -210,9 +195,12 @@ export function ProductsModule() {
       const { _id, stats, createdAt, updatedAt, createdBy, ...values } = form;
       const body = {
         ...values,
+        ...(values.type === 'CUSTOMIZE' ? { fabricOptions: [], laceOptions: [], latkanOptions: [] } : {}),
         mrpInr: Number(values.mrpInr), sellingPriceInr: Number(values.sellingPriceInr),
         stitchingChargeInr: Number(values.stitchingChargeInr), stitchingDays: Number(values.stitchingDays),
-        defaultLaceCount: Number(values.defaultLaceCount), defaultLatkanCount: Number(values.defaultLatkanCount),
+        minFabricCount: Number(values.minFabricCount), maxFabricCount: Number(values.maxFabricCount),
+        minLaceCount: Number(values.minLaceCount), maxLaceCount: Number(values.maxLaceCount),
+        minLatkanCount: Number(values.minLatkanCount), maxLatkanCount: Number(values.maxLatkanCount),
         colors: values.colors.filter((c) => c.name),
         variants: values.variants.map((v) => ({ ...v, size: Number(v.size), stock: Number(v.stock) })),
         images: values.images.filter((img) => img.url),
@@ -246,8 +234,8 @@ export function ProductsModule() {
   });
 
   const openNew = () => {
-    // By default a CUSTOMIZE blouse offers every fabric ("Add Material").
-    setForm({ ...emptyProduct(categories[0]?._id ?? ''), fabricOptions: materialFabrics.map((f) => f._id) });
+    // Empty material lists mean all active catalog materials on the storefront.
+    setForm(emptyProduct(categories[0]?._id ?? ''));
     setNewEditor(true); setQwenMsg(null); setLastGen({});
   };
   const openEdit = (product: AdminProduct) => {
@@ -335,7 +323,7 @@ export function ProductsModule() {
             <Field label="Type"><Select value={form.type} onChange={(e) => {
               const type = e.target.value as AdminProduct['type'];
               // Switching to CUSTOMIZE with no fabrics chosen defaults to "all fabrics".
-              setForm({ ...form, type, fabricOptions: type === 'CUSTOMIZE' && form.fabricOptions.length === 0 ? materialFabrics.map((f) => f._id) : form.fabricOptions });
+              setForm({ ...form, type, fabricOptions: type === 'CUSTOMIZE' ? [] : form.fabricOptions });
             }}>
               <option value="READY_MADE">Ready to Buy</option><option value="CUSTOMIZE">Customize</option><option value="SHOWCASE">Showcase / Upcoming</option>
             </Select></Field>
@@ -405,8 +393,12 @@ export function ProductsModule() {
               <div className="sm:col-span-2 rounded-xl border border-maroon-100 bg-maroon-50/30 p-4">
                 <h4 className="text-sm font-bold text-maroon-700">Customize options</h4>
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <Field label="Default lace count" hint="Customer kitni laces select kar sakta hai (max 6)"><TextInput type="number" min={0} max={6} value={form.defaultLaceCount} onChange={(e) => setForm({ ...form, defaultLaceCount: Number(e.target.value) })} /></Field>
-                  <Field label="Default latkan count" hint="Customer kitne latkan select kar sakta hai (max 6)"><TextInput type="number" min={0} max={6} value={form.defaultLatkanCount} onChange={(e) => setForm({ ...form, defaultLatkanCount: Number(e.target.value) })} /></Field>
+                  <Field label="Minimum fabric" hint="Default 1, maximum 6"><TextInput type="number" min={1} max={6} value={form.minFabricCount} onChange={(e) => setForm({ ...form, minFabricCount: Number(e.target.value) })} /></Field>
+                  <Field label="Maximum fabric" hint="Default 1, maximum 6"><TextInput type="number" min={form.minFabricCount} max={6} value={form.maxFabricCount} onChange={(e) => setForm({ ...form, maxFabricCount: Number(e.target.value) })} /></Field>
+                  <Field label="Minimum lace" hint="Default 1, maximum 6"><TextInput type="number" min={1} max={6} value={form.minLaceCount} onChange={(e) => setForm({ ...form, minLaceCount: Number(e.target.value) })} /></Field>
+                  <Field label="Maximum lace" hint="Default 1, maximum 6"><TextInput type="number" min={form.minLaceCount} max={6} value={form.maxLaceCount} onChange={(e) => setForm({ ...form, maxLaceCount: Number(e.target.value) })} /></Field>
+                  <Field label="Minimum latkan" hint="Default 1, maximum 6"><TextInput type="number" min={1} max={6} value={form.minLatkanCount} onChange={(e) => setForm({ ...form, minLatkanCount: Number(e.target.value) })} /></Field>
+                  <Field label="Maximum latkan" hint="Default 1, maximum 6"><TextInput type="number" min={form.minLatkanCount} max={6} value={form.maxLatkanCount} onChange={(e) => setForm({ ...form, maxLatkanCount: Number(e.target.value) })} /></Field>
                   <Field label="Stitching charge (INR)"><TextInput type="number" min={0} value={form.stitchingChargeInr} onChange={(e) => setForm({ ...form, stitchingChargeInr: Number(e.target.value) })} /></Field>
                   <Field label="Stitching days" hint="Custom blouse kitne din mein ready hota hai"><TextInput type="number" min={0} max={90} value={form.stitchingDays} onChange={(e) => setForm({ ...form, stitchingDays: Number(e.target.value) })} /></Field>
                   <Field label="Fabric info"><TextInput value={form.fabricInfo} onChange={(e) => setForm({ ...form, fabricInfo: e.target.value })} /></Field>
@@ -414,30 +406,7 @@ export function ProductsModule() {
                   <Field label="Care instructions" className="sm:col-span-2"><TextArea value={form.careInstructions} onChange={(e) => setForm({ ...form, careInstructions: e.target.value })} /></Field>
                 </div>
 
-                {/* Add Material — admin decides which materials this blouse offers */}
-                <div className="mt-4 rounded-xl border border-maroon-100 bg-white/60 p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h5 className="flex items-center gap-1.5 text-[13px] font-bold text-maroon-700"><Layers size={14} />Add Material — is blouse ke liye</h5>
-                    <span className="text-[11px] font-semibold text-ink-muted">Customer ko sirf yehi materials choose karne milenge</span>
-                  </div>
-                  <div className="mt-2.5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    <MaterialPicker
-                      label="Fabric" required
-                      options={materialFabrics} selected={form.fabricOptions}
-                      onChange={(ids) => setForm({ ...form, fabricOptions: ids })}
-                    />
-                    <MaterialPicker
-                      label="Laces"
-                      options={materialLaces} selected={form.laceOptions}
-                      onChange={(ids) => setForm({ ...form, laceOptions: ids })}
-                    />
-                    <MaterialPicker
-                      label="Latkans"
-                      options={materialLatkans} selected={form.latkanOptions}
-                      onChange={(ids) => setForm({ ...form, latkanOptions: ids })}
-                    />
-                  </div>
-                </div>
+                <p className="mt-4 rounded-xl border border-maroon-100 bg-white/60 p-3 text-xs font-semibold text-ink-muted">Customer ko catalog ke saare active fabrics, laces aur latkans dikhaye jayenge. Upar diye counts se har blouse ke liye selection limit set karein.</p>
               </div>
             ) : null}
 
@@ -482,61 +451,5 @@ export function ProductsModule() {
         </Modal>
       ) : null}
     </section>
-  );
-}
-
-/** Chip-style multi-select used by "Add Material". */
-function MaterialPicker({
-  label,
-  required,
-  options,
-  selected,
-  onChange,
-}: {
-  label: string;
-  required?: boolean;
-  options: MaterialOption[];
-  selected: string[];
-  onChange: (next: string[]) => void;
-}) {
-  const toggle = (id: string) =>
-    onChange(selected.includes(id) ? selected.filter((v) => v !== id) : [...selected, id]);
-
-  return (
-    <div>
-      <div className="mb-1.5 flex items-center justify-between gap-2">
-        <p className="text-[12px] font-bold uppercase tracking-wide text-ink">
-          {label} ({selected.length}/{options.length})
-          {required ? <span className="ml-1 text-alert">*</span> : null}
-        </p>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <button type="button" onClick={() => onChange(options.map((o) => o._id))}
-            className="text-[11px] font-semibold text-maroon-700 hover:underline">Select all</button>
-          <span className="text-ink-light">·</span>
-          <button type="button" onClick={() => onChange([])}
-            className="text-[11px] font-semibold text-ink-muted hover:underline">Clear</button>
-        </div>
-      </div>
-      {options.length === 0 ? (
-        <p className="text-[11px] font-semibold text-ink-muted">Koi {label} nahi banaaya — pehle Catalog mein add karein.</p>
-      ) : (
-        <div className="flex max-h-44 flex-wrap gap-1.5 overflow-y-auto">
-          {options.map((option) => {
-            const active = selected.includes(option._id);
-            return (
-              <button
-                key={option._id}
-                type="button"
-                title={option.inStock === false ? 'Out of stock' : option.name}
-                onClick={() => toggle(option._id)}
-                className={`chip whitespace-nowrap ${active ? 'chip-active' : ''}`}
-              >
-                {option.name}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
   );
 }

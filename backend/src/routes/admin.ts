@@ -210,7 +210,7 @@ const userAdminSchema = z.object({
   roles: z.array(z.enum([...ADMIN_ROLES] as [AdminRole, ...AdminRole[]])).min(1),
 }).strict();
 
-const productSchema = z.object({
+const productSchemaBase = z.object({
   designId: z.string().trim().max(24).optional(), slug: z.string().trim().max(60).optional(),
   name: z.string().trim().min(1).max(140), description: z.string().max(4000).default(''),
   type: z.enum(['READY_MADE', 'CUSTOMIZE', 'SHOWCASE']), category: z.string().min(1),
@@ -219,7 +219,10 @@ const productSchema = z.object({
   videoUrl: z.string().max(500).default(''), colors: z.array(z.unknown()).default([]), sizes: z.array(z.number()).default([]),
   variants: z.array(z.unknown()).default([]), fabricOptions: z.array(z.string()).default([]), laceOptions: z.array(z.string()).default([]),
   latkanOptions: z.array(z.string()).default([]),
-  defaultLaceCount: z.number().int().min(0).max(6).default(2), defaultLatkanCount: z.number().int().min(0).max(6).default(2), stitchingChargeInr: z.number().min(0).default(0),
+  minFabricCount: z.number().int().min(1).max(6).default(1), maxFabricCount: z.number().int().min(1).max(6).default(1),
+  minLaceCount: z.number().int().min(1).max(6).default(1), maxLaceCount: z.number().int().min(1).max(6).default(1),
+  minLatkanCount: z.number().int().min(1).max(6).default(1), maxLatkanCount: z.number().int().min(1).max(6).default(1),
+  stitchingChargeInr: z.number().min(0).default(0),
   fabricInfo: z.string().max(300).default(''), embroidery: z.array(z.string()).default([]), careInstructions: z.string().max(600).default(''),
   stitchingInfo: z.string().max(600).default(''), stitchingDays: z.number().int().min(0).max(90).default(7),
   expectedAvailability: z.string().max(80).default(''), comingSoon: z.boolean().default(false), isActive: z.boolean().default(true),
@@ -230,6 +233,30 @@ const productSchema = z.object({
     ogImage: z.string().max(500).default(''),
   }).default(() => ({ title: '', description: '', keywords: [], ogImage: '' })),
 }).strict();
+
+const withValidProductRanges = <T extends z.ZodTypeAny>(schema: T) => schema.superRefine((value: unknown, ctx) => {
+  const product = value as {
+    minFabricCount?: number;
+    maxFabricCount?: number;
+    minLaceCount?: number;
+    maxLaceCount?: number;
+    minLatkanCount?: number;
+    maxLatkanCount?: number;
+  };
+  const ranges = [
+    ['fabric', product.minFabricCount, product.maxFabricCount],
+    ['lace', product.minLaceCount, product.maxLaceCount],
+    ['latkan', product.minLatkanCount, product.maxLatkanCount],
+  ] as const;
+  for (const [label, minimum, maximum] of ranges) {
+    if (minimum !== undefined && maximum !== undefined && minimum > maximum) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [`min${label.charAt(0).toUpperCase()}${label.slice(1)}Count`], message: `${label} minimum maximum se bada nahi ho sakta.` });
+    }
+  }
+});
+
+const productSchema = withValidProductRanges(productSchemaBase);
+const productPatchSchema = withValidProductRanges(productSchemaBase.partial());
 
 function adminId(req: Request): string { return req.auth!.userId; }
 
@@ -725,7 +752,7 @@ router.get('/products/:id', readLimiter, validate({ params: idSchema }), async (
   res.json({ product });
 });
 
-router.patch('/products/:id', writeLimiter, validate({ params: idSchema, body: productSchema.partial() }), async (req: Request, res: Response) => {
+router.patch('/products/:id', writeLimiter, validate({ params: idSchema, body: productPatchSchema }), async (req: Request, res: Response) => {
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const body = (req as ValidatedRequest<Record<string, unknown>>).validated.body;
   const product = await Product.findById(id);

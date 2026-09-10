@@ -18,6 +18,7 @@ interface AddLineInput {
   colorSlug?: string;
   size?: number | null;
   fabricId?: string | null;
+  fabricIds?: string[];
   fabricName?: string;
   laceIds?: string[];
   laceColors?: Array<{ id: string; colorName: string; colorHex?: string }>;
@@ -93,6 +94,7 @@ export const useCart = create<CartState>()(
             colorSlug: input.colorSlug,
             size: input.size ?? null,
             fabricId: input.fabricId ?? null,
+            fabricIds: input.fabricIds ?? (input.fabricId ? [input.fabricId] : []),
             laceIds: input.laceIds ?? [],
             laceColors: input.laceColors ?? [],
             latkanIds: input.latkanIds ?? [],
@@ -168,6 +170,7 @@ export function toApiLines(lines: CartLine[]) {
     ...(line.colorSlug ? { colorSlug: line.colorSlug } : {}),
     ...(line.size !== null && line.size !== undefined ? { size: line.size } : {}),
     ...(line.fabricId ? { fabricId: line.fabricId } : {}),
+    ...(line.fabricIds?.length ? { fabricIds: line.fabricIds } : {}),
     ...(line.laceIds?.length ? { laceIds: line.laceIds } : {}),
     ...(line.laceColors?.length
       ? { laceColors: line.laceColors.map((c) => ({ laceId: c.id, colorName: c.colorName, ...(c.colorHex ? { colorHex: c.colorHex } : {}) })) }

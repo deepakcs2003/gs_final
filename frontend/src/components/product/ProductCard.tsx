@@ -161,11 +161,12 @@ export function ProductCardView({ product, currency, eager }: ProductCardProps) 
           onClose={() => setFabricOpen(false)}
           product={product}
           currency={currency}
-          onConfirm={({ fabric, laces, latkans }) => {
+          onConfirm={({ fabrics, laces, latkans }) => {
             const key = addToCart({
               product,
-              fabricId: fabric.id,
-              fabricName: `${fabric.colorName} ${fabric.name}`,
+              fabricId: fabrics[0].id,
+              fabricIds: fabrics.map((fabric) => fabric.id),
+              fabricName: fabrics.map((fabric) => `${fabric.colorName} ${fabric.name}`).join(', '),
               laceIds: laces.map((l) => l.id),
               laceColors: laces.map(({ id, colorName, colorHex }) => ({ id, colorName, colorHex })),
               laceName: laces

@@ -33,6 +33,12 @@ export interface ProductCard {
   inStock: boolean;
   /** Real remaining units when low, else null. Never a fake urgency number. */
   lowStock: number | null;
+  minFabricCount: number;
+  maxFabricCount: number;
+  minLaceCount: number;
+  maxLaceCount: number;
+  minLatkanCount: number;
+  maxLatkanCount: number;
 }
 
 export interface ProductImage {
@@ -59,10 +65,14 @@ export interface ProductDetail extends ProductCard {
   videoUrl: string;
   availability: AvailabilityCell[];
   fabricOptionIds: string[];
+  minFabricCount: number;
+  maxFabricCount: number;
   laceOptionIds: string[];
   latkanOptionIds: string[];
-  defaultLaceCount: number;
-  defaultLatkanCount: number;
+  minLaceCount: number;
+  maxLaceCount: number;
+  minLatkanCount: number;
+  maxLatkanCount: number;
   fabricInfo: string;
   embroidery: string[];
   careInstructions: string;
@@ -222,6 +232,7 @@ export interface CartLine {
   colorSlug?: string;
   size?: number | null;
   fabricId?: string | null;
+  fabricIds?: string[];
   laceIds?: string[];
   /** Chosen colour per lace, parallel to `laceIds` (display is folded in the quote). */
   laceColors?: Array<{ id: string; colorName: string; colorHex?: string }>;
