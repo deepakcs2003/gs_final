@@ -1,0 +1,14 @@
+# Caddy reverse proxy with automatic HTTPS.
+# DOMAIN must be set (e.g. https://example.com) so Caddy can request
+# Let's Encrypt certs for it. For both apex + www, repeat the block.
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	reverse_proxy guddi:4000
+
+	# Long-running push keeps browser sessions snappy.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+}
