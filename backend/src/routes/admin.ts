@@ -215,7 +215,7 @@ const productSchemaBase = z.object({
   name: z.string().trim().min(1).max(140), description: z.string().max(4000).default(''),
   type: z.enum(['READY_MADE', 'CUSTOMIZE', 'SHOWCASE']), category: z.string().min(1),
   subCategory: z.string().nullable().optional(), tags: z.array(z.string().max(60)).default([]),
-  mrpInr: z.number().min(0), sellingPriceInr: z.number().min(0), images: z.array(z.unknown()).default([]),
+  mrpInr: z.number().min(0), sellingPriceInr: z.number().min(0), codInitialPaymentPercent: z.number().int().min(0).max(100).default(25), images: z.array(z.unknown()).default([]),
   videoUrl: z.string().max(500).default(''), colors: z.array(z.unknown()).default([]), sizes: z.array(z.number()).default([]),
   variants: z.array(z.unknown()).default([]), fabricOptions: z.array(z.string()).default([]), laceOptions: z.array(z.string()).default([]),
   latkanOptions: z.array(z.string()).default([]),

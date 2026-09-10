@@ -114,42 +114,45 @@ function HeroBannerCarousel({ banners }: { banners: HomeBanner[] }) {
 }
 
 function HomeBannerCard({ banner, tall }: { banner: HomeBanner; tall?: boolean }) {
+  const offerMatch = banner.offerText.match(/(\d{1,3})\s*%/);
+  const offerPercent = offerMatch ? `${offerMatch[1]}% OFF` : banner.offerText;
   const card = (
     <div
       className={clsx(
-        'group relative w-full overflow-hidden rounded-xl2 shadow-card',
-        tall ? 'h-48 sm:h-60 md:h-72' : 'h-40 sm:h-52',
+        'group relative w-full overflow-hidden rounded-xl2 bg-ink shadow-card',
+        tall ? 'aspect-[4/3] sm:aspect-[2.8/1]' : 'aspect-[4/3] sm:aspect-[2.4/1]',
       )}
     >
       {banner.image ? (
         <SmartImage
           src={banner.image}
           alt={banner.title}
-          className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
+          className="absolute inset-0 h-full w-full object-contain transition-transform duration-700 group-hover:scale-[1.02]"
         />
       ) : (
         <span className="absolute inset-0 bg-gradient-to-br from-maroon-700 via-maroon-800 to-maroon-950" />
       )}
-      <span className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/30 to-black/5" />
-      <span className="absolute inset-0 flex items-end p-5 sm:p-7">
+      <span className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-black/10" />
+      <span className="absolute inset-0 flex flex-col justify-between p-3.5 sm:p-6">
+        {banner.offerText ? (
+          <span className="self-start rounded-full border border-white/70 bg-marigold-400 px-3 py-1.5 text-[11px] font-black uppercase tracking-wide text-ink shadow-lift sm:px-4 sm:py-2 sm:text-sm">
+            {offerPercent}
+          </span>
+        ) : <span />}
         <span className="max-w-md">
-          {banner.offerText ? (
-            <span className="mb-2.5 inline-block -rotate-1 rounded-lg bg-marigold-400 px-2.5 py-1 text-[11px] font-black uppercase tracking-wider text-ink shadow-lift sm:text-xs">
-              {banner.offerText}
-            </span>
-          ) : null}
-          <span className="block font-display text-lg font-bold leading-tight text-white drop-shadow-sm sm:text-2xl">
+          <span className="block max-w-[92%] font-display text-xl font-bold leading-tight text-white drop-shadow-sm sm:max-w-md sm:text-2xl">
             {banner.title}
           </span>
           {banner.subtitle ? (
-            <span className="mt-1.5 block text-[13px] text-white/90 sm:text-[15px]">{banner.subtitle}</span>
+            <span className="mt-1 block max-w-[92%] text-[13px] text-white/90 sm:text-[15px]">{banner.subtitle}</span>
           ) : null}
           {banner.ctaText ? (
-            <span className="mt-3.5 inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-[13px] font-bold text-maroon-700 shadow-lift transition-all group-hover:gap-2.5 group-hover:bg-marigold-400">
+            <span className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-5 py-2 text-sm font-bold text-maroon-700 shadow-lift transition-all group-hover:gap-2.5 group-hover:bg-marigold-400 sm:px-6">
               {banner.ctaText}
-              <ArrowRight size={15} />
+              <ArrowRight size={17} />
             </span>
           ) : null}
+          {banner.expiresAt ? <OfferCountdown expiresAt={banner.expiresAt} /> : null}
         </span>
       </span>
     </div>
@@ -167,6 +170,32 @@ function HomeBannerCard({ banner, tall }: { banner: HomeBanner; tall?: boolean }
     );
   }
   return <Link to={banner.ctaLink} className="block">{card}</Link>;
+}
+
+function OfferCountdown({ expiresAt }: { expiresAt: string }) {
+  const [remaining, setRemaining] = useState(() => getRemaining(expiresAt));
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setRemaining(getRemaining(expiresAt)), 1000);
+    return () => window.clearInterval(timer);
+  }, [expiresAt]);
+
+  if (!remaining) return null;
+  return (
+    <span className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-white/35 bg-black/55 px-2.5 py-1.5 text-[11px] font-bold text-white backdrop-blur sm:text-xs">
+      Offer ends in <strong className="text-marigold-300">{remaining}</strong>
+    </span>
+  );
+}
+
+function getRemaining(expiresAt: string): string {
+  const seconds = Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000));
+  if (seconds <= 0) return '';
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return days > 0 ? `${days}d ${hours}h ${minutes}m` : `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
 /* -------------------------------------------------------------------------- */

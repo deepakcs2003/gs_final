@@ -14,6 +14,9 @@ export interface BusinessSettings {
   shippingFlatInr: number;
   freeShippingAboveInr: number;
   measurementInstructionVersion: string;
+  homeFeedMode: 'SEQUENTIAL' | 'MIXED';
+  homeFeedOrder: string;
+  homeFeedPageSize: number;
 }
 
 const DEFAULTS: BusinessSettings = {
@@ -23,6 +26,9 @@ const DEFAULTS: BusinessSettings = {
   shippingFlatInr: env.SHIPPING_FLAT_INR,
   freeShippingAboveInr: env.FREE_SHIPPING_ABOVE_INR,
   measurementInstructionVersion: 'v1',
+  homeFeedMode: 'SEQUENTIAL',
+  homeFeedOrder: 'CUSTOMIZE,READY_MADE,SHOWCASE',
+  homeFeedPageSize: 12,
 };
 
 const CACHE_TTL_MS = 60_000;
@@ -46,6 +52,20 @@ function coerce(key: keyof BusinessSettings, raw: unknown): unknown {
     }
     case 'measurementInstructionVersion':
       return typeof raw === 'string' && /^v\d{1,3}$/.test(raw) ? raw : undefined;
+    case 'homeFeedMode':
+      return raw === 'SEQUENTIAL' || raw === 'MIXED' ? raw : undefined;
+    case 'homeFeedOrder': {
+      if (typeof raw !== 'string') return undefined;
+      const types = raw.split(',').map((value) => value.trim()).filter(Boolean);
+      const allowed = new Set(['CUSTOMIZE', 'READY_MADE', 'SHOWCASE']);
+      return types.length >= 1 && types.length <= 3 && new Set(types).size === types.length && types.every((type) => allowed.has(type))
+        ? types.join(',')
+        : undefined;
+    }
+    case 'homeFeedPageSize': {
+      const n = Number(raw);
+      return Number.isInteger(n) && n >= 6 && n <= 30 ? n : undefined;
+    }
     default:
       return undefined;
   }

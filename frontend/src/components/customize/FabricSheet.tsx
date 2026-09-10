@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import clsx from 'clsx';
-import { Check, X, SlidersHorizontal } from 'lucide-react';
+import { AlertTriangle, Check, X, SlidersHorizontal } from 'lucide-react';
 import { Sheet } from '../ui';
 import { SmartImage } from '../SmartImage';
 import { useFabrics, useLaces, useLatkans } from '../../hooks/queries';
@@ -53,6 +53,8 @@ const PRICE_BUCKETS = [
 
 export function FabricSheet({ open, onClose, product, currency, onConfirm }: FabricSheetProps) {
   const [showFilters, setShowFilters] = useState(false);
+  const [step, setStep] = useState<0 | 1 | 2>(0);
+  const [warning, setWarning] = useState('');
   const [colors, setColors] = useState<string[]>([]);
   const [materials, setMaterials] = useState<string[]>([]);
   const [embroidery, setEmbroidery] = useState<string[]>([]);
@@ -97,9 +99,6 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
     [latkans, productLatkanIds],
   );
 
-  /** Fabric-first: laces/latkans unlock only once a fabric is chosen. */
-  const fabricLocked = !selectedFabric;
-
   const toggle = (list: string[], setList: (next: string[]) => void, value: string) => {
     setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
   };
@@ -107,7 +106,13 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
   const toggleFabric = (fabric: Fabric) => {
     if (fabricIds.includes(fabric.id)) {
       setFabricIds(fabricIds.filter((id) => id !== fabric.id));
-    } else if (fabric.inStock && fabricIds.length < (product.maxFabricCount ?? 1)) {
+    } else if (fabric.inStock) {
+      const limit = product.maxFabricCount ?? 1;
+      if (fabricIds.length >= limit) {
+        setWarning(`Aapne maximum ${limit} fabric select kar diye hain.`);
+        return;
+      }
+      setWarning('');
       setFabricIds([...fabricIds, fabric.id]);
     }
   };
@@ -153,7 +158,11 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
       setColorSheetFor((prev) => (prev?.itemId === itemId ? null : prev));
     } else {
       const limit = kind === 'lace' ? (product.maxLaceCount ?? 1) : (product.maxLatkanCount ?? 1);
-      if (list.length >= limit) return;
+      if (list.length >= limit) {
+        setWarning(`Aapne maximum ${limit} ${kind === 'lace' ? 'lace' : 'latkan'} select kar diye hain.`);
+        return;
+      }
+      setWarning('');
       setList([...list, itemId]);
       // New taps default to "same colour as fabric".
       setMap((prev) => ({ ...prev, [itemId]: { mode: 'fabric' } }));
@@ -219,7 +228,7 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
       open={open}
       onClose={onClose}
       title="Fabric Choose Karein"
-      subtitle="Ek fabric select karein, phir laces aur latkan choose karein"
+      subtitle="Fabric, lace aur latkan alag-alag steps mein select karein"
       maxWidth="sm:max-w-2xl"
       footer={
         <div className="flex items-center gap-3">
@@ -235,29 +244,50 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
               <p className="hint">Pehle ek fabric select karein</p>
             )}
           </div>
+          {step > 0 ? (
+            <button type="button" className="btn-outline shrink-0" onClick={() => { setWarning(''); setStep((step - 1) as 0 | 1 | 2); }}>
+              Back
+            </button>
+          ) : null}
           <button
             type="button"
             className="btn-primary btn-lg shrink-0 px-7"
-            disabled={
-              selectedFabrics.length < (product.minFabricCount ?? 1) ||
-              laceIds.length < (product.minLaceCount ?? 1) ||
-              latkanIds.length < (product.minLatkanCount ?? 1)
-            }
+            disabled={step === 0 && selectedFabrics.length < (product.minFabricCount ?? 1)}
             onClick={() => {
-              if (!selectedFabric) return;
-              onConfirm({
-                fabrics: selectedFabrics,
-                laces: resolvePicks(laces ?? [], laceColors, laceIds),
-                latkans: resolvePicks(latkans ?? [], latkanColors, latkanIds),
-              });
+              if (step === 0) {
+                if (!selectedFabric) return;
+                setWarning('');
+                setStep(1);
+              } else if (step === 1) {
+                setWarning('');
+                setStep(2);
+              } else if (selectedFabric) {
+                onConfirm({ fabrics: selectedFabrics, laces: resolvePicks(laces ?? [], laceColors, laceIds), latkans: resolvePicks(latkans ?? [], latkanColors, latkanIds) });
+              }
             }}
           >
-            Aage Badhein
+            {step < 2 ? 'Next' : 'Done'}
           </button>
         </div>
       }
     >
+      <div className="sticky top-0 z-10 -mx-5 mb-4 border-b border-maroon-100 bg-white px-5 py-3">
+        <div className="grid grid-cols-3 gap-2">
+          {(['Fabric', 'Laces', 'Latkan'] as const).map((label, index) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => { if (index <= step || (index === 1 && selectedFabric)) { setWarning(''); setStep(index as 0 | 1 | 2); } }}
+              className={clsx('rounded-lg px-2 py-2 text-center text-[12px] font-bold', step === index ? 'bg-maroon-700 text-white' : index < step ? 'bg-leaf/15 text-leaf' : 'bg-maroon-50 text-ink-muted')}
+            >
+              <span className="mr-1">{index < step ? '✓' : index + 1}</span>{label}
+            </button>
+          ))}
+        </div>
+        {warning ? <p className="mt-2 flex items-center gap-1.5 text-[12px] font-semibold text-alert"><AlertTriangle size={14} />{warning}</p> : null}
+      </div>
       <div className="space-y-5 py-1">
+        {step === 0 ? <>
         {/* Filters (README §15) */}
         <div>
           <button
@@ -363,21 +393,17 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
             })}
           </div>
         )}
+        </> : null}
 
         {/* Laces */}
-        {availableLaces.length > 0 ? (
-          <section className={clsx('transition', fabricLocked && 'pointer-events-none select-none')}>
+        {step === 1 && availableLaces.length > 0 ? (
+          <section>
             <h3 className="label">
-              Laces ({availableLaces.length}) <span className="font-normal text-ink-muted">— {laceIds.length}/{product.minLaceCount ?? 1}-{product.maxLaceCount ?? 1} select</span>
+              Laces ({availableLaces.length}) <span className="font-normal text-ink-muted">— {laceIds.length}/{product.maxLaceCount ?? 1} select (optional)</span>
             </h3>
             <p className="mb-2 mt-0.5 text-[11px] text-ink-muted">
               Kisi bhi lace par tap karein — uska colour chunne ka option khul jayega.
             </p>
-            {fabricLocked ? (
-              <p className="mb-2 rounded-lg bg-maroon-50/70 px-2.5 py-2 text-[12px] font-semibold text-maroon-700">
-                Pehle upar ek fabric choose karein — tabhi laces select ho sakti hain.
-              </p>
-            ) : null}
             <div className="rail">
               {availableLaces.map((lace) => {
                 const isSelected = laceIds.includes(lace.id);
@@ -385,13 +411,12 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
                   <button
                     key={lace.id}
                     type="button"
-                    disabled={!lace.inStock || fabricLocked}
+                    disabled={!lace.inStock}
                     onClick={() => toggleSelection('lace', lace.id, isSelected, laceIds, setLaceIds, setLaceColors)}
                     className={clsx(
                       'w-28 shrink-0 overflow-hidden rounded-xl border-2 bg-white text-left transition',
                       isSelected ? 'border-maroon-600' : 'border-ink-light/20',
                       !lace.inStock && 'opacity-50',
-                      fabricLocked && 'opacity-40 saturate-50',
                     )}
                   >
                     <div className="relative aspect-[4/3]">
@@ -415,19 +440,14 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
         ) : null}
 
         {/* Latkans */}
-        {availableLatkans.length > 0 ? (
-          <section className={clsx('transition', fabricLocked && 'pointer-events-none select-none')}>
+        {step === 2 && availableLatkans.length > 0 ? (
+          <section>
             <h3 className="label">
-              Latkans ({availableLatkans.length}) <span className="font-normal text-ink-muted">— {latkanIds.length}/{product.minLatkanCount ?? 1}-{product.maxLatkanCount ?? 1} select</span>
+              Latkans ({availableLatkans.length}) <span className="font-normal text-ink-muted">— {latkanIds.length}/{product.maxLatkanCount ?? 1} select (optional)</span>
             </h3>
             <p className="mb-2 mt-0.5 text-[11px] text-ink-muted">
               Kisi bhi latkan par tap karein — uska colour chunne ka option khul jayega.
             </p>
-            {fabricLocked ? (
-              <p className="mb-2 rounded-lg bg-maroon-50/70 px-2.5 py-2 text-[12px] font-semibold text-maroon-700">
-                Pehle upar ek fabric choose karein — tabhi latkan select ho sakti hain.
-              </p>
-            ) : null}
             <div className="rail">
               {availableLatkans.map((latkan) => {
                 const isSelected = latkanIds.includes(latkan.id);
@@ -435,13 +455,12 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
                   <button
                     key={latkan.id}
                     type="button"
-                    disabled={!latkan.inStock || fabricLocked}
+                    disabled={!latkan.inStock}
                     onClick={() => toggleSelection('latkan', latkan.id, isSelected, latkanIds, setLatkanIds, setLatkanColors)}
                     className={clsx(
                       'w-28 shrink-0 overflow-hidden rounded-xl border-2 bg-white text-left transition',
                       isSelected ? 'border-maroon-600' : 'border-ink-light/20',
                       !latkan.inStock && 'opacity-50',
-                      fabricLocked && 'opacity-40 saturate-50',
                     )}
                   >
                     <div className="relative aspect-[4/3]">

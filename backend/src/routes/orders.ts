@@ -193,8 +193,11 @@ router.post('/', checkoutLimiter, validate({ body: createOrderSchema }), async (
         fabricName: line.fabricName,
         fabricMaterial: line.fabricMaterial,
         fabricColorName: line.fabricColorName,
+        fabricDetails: line.fabricDetails,
         laceNames: line.laceNames,
+        laceDetails: line.laceDetails,
         latkanNames: line.latkanNames,
+        latkanDetails: line.latkanDetails,
         measurement: measurementByKey.get(line.key)
           ? {
               unit: 'inch',
@@ -214,7 +217,7 @@ router.post('/', checkoutLimiter, validate({ body: createOrderSchema }), async (
       amounts: quote.amounts,
       payment: {
         method: body.paymentMethod,
-        status: isCod ? 'COD_PENDING' : 'PENDING',
+        status: isCod && quote.amounts.codAdvanceMinor > 0 ? 'COD_ADVANCE_PENDING' : isCod ? 'COD_PENDING' : 'PENDING',
       },
       status: 'PLACED',
       statusHistory: [{ status: 'PLACED', at: new Date(), note: '' }],
@@ -235,17 +238,43 @@ router.post('/', checkoutLimiter, validate({ body: createOrderSchema }), async (
     }
 
     if (isCod) {
-      // COD is confirmed immediately; there is no payment to wait for.
-      order.status = 'CONFIRMED';
-      order.statusHistory.push({ status: 'CONFIRMED', at: new Date(), note: 'COD order' });
-      await order.save();
-      void pushToShiprocket(String(order._id));
+      if (quote.amounts.codAdvanceMinor <= 0) {
+        // A product configured with 0% advance can be confirmed immediately.
+        order.status = 'CONFIRMED';
+        order.statusHistory.push({ status: 'CONFIRMED', at: new Date(), note: 'COD order — no advance' });
+        await order.save();
+        void pushToShiprocket(String(order._id));
 
+        res.status(201).json({
+          orderNumber: order.orderNumber,
+          paymentMethod: 'COD',
+          currency: order.currency,
+          totalMinor: order.amounts.totalMinor,
+          codAdvanceMinor: 0,
+          codBalanceMinor: order.amounts.codBalanceMinor,
+        });
+        return;
+      }
+
+      const advanceOrder = await createRazorpayOrder({
+        amountMinor: quote.amounts.codAdvanceMinor,
+        currency: quote.currency,
+        receipt: order.orderNumber,
+        notes: { orderNumber: order.orderNumber, paymentType: 'COD_ADVANCE' },
+      });
+      order.payment.razorpayOrderId = advanceOrder.id;
+      await order.save();
       res.status(201).json({
         orderNumber: order.orderNumber,
         paymentMethod: 'COD',
-        currency: order.currency,
-        totalMinor: order.amounts.totalMinor,
+        razorpayOrderId: advanceOrder.id,
+        razorpayKeyId: getPublicKeyId(),
+        amountMinor: quote.amounts.codAdvanceMinor,
+        totalMinor: quote.amounts.totalMinor,
+        codAdvanceMinor: quote.amounts.codAdvanceMinor,
+        codBalanceMinor: quote.amounts.codBalanceMinor,
+        currency: quote.currency,
+        prefill: { name: body.contact.name, contact: body.contact.mobile, email: body.contact.email ?? '' },
       });
       return;
     }
@@ -328,7 +357,8 @@ router.post(
       throw badRequest('Payment verify nahi ho paya. Paisa kata hai to 3-4 din mein wapas aa jayega.');
     }
 
-    await markPaid(order, body.razorpayPaymentId);
+    if (order.payment.method === 'COD') await markCodAdvancePaid(order, body.razorpayPaymentId);
+    else await markPaid(order, body.razorpayPaymentId);
 
     res.json({ ok: true, orderNumber: order.orderNumber, status: order.status });
   },
@@ -400,8 +430,11 @@ interface OrderItemLike {
   colorName: string;
   size?: number | null;
   fabricName: string;
+  fabricDetails?: Array<{ name?: string | null; material?: string | null; colorName?: string | null; image?: string | null }>;
   laceNames?: string[];
+  laceDetails?: Array<{ name?: string | null; colorName?: string | null; image?: string | null }>;
   latkanNames?: string[];
+  latkanDetails?: Array<{ name?: string | null; colorName?: string | null; image?: string | null }>;
   lineTotalMinor: number;
 }
 
@@ -409,7 +442,7 @@ interface OrderLike {
   orderNumber: string;
   currency: string;
   items: OrderItemLike[];
-  amounts: { totalMinor: number; subtotalMinor: number; discountMinor: number; shippingMinor: number; couponCode: string };
+  amounts: { totalMinor: number; subtotalMinor: number; discountMinor: number; shippingMinor: number; couponCode: string; codAdvanceMinor: number; codBalanceMinor: number };
   payment: { method: string; status: string };
   status: string;
   statusHistory?: Array<{ status: string; at: Date; note?: string }>;
@@ -449,8 +482,11 @@ function presentOrder(order: OrderLike, detailed = false) {
       colorName: item.colorName,
       size: item.size,
       fabricName: item.fabricName,
+      fabricDetails: (item.fabricDetails ?? []).map((detail) => ({ name: detail.name ?? '', material: detail.material ?? '', colorName: detail.colorName ?? '', image: detail.image ?? '' })),
       laceNames: item.laceNames ?? [],
+      laceDetails: (item.laceDetails ?? []).map((detail) => ({ name: detail.name ?? '', colorName: detail.colorName ?? '', image: detail.image ?? '' })),
       latkanNames: item.latkanNames ?? [],
+      latkanDetails: (item.latkanDetails ?? []).map((detail) => ({ name: detail.name ?? '', colorName: detail.colorName ?? '', image: detail.image ?? '' })),
       lineTotalMinor: item.lineTotalMinor,
     })),
   };
@@ -493,6 +529,18 @@ export async function markPaid(order: InstanceType<typeof Order>, paymentId: str
   order.statusHistory.push({ status: 'CONFIRMED', at: new Date(), note: 'Payment received' });
   await order.save();
 
+  void pushToShiprocket(String(order._id));
+}
+
+export async function markCodAdvancePaid(order: InstanceType<typeof Order>, paymentId: string): Promise<void> {
+  if (order.payment.status === 'COD_ADVANCE_PAID') return;
+  order.payment.status = 'COD_ADVANCE_PAID';
+  order.payment.razorpayPaymentId = paymentId;
+  order.payment.verifiedAt = new Date();
+  order.payment.paidAt = new Date();
+  order.status = 'CONFIRMED';
+  order.statusHistory.push({ status: 'CONFIRMED', at: new Date(), note: 'COD advance received' });
+  await order.save();
   void pushToShiprocket(String(order._id));
 }
 

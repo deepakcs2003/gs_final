@@ -44,6 +44,7 @@ interface ProductLike {
   tags?: string[] | null;
   mrpInr: number;
   sellingPriceInr: number;
+  codInitialPaymentPercent?: number | null;
   images?: Array<{ url: string; alt?: string | null; kind?: string | null; width?: number | null; height?: number | null }> | null;
   videoUrl?: string | null;
   colors?: Array<{ name: string; slug: string; hex: string }> | null;
@@ -87,6 +88,7 @@ export function presentProductCard(product: ProductLike, currency: Currency, fxR
     imageAlt: product.images?.[0]?.alt ?? product.name,
     hoverImage: product.images?.[1]?.url ?? '',
     price: priceView(product.mrpInr, product.sellingPriceInr, currency, fxRateInr),
+    codInitialPaymentPercent: product.codInitialPaymentPercent ?? 25,
     colors: (product.colors ?? []).map((c) => ({ name: c.name, slug: c.slug, hex: c.hex })),
     sizes: product.sizes ?? [],
     rating: { average: product.rating?.average ?? 0, count: product.rating?.count ?? 0 },

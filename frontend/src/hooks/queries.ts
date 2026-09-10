@@ -111,11 +111,13 @@ export interface HomeSection {
 }
 
 export function useHomeFeed() {
+  const { data: config } = useConfig();
+  const pageSize = config?.homeFeedPageSize ?? 12;
   return useInfiniteQuery({
-    queryKey: ['home-feed'],
+    queryKey: ['home-feed', pageSize, config?.homeFeedMode, config?.homeFeedOrder],
     initialPageParam: 0,
     queryFn: ({ pageParam }) =>
-      api<{ sections: HomeSection[]; nextOffset: number | null }>(`/home/feed?offset=${pageParam}&perPage=2`),
+      api<{ sections: HomeSection[]; nextOffset: number | null }>(`/home/feed?offset=${pageParam}&perPage=${pageSize}`),
     getNextPageParam: (lastPage) => lastPage.nextOffset,
     staleTime: 2 * 60 * 1000,
   });
@@ -435,6 +437,11 @@ export function useOrder(orderNumber: string | undefined, mobile?: string) {
 
 export interface PincodeCheck {
   pincode: string;
+  valid: boolean;
+  city: string;
+  district: string;
+  state: string;
+  areas: string[];
   serviceable: boolean;
   codAvailable: boolean;
   estimatedDays: number | null;

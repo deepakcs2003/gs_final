@@ -5,6 +5,7 @@ import { SmartImage } from '../components/SmartImage';
 import { EmptyState } from '../components/ui';
 import { useConfig, useOrder } from '../hooks/queries';
 import { formatDate, formatMoney } from '../lib/format';
+import type { OrderDetail } from '../lib/types';
 
 /**
  * Order confirmation + tracking (README §35).
@@ -100,7 +101,9 @@ export function OrderSuccessPage() {
 
         {order.paymentMethod === 'COD' && !failed ? (
           <p className="mt-3 rounded-xl bg-marigold-50 px-3 py-2 text-[13px] font-semibold text-marigold-800">
-            Delivery ke waqt {formatMoney(order.totalMinor, order.currency)} dena hoga
+            {order.amounts.codAdvanceMinor > 0
+              ? `Advance ${formatMoney(order.amounts.codAdvanceMinor, order.currency)} paid. Delivery par ${formatMoney(order.amounts.codBalanceMinor, order.currency)} dena hoga.`
+              : `Delivery ke waqt ${formatMoney(order.totalMinor, order.currency)} dena hoga`}
           </p>
         ) : null}
       </div>
@@ -195,7 +198,7 @@ export function OrderSuccessPage() {
           {order.items.map((item, index) => (
             <li key={`${item.designId}-${index}`} className="flex gap-3">
               <Link to={`/blouse/${item.slug}`} className="h-20 w-16 shrink-0 overflow-hidden rounded-lg bg-maroon-50">
-                <SmartImage src={item.image} alt={item.name} />
+                <SmartImage src={item.image} alt={item.name} className="object-contain" />
               </Link>
               <div className="min-w-0 flex-1">
                 <p className="line-clamp-2 text-[14px] font-semibold text-ink">{item.name}</p>
@@ -210,6 +213,7 @@ export function OrderSuccessPage() {
                 {item.latkanNames && item.latkanNames.length > 0 ? (
                   <p className="text-[12px] text-ink-muted">Latkan: {item.latkanNames.join(', ')}</p>
                 ) : null}
+                <OrderMaterialDetails item={item} />
                 <p className="text-[12px] text-ink-muted">Qty: {item.quantity}</p>
               </div>
               <span className={item.lineTotalMinor === 0 ? 'shrink-0 text-[14px] font-black uppercase tracking-wide text-leaf' : 'shrink-0 text-[14px] font-bold'}>
@@ -229,6 +233,18 @@ export function OrderSuccessPage() {
               <dt className="text-ink-muted">Discount</dt>
               <dd className="font-semibold text-leaf">− {formatMoney(order.amounts.discountMinor, order.currency)}</dd>
             </div>
+          ) : null}
+          {order.paymentMethod === 'COD' && order.amounts.codAdvanceMinor > 0 ? (
+            <>
+              <div className="flex justify-between">
+                <dt className="text-ink-muted">COD advance paid</dt>
+                <dd className="font-semibold text-leaf">{formatMoney(order.amounts.codAdvanceMinor, order.currency)}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-ink-muted">COD balance at delivery</dt>
+                <dd className="font-semibold">{formatMoney(order.amounts.codBalanceMinor, order.currency)}</dd>
+              </div>
+            </>
           ) : null}
           <div className="flex justify-between">
             <dt className="text-ink-muted">Delivery</dt>
@@ -279,6 +295,25 @@ export function OrderSuccessPage() {
       </div>
 
       <div className="h-4" />
+    </div>
+  );
+}
+
+function OrderMaterialDetails({ item }: { item: OrderDetail['items'][number] }) {
+  const materials = [
+    ...(item.fabricDetails ?? []).map((material) => ({ type: 'Fabric', name: material.name, detail: `${material.material} • ${material.colorName}`, image: material.image })),
+    ...(item.laceDetails ?? []).map((material) => ({ type: 'Lace', name: material.name, detail: material.colorName, image: material.image })),
+    ...(item.latkanDetails ?? []).map((material) => ({ type: 'Latkan', name: material.name, detail: material.colorName, image: material.image })),
+  ];
+  if (materials.length === 0) return null;
+  return (
+    <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
+      {materials.map((material, index) => (
+        <div key={`${material.type}-${material.name}-${index}`} className="flex min-w-[132px] items-center gap-1.5 rounded-md border border-maroon-100 bg-maroon-50/40 p-1">
+          <div className="h-8 w-8 shrink-0 overflow-hidden rounded bg-white"><SmartImage src={material.image} alt={material.name} className="object-contain" /></div>
+          <div className="min-w-0"><p className="text-[9px] font-bold uppercase text-maroon-700">{material.type}</p><p className="truncate text-[10px] font-semibold">{material.name}</p><p className="truncate text-[9px] text-ink-muted">{material.detail}</p></div>
+        </div>
+      ))}
     </div>
   );
 }

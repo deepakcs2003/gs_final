@@ -111,8 +111,14 @@ const orderItemSchema = new Schema(
     fabricName: { type: String, default: '' },
     fabricMaterial: { type: String, default: '' },
     fabricColorName: { type: String, default: '' },
+    fabricDetails: {
+      type: [{ name: String, material: String, colorName: String, image: String }],
+      default: [],
+    },
     laceNames: { type: [String], default: [] },
+    laceDetails: { type: [{ name: String, colorName: String, image: String }], default: [] },
     latkanNames: { type: [String], default: [] },
+    latkanDetails: { type: [{ name: String, colorName: String, image: String }], default: [] },
     measurement: { type: measurementValuesSchema, default: null },
 
     /** Per-unit breakdown, all in the order currency's minor unit. */
@@ -162,6 +168,8 @@ const amountsSchema = new Schema(
     shippingMinor: { type: Number, default: 0, min: 0 },
     totalMinor: { type: Number, required: true, min: 0 },
     couponCode: { type: String, default: '' },
+    codAdvanceMinor: { type: Number, default: 0, min: 0 },
+    codBalanceMinor: { type: Number, default: 0, min: 0 },
   },
   { _id: false },
 );

@@ -9,7 +9,7 @@ interface AdminOrder {
   _id: string; orderNumber: string; status: string; isGuest: boolean;
   contact: { name: string; mobile: string; email: string };
   address: { line1: string; line2: string; city: string; state: string; pincode: string; country: string };
-  currency: string; amounts: { subtotalMinor: number; discountMinor: number; shippingMinor: number; totalMinor: number; couponCode: string };
+  currency: string; amounts: { subtotalMinor: number; discountMinor: number; shippingMinor: number; totalMinor: number; couponCode: string; codAdvanceMinor?: number; codBalanceMinor?: number };
   payment: { method: string; status: string; razorpayOrderId: string; razorpayPaymentId: string; paidAt: string | null; failureReason: string };
   items: Array<{ designId: string; name: string; type: string; quantity: number; colorName: string; size: number | null; sku?: string; fabricName: string; laceNames: string[]; latkanNames?: string[]; measurement: { unit: string; values: Record<string, number> } | null; lineTotalMinor: number; image: string; unitBaseMinor?: number; unitFabricMinor?: number; unitLaceMinor?: number; unitLatkanMinor?: number; unitStitchingMinor?: number }>;
   statusHistory: Array<{ status: string; at: string; note: string }>;
@@ -122,7 +122,7 @@ function OrderDetailModal({ order, onClose, busy, onStatus, onUpdated, setError 
   const items = order.items ?? [];
   const statusHistory = order.statusHistory ?? [];
   const payment = order.payment ?? { method: '—', status: '—', razorpayOrderId: '', razorpayPaymentId: '', failureReason: '', paidAt: null };
-  const amounts = order.amounts ?? { subtotalMinor: 0, discountMinor: 0, shippingMinor: 0, totalMinor: 0, couponCode: '' };
+  const amounts = order.amounts ?? { subtotalMinor: 0, discountMinor: 0, shippingMinor: 0, totalMinor: 0, couponCode: '', codAdvanceMinor: 0, codBalanceMinor: 0 };
   const hasCustom = items.some((i) => i.type === 'CUSTOMIZE');
   const imrs = (v: number) => inr(v);
   const [preview, setPreview] = useState<string | null>(null);
@@ -169,6 +169,12 @@ function OrderDetailModal({ order, onClose, busy, onStatus, onUpdated, setError 
               {payment.razorpayPaymentId ? <Row k="Razorpay payment" v={payment.razorpayPaymentId} /> : null}
               {payment.failureReason ? <Row k="Failure" v={payment.failureReason} /> : null}
               {payment.paidAt ? <Row k="Paid at" v={new Date(payment.paidAt).toLocaleString('en-IN')} /> : null}
+              {payment.method === 'COD' && (amounts.codAdvanceMinor ?? 0) > 0 ? (
+                <>
+                  <Row k="COD advance paid" v={imrs(amounts.codAdvanceMinor ?? 0)} />
+                  <Row k="Balance at delivery" v={imrs(amounts.codBalanceMinor ?? 0)} />
+                </>
+              ) : null}
             </div>
           </section>
 

@@ -400,7 +400,7 @@ const feedQuerySchema = z
     // Index into the ordered category list; the feed is a stable sequence of
     // rails, so a plain integer offset is both correct and cheap here.
     offset: z.coerce.number().int().min(0).max(200).default(0),
-    perPage: z.coerce.number().int().min(1).max(4).default(2),
+    perPage: z.coerce.number().int().min(6).max(30).default(12),
   })
   .strict();
 
@@ -411,41 +411,67 @@ router.get('/home/feed', readLimiter, validate({ query: feedQuerySchema }), asyn
   const settings = await getSettings();
   const fxRate = geo.currency === 'INR' ? 1 : settings.usdRateInr;
 
-  // Rails follow the storefront's three sections, not whatever order the admin
-  // happened to save categories in: ready-made first, then customize, then
-  // upcoming. Within a type the admin's own order still wins.
-  const TYPE_RANK: Record<string, number> = { READY_MADE: 0, CUSTOMIZE: 1, SHOWCASE: 2 };
-  const rankOf = (types: string[]) => Math.min(...types.map((type) => TYPE_RANK[type] ?? 9), 9);
+  const typeOrder = settings.homeFeedOrder.split(',');
+  const typeFilter = { isActive: true, type: { $in: typeOrder } };
+  let products;
+  let nextOffset: number | null;
 
-  const categories = await Category.find({ isActive: true }).sort({ order: 1, name: 1 }).lean();
-  categories.sort((a, b) => {
-    const rankA = rankOf(a.types);
-    const rankB = rankOf(b.types);
-    if (rankA !== rankB) return rankA - rankB;
-    return (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name);
-  });
-  const slice = categories.slice(offset, offset + perPage);
-
-  const sections = await Promise.all(
-    slice.map(async (category) => {
-      const products = await Product.find({ category: category._id, isActive: true })
+  if (settings.homeFeedMode === 'MIXED') {
+    const total = await Product.countDocuments(typeFilter);
+    products = await Product.find(typeFilter)
+      .sort({ 'stats.views': -1, publishedAt: -1 })
+      .skip(offset)
+      .limit(settings.homeFeedPageSize)
+      .lean();
+    nextOffset = offset + products.length < total ? offset + products.length : null;
+  } else {
+    const counts = await Promise.all(typeOrder.map((type) => Product.countDocuments({ ...typeFilter, type })));
+    const total = counts.reduce((sum, count) => sum + count, 0);
+    let remaining = offset;
+    let typeIndex = 0;
+    while (typeIndex < typeOrder.length && remaining >= (counts[typeIndex] ?? 0)) {
+      remaining -= counts[typeIndex] ?? 0;
+      typeIndex += 1;
+    }
+    products = [];
+    let take = settings.homeFeedPageSize;
+    while (typeIndex < typeOrder.length && take > 0) {
+      const batch = await Product.find({ ...typeFilter, type: typeOrder[typeIndex] })
         .sort({ 'stats.views': -1, publishedAt: -1 })
-        .limit(6)
+        .skip(remaining)
+        .limit(take)
         .lean();
+      products.push(...batch);
+      take -= batch.length;
+      typeIndex += 1;
+      remaining = 0;
+    }
+    nextOffset = offset + products.length < total ? offset + products.length : null;
+  }
 
-      return {
-        id: String(category._id),
-        title: category.name,
-        titleHi: category.nameHi ?? '',
-        slug: category.slug,
-        items: products.map((p) => presentProductCard(p, geo.currency, fxRate)),
-      };
-    }),
-  );
+  const grouped = new Map<string, typeof products>();
+  for (const product of products) {
+    const key = product.type;
+    const existing = grouped.get(key) ?? [];
+    existing.push(product);
+    grouped.set(key, existing);
+  }
+  const titleByType: Record<string, string> = {
+    CUSTOMIZE: 'Customize Blouses',
+    READY_MADE: 'Ready to Buy',
+    SHOWCASE: 'Upcoming Designs',
+  };
+  const sections = [...grouped.entries()].map(([type, items]) => ({
+    id: `home-${type.toLowerCase()}`,
+    title: titleByType[type] ?? type,
+    titleHi: type === 'CUSTOMIZE' ? 'Apne naap ke designs' : type === 'READY_MADE' ? 'Turant delivery' : 'Jald aa raha hai',
+    slug: type === 'CUSTOMIZE' ? 'customize' : type === 'SHOWCASE' ? 'showcase' : 'ready-to-buy',
+    items: items.map((product) => presentProductCard(product, geo.currency, fxRate)),
+  }));
 
   res.json({
     sections: sections.filter((section) => section.items.length > 0),
-    nextOffset: offset + perPage < categories.length ? offset + perPage : null,
+    nextOffset,
     currency: geo.currency,
   });
 });

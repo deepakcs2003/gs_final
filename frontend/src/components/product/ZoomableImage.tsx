@@ -23,10 +23,11 @@ const DOUBLE_TAP_MS = 300;
 interface ZoomableImageProps {
   src: string;
   alt: string;
+  aspectRatio?: number;
   onZoom?: () => void;
 }
 
-export function ZoomableImage({ src, alt, onZoom }: ZoomableImageProps) {
+export function ZoomableImage({ src, alt, aspectRatio = 3 / 4, onZoom }: ZoomableImageProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -147,8 +148,9 @@ export function ZoomableImage({ src, alt, onZoom }: ZoomableImageProps) {
         onPointerCancel={endPointer}
         onPointerLeave={endPointer}
         onWheel={onWheel}
-        className="aspect-[3/4] w-full select-none"
+        className="w-full select-none"
         style={{
+          aspectRatio,
           // Lets the browser handle vertical page scroll while unzoomed, then
           // hands us full control once the customer is inspecting the design.
           touchAction: zoomed ? 'none' : 'pan-y',
@@ -162,7 +164,7 @@ export function ZoomableImage({ src, alt, onZoom }: ZoomableImageProps) {
             transition: dragStart.current || gestureStart.current ? 'none' : 'transform 180ms ease-out',
           }}
         >
-          <SmartImage src={src} alt={alt} eager />
+          <SmartImage src={src} alt={alt} className="object-contain" eager />
         </div>
       </div>
 

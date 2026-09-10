@@ -119,7 +119,7 @@ export function OrdersPage() {
                           key={`${item.designId}-${index}`}
                           className="h-14 w-11 overflow-hidden rounded-lg border-2 border-white bg-maroon-50"
                         >
-                          <SmartImage src={item.image} alt={item.name} />
+                          <SmartImage src={item.image} alt={item.name} className="object-contain" />
                         </span>
                       ))}
                     </div>

@@ -166,12 +166,13 @@ function BannersPanel({ onChanged }: { onChanged: () => void }) {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="font-semibold">{banner.title}</p>
-                    {banner.offerText ? <p className="mt-0.5 text-sm font-bold text-alert">{banner.offerText}</p> : null}
+                    {banner.offerText ? <p className="mt-0.5 text-sm font-bold text-alert">{banner.offerText.match(/(\d{1,3})\s*%/)?.[1] ? `${banner.offerText.match(/(\d{1,3})\s*%/)?.[1]}% OFF` : banner.offerText}</p> : null}
                     {banner.subtitle ? <p className="text-xs text-ink-muted">{banner.subtitle}</p> : null}
                   </div>
                   <span className="shrink-0 rounded-full bg-maroon-50 px-2 py-0.5 text-[10px] font-bold text-maroon-700 uppercase">{banner.position}</span>
                 </div>
-                <p className="mt-2 text-xs text-ink-muted"><strong className="text-maroon-700">{banner.ctaText}</strong> → {banner.ctaLink}</p>
+                <p className="mt-2 text-xs text-ink-muted"><strong className="text-maroon-700">Order {banner.order + 1}</strong> · <strong className="text-maroon-700">{banner.ctaText}</strong> → {banner.ctaLink}</p>
+                {banner.expiresAt ? <p className="mt-1 text-xs font-semibold text-maroon-700">Offer ends: {new Date(banner.expiresAt).toLocaleString('en-IN')}</p> : null}
                 <div className="mt-3 flex items-center justify-between">
                   <span className={clsx('rounded-full px-2 py-0.5 text-[10px] font-bold uppercase', STATUS_TONE[statusInfo({ isActive: banner.isActive, startsAt: banner.startsAt, endsAt: banner.expiresAt }).tone])}>
                     {statusInfo({ isActive: banner.isActive, startsAt: banner.startsAt, endsAt: banner.expiresAt }).label}
@@ -192,7 +193,7 @@ function BannersPanel({ onChanged }: { onChanged: () => void }) {
           footer={<div className="flex justify-end"><BtnPrimary onClick={save} disabled={busy === (form._id || 'new')}>{busy === (form._id || 'new') ? 'Saving...' : <><Check size={15} />Save</>}</BtnPrimary></div>}>
           <form onSubmit={(e) => { e.preventDefault(); save(); }} className="grid gap-4 sm:grid-cols-2">
             <Field label="Title"><TextInput required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
-            <Field label="Offer text" hint="e.g. Flat 20% OFF"><TextInput value={form.offerText} onChange={(e) => setForm({ ...form, offerText: e.target.value })} /></Field>
+            <Field label="Offer / discount" hint="Percentage likhein, jaise 20% OFF ya Flat 20% OFF. Homepage par 20% OFF highlight hoga."><TextInput placeholder="Flat 20% OFF" value={form.offerText} onChange={(e) => setForm({ ...form, offerText: e.target.value })} /></Field>
             <Field label="Subtitle"><TextInput value={form.subtitle} onChange={(e) => setForm({ ...form, subtitle: e.target.value })} /></Field>
             <Field label="Position"><Select value={form.position} onChange={(e) => setForm({ ...form, position: e.target.value as Banner['position'] })}>
               <option value="hero">Hero (top)</option><option value="mid">Mid page</option><option value="footer">Footer</option>
@@ -204,7 +205,7 @@ function BannersPanel({ onChanged }: { onChanged: () => void }) {
                 <ImagePicker value={form.image ? [form.image] : []} max={1} onChange={(urls) => setForm({ ...form, image: urls[0] ?? '' })} />
               </Field>
             </div>
-            <Field label="Display order"><TextInput type="number" min={0} value={form.order} onChange={(e) => setForm({ ...form, order: Number(e.target.value) })} /></Field>
+            <Field label="Display order" hint="1 = sabse pehle banner"><TextInput type="number" min={0} value={form.order} onChange={(e) => setForm({ ...form, order: Number(e.target.value) })} /></Field>
             <Field label="Start date/time"><TextInput type="datetime-local" value={form.startsAt ?? ''} onChange={(e) => setForm({ ...form, startsAt: e.target.value || null })} /></Field>
             <Field label="End date/time"><TextInput type="datetime-local" value={form.expiresAt ?? ''} onChange={(e) => setForm({ ...form, expiresAt: e.target.value || null })} /></Field>
             <div className="sm:col-span-2"><Toggle label="Active" checked={form.isActive} onChange={(isActive) => setForm({ ...form, isActive })} /></div>

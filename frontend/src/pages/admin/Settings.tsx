@@ -7,7 +7,8 @@ export interface SettingDef {
   key: string;
   label: string;
   hint?: string;
-  type?: 'text' | 'number' | 'textarea';
+  type?: 'text' | 'number' | 'textarea' | 'select';
+  options?: Array<{ value: string; label: string }>;
 }
 
 interface SettingItem { key: string; value: unknown; updatedAt?: string }
@@ -26,7 +27,9 @@ export function SettingsForm({ definitions }: { definitions: SettingDef[] }) {
         const map: Record<string, string> = {};
         for (const def of definitions) {
           const found = res.items.find((i) => i.key === def.key)?.value;
-          map[def.key] = found === undefined || found === null ? '' : typeof found === 'object' ? JSON.stringify(found, null, 2) : String(found);
+          map[def.key] = found === undefined || found === null
+            ? def.options?.[0]?.value ?? ''
+            : typeof found === 'object' ? JSON.stringify(found, null, 2) : String(found);
         }
         setValues(map);
       })
@@ -55,7 +58,13 @@ export function SettingsForm({ definitions }: { definitions: SettingDef[] }) {
           </div>
           {def.hint ? <p className="mt-1 text-xs text-ink-muted">{def.hint}</p> : null}
           <div className="mt-3 flex gap-2">
-            <input id={`setting-${def.key}`} className="field min-h-[42px] flex-1" type={def.type === 'number' ? 'number' : 'text'} value={values[def.key] ?? ''} onChange={(e) => setValues({ ...values, [def.key]: e.target.value })} onBlur={() => save(def)} />
+            {def.type === 'select' ? (
+              <select id={`setting-${def.key}`} className="field min-h-[42px] flex-1" value={values[def.key] ?? ''} onChange={(e) => setValues({ ...values, [def.key]: e.target.value })} onBlur={() => save(def)}>
+                {def.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            ) : (
+              <input id={`setting-${def.key}`} className="field min-h-[42px] flex-1" type={def.type === 'number' ? 'number' : 'text'} value={values[def.key] ?? ''} onChange={(e) => setValues({ ...values, [def.key]: e.target.value })} onBlur={() => save(def)} />
+            )}
             <BtnGhost className="min-h-[42px] px-3" disabled={busy === def.key} onClick={() => save(def)}>{savedAt === def.key ? <Check size={15} /> : 'Save'}</BtnGhost>
           </div>
           {savedAt === def.key ? <p className="mt-1 text-xs font-semibold text-leaf">Saved ✓</p> : null}

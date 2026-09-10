@@ -114,6 +114,34 @@ export interface ServiceabilityResult {
   shippingChargeInr: number | null;
 }
 
+export interface PincodeLocation {
+  valid: boolean;
+  city: string;
+  district: string;
+  state: string;
+  areas: string[];
+}
+
+/** Uses the India Post directory for address hints; no address is stored. */
+export async function lookupPincode(pincode: string): Promise<PincodeLocation> {
+  try {
+    const { data } = await axios.get(`https://api.postalpincode.in/pincode/${pincode}`, { timeout: 5000 });
+    const result = Array.isArray(data) ? data[0] as { Status?: string; PostOffice?: Array<{ Name?: string; District?: string; State?: string }> } : null;
+    const offices = result?.PostOffice ?? [];
+    const first = offices[0];
+    if (!first || result?.Status !== 'Success') return { valid: false, city: '', district: '', state: '', areas: [] };
+    return {
+      valid: true,
+      city: first.District ?? '',
+      district: first.District ?? '',
+      state: first.State ?? '',
+      areas: [...new Set(offices.map((office) => office.Name ?? '').filter(Boolean))].slice(0, 8),
+    };
+  } catch {
+    return { valid: false, city: '', district: '', state: '', areas: [] };
+  }
+}
+
 /**
  * Checkout pincode check. In mock mode (or when unconfigured) it returns the
  * conservative fallback — never a fake courier — so dev checkouts flow.

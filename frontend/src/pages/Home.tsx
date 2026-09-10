@@ -1,10 +1,10 @@
 import { Link } from 'react-router-dom';
-import { ArrowRight, Scissors, ShoppingBag, Sparkles } from 'lucide-react';
+import { Scissors, ShoppingBag, Sparkles } from 'lucide-react';
 import { ProductCardView } from '../components/product/ProductCard';
-import { HomeBannerRail, HomeManagerSections } from '../components/home/HomeManagerContent';
+import { HomeBannerRail } from '../components/home/HomeManagerContent';
 import { InfiniteSentinel } from '../components/InfiniteSentinel';
 import { CardSkeleton } from '../components/ui';
-import { useCategories, useConfig, useHomeFeed, useProducts, useProductsByRef } from '../hooks/queries';
+import { useCategories, useConfig, useHomeFeed, useProductsByRef, type HomeSection } from '../hooks/queries';
 import { useRecentlyViewed } from '../store/ui';
 
 /**
@@ -17,18 +17,18 @@ import { useRecentlyViewed } from '../store/ui';
 
 const SECTIONS = [
   {
-    to: '/ready-to-buy',
-    title: 'Ready to Buy',
-    subtitle: 'Turant delivery',
-    icon: ShoppingBag,
-    className: 'bg-maroon-600 text-white',
-  },
-  {
     to: '/customize',
     title: 'Customize',
     subtitle: 'Apne naap ka',
     icon: Scissors,
     className: 'bg-marigold-500 text-ink',
+  },
+  {
+    to: '/ready-to-buy',
+    title: 'Ready to Buy',
+    subtitle: 'Turant delivery',
+    icon: ShoppingBag,
+    className: 'bg-maroon-600 text-white',
   },
   {
     to: '/showcase',
@@ -45,7 +45,6 @@ export function HomePage() {
   const currency = config?.currency ?? 'INR';
 
   const feed = useHomeFeed();
-  const trending = useProducts({ sort: 'popular' }, 6);
   const recentSlugs = useRecentlyViewed((state) => state.slugs);
 
   return (
@@ -81,6 +80,9 @@ export function HomePage() {
                 {category.name}
               </Link>
             ))}
+            <Link to="/ready-to-buy?sort=popular" className="chip shrink-0 hover:border-maroon-400 hover:text-maroon-700">
+              Trending Designs
+            </Link>
           </div>
         </section>
       ) : null}
@@ -88,25 +90,9 @@ export function HomePage() {
       {/* Admin-managed promo banners (README §85.13) */}
       <HomeBannerRail position="hero" className="pt-4" />
 
-      {/* Trending (README §69) */}
-      <section className="pt-6">
-        <SectionHeading title="Trending Blouses" hint="Sabse zyada dekhe gaye designs" to="/ready-to-buy?sort=popular" />
-        {trending.isLoading ? (
-          <ProductGridSkeleton count={6} />
-        ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            {trending.data?.pages[0]?.items.map((product, index) => (
-              <ProductCardView key={product.id} product={product} currency={currency} eager={index < 3} />
-            ))}
-          </div>
-        )}
-      </section>
-
       {/* Recently viewed (README §65) */}
       {recentSlugs.length > 0 ? <RecentlyViewedRail /> : null}
 
-      {/* Admin-ordered homepage sections (README §85.10) */}
-      <HomeManagerSections />
       <HomeBannerRail position="mid" className="pt-6" />
 
       {/* Infinite category feed */}
@@ -117,18 +103,16 @@ export function HomePage() {
         </div>
       ) : null}
 
-      {feed.data?.pages.map((page) =>
-        page.sections.map((section) => (
-          <section key={section.id} className="pt-8">
-            <SectionHeading title={section.title} hint={section.titleHi} to={`/ready-to-buy/${section.slug}`} />
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-              {section.items.map((product) => (
-                <ProductCardView key={product.id} product={product} currency={currency} />
-              ))}
-            </div>
-          </section>
-        )),
-      )}
+      {mergeFeedSections(feed.data?.pages.flatMap((page) => page.sections) ?? []).map((section) => (
+        <section key={section.id} className="pt-8">
+          <SectionHeading title={section.title} hint={section.titleHi} />
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            {section.items.map((product) => (
+              <ProductCardView key={product.id} product={product} currency={currency} />
+            ))}
+          </div>
+        </section>
+      ))}
 
       <InfiniteSentinel
         onVisible={() => {
@@ -148,22 +132,28 @@ export function HomePage() {
   );
 }
 
-function SectionHeading({ title, hint, to }: { title: string; hint?: string; to: string }) {
+function SectionHeading({ title, hint }: { title: string; hint?: string }) {
   return (
-    <div className="mb-3 flex items-end justify-between gap-3">
+    <div className="mb-3 flex items-end gap-3">
       <div className="min-w-0">
         <h2 className="section-title truncate">{title}</h2>
         {hint ? <p className="hint truncate">{hint}</p> : null}
       </div>
-      <Link
-        to={to}
-        className="flex shrink-0 items-center gap-1 text-[13px] font-bold text-maroon-700 hover:underline"
-      >
-        Sab dekhein
-        <ArrowRight size={15} />
-      </Link>
     </div>
   );
+}
+
+function mergeFeedSections(sections: HomeSection[]): HomeSection[] {
+  const merged = new Map<string, HomeSection>();
+  for (const section of sections) {
+    const existing = merged.get(section.id);
+    if (existing) {
+      existing.items.push(...section.items);
+    } else {
+      merged.set(section.id, { ...section, items: [...section.items] });
+    }
+  }
+  return [...merged.values()];
 }
 
 export function ProductGridSkeleton({ count = 6 }: { count?: number }) {

@@ -25,6 +25,7 @@ export interface ProductCard {
   imageAlt: string;
   hoverImage: string;
   price: PriceView;
+  codInitialPaymentPercent: number;
   colors: ColorOption[];
   sizes: number[];
   rating: { average: number; count: number };
@@ -149,6 +150,8 @@ export interface HomeBanner {
   ctaLink: string;
   offerText: string;
   position: BannerPosition;
+  startsAt: string | null;
+  expiresAt: string | null;
 }
 
 /** Active promotional popup delivered by GET /offer-popup (README §85.14). */
@@ -269,8 +272,11 @@ export interface QuotedLine {
   fabricName: string;
   fabricMaterial: string;
   fabricColorName: string;
+  fabricDetails: Array<{ name: string; material: string; colorName: string; image: string }>;
   laceNames: string[];
+  laceDetails: Array<{ name: string; colorName: string; image: string }>;
   latkanNames: string[];
+  latkanDetails: Array<{ name: string; colorName: string; image: string }>;
   measurementReady: boolean;
   note: string;
   unitTotalMinor: number;
@@ -290,6 +296,8 @@ export interface CartQuote {
     shippingMinor: number;
     totalMinor: number;
     couponCode: string;
+    codAdvanceMinor: number;
+    codBalanceMinor: number;
   };
   couponError: string;
   shippingChargedLater: boolean;
@@ -308,6 +316,9 @@ export interface SiteConfig {
   razorpay: { enabled: boolean; keyId: string };
   googleClientId: string;
   appBaseUrl: string;
+  homeFeedMode: 'SEQUENTIAL' | 'MIXED';
+  homeFeedOrder: ProductType[];
+  homeFeedPageSize: number;
 }
 
 export interface CurrentUser {
@@ -355,8 +366,11 @@ export interface OrderSummary {
     colorName: string;
     size: number | null;
     fabricName: string;
+    fabricDetails?: Array<{ name: string; material: string; colorName: string; image: string }>;
     laceNames?: string[];
+    laceDetails?: Array<{ name: string; colorName: string; image: string }>;
     latkanNames?: string[];
+    latkanDetails?: Array<{ name: string; colorName: string; image: string }>;
     lineTotalMinor: number;
   }>;
 }

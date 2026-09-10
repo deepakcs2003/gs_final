@@ -40,7 +40,7 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
 export const PAYMENT_METHODS = ['RAZORPAY', 'COD'] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
-export const PAYMENT_STATUSES = ['PENDING', 'PAID', 'FAILED', 'REFUNDED', 'COD_PENDING'] as const;
+export const PAYMENT_STATUSES = ['PENDING', 'PAID', 'FAILED', 'REFUNDED', 'COD_PENDING', 'COD_ADVANCE_PENDING', 'COD_ADVANCE_PAID'] as const;
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 
 export const CURRENCIES = ['INR', 'USD'] as const;

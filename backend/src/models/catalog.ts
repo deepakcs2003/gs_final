@@ -161,6 +161,7 @@ const productSchema = new Schema(
      */
     mrpInr: { type: Number, required: true, min: 0, max: 10_000_000 },
     sellingPriceInr: { type: Number, required: true, min: 0, max: 10_000_000, index: true },
+    codInitialPaymentPercent: { type: Number, min: 0, max: 100, default: 25 },
 
     images: { type: [imageSchema], default: [] },
     videoUrl: { type: String, default: '' },

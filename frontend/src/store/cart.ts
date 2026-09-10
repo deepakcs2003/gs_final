@@ -32,11 +32,13 @@ interface AddLineInput {
 
 interface CartState {
   lines: CartLine[];
+  appliedCoupon: string;
   add: (input: AddLineInput) => string;
   remove: (key: string) => void;
   setQuantity: (key: string, quantity: number) => void;
   setMeasurement: (key: string, measurement: MeasurementData) => void;
   setNote: (key: string, note: string) => void;
+  setAppliedCoupon: (coupon: string) => void;
   clear: () => void;
   count: () => number;
   find: (key: string) => CartLine | undefined;
@@ -55,11 +57,13 @@ function makeKey(input: AddLineInput): string {
   return [input.product.id, input.colorSlug ?? '', input.size ?? ''].join('|');
 }
 
-function migrateCart(state: unknown): { lines: CartLine[] } {
+function migrateCart(state: unknown): { lines: CartLine[]; appliedCoupon: string } {
   const lines = (state as { lines?: CartLine[] })?.lines;
-  if (!Array.isArray(lines)) return { lines: [] };
+  const appliedCoupon = (state as { appliedCoupon?: unknown })?.appliedCoupon;
+  if (!Array.isArray(lines)) return { lines: [], appliedCoupon: typeof appliedCoupon === 'string' ? appliedCoupon : '' };
 
   return {
+    appliedCoupon: typeof appliedCoupon === 'string' ? appliedCoupon : '',
     lines: lines.map((line) =>
       line.key.length <= 64
         ? line
@@ -72,6 +76,7 @@ export const useCart = create<CartState>()(
   persist(
     (set, get) => ({
       lines: [],
+      appliedCoupon: '',
 
       add(input) {
         const key = makeKey(input);
@@ -139,8 +144,12 @@ export const useCart = create<CartState>()(
         set({ lines: get().lines.map((line) => (line.key === key ? { ...line, note: note.slice(0, 300) } : line)) });
       },
 
+      setAppliedCoupon(coupon) {
+        set({ appliedCoupon: coupon.trim().toUpperCase().slice(0, 24) });
+      },
+
       clear() {
-        set({ lines: [] });
+        set({ lines: [], appliedCoupon: '' });
       },
 
       count() {
@@ -153,10 +162,10 @@ export const useCart = create<CartState>()(
     }),
     {
       name: 'gs_cart_v1',
-      version: 2,
+      version: 3,
       migrate: (state) => migrateCart(state),
       storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({ lines: state.lines }),
+      partialize: (state) => ({ lines: state.lines, appliedCoupon: state.appliedCoupon }),
     },
   ),
 );

@@ -9,7 +9,7 @@ export interface AdminProduct {
   type: 'READY_MADE' | 'CUSTOMIZE' | 'SHOWCASE';
   category: string | { _id: string; name: string };
   subCategory: string | null;
-  tags: string[]; mrpInr: number; sellingPriceInr: number;
+  tags: string[]; mrpInr: number; sellingPriceInr: number; codInitialPaymentPercent: number;
   images: Array<{ url: string; alt: string; kind: string }>;
   videoUrl: string; colors: Array<{ name: string; slug: string; hex: string }>;
   sizes: number[]; variants: Array<{ colorSlug: string; size: number; stock: number; sku: string }>;
@@ -25,7 +25,7 @@ export interface AdminProduct {
 const emptyProduct = (category = ''): AdminProduct => ({
   _id: '', designId: '', slug: '', name: '', description: '', type: 'READY_MADE', category,
   subCategory: null, tags: [], mrpInr: 0, sellingPriceInr: 0, images: [], videoUrl: '',
-  colors: [], sizes: [], variants: [], fabricOptions: [], laceOptions: [], latkanOptions: [], minFabricCount: 1, maxFabricCount: 1, minLaceCount: 1, maxLaceCount: 1, minLatkanCount: 1, maxLatkanCount: 1, stitchingChargeInr: 0,
+  colors: [], sizes: [], variants: [], fabricOptions: [], laceOptions: [], latkanOptions: [], minFabricCount: 1, maxFabricCount: 1, minLaceCount: 1, maxLaceCount: 1, minLatkanCount: 1, maxLatkanCount: 1, stitchingChargeInr: 0, codInitialPaymentPercent: 25,
   fabricInfo: '', embroidery: [], careInstructions: '', stitchingInfo: '', stitchingDays: 7,
   expectedAvailability: '', comingSoon: false, isActive: true, seo: { title: '', description: '', keywords: [], ogImage: '' },
 });
@@ -196,7 +196,7 @@ export function ProductsModule() {
       const body = {
         ...values,
         ...(values.type === 'CUSTOMIZE' ? { fabricOptions: [], laceOptions: [], latkanOptions: [] } : {}),
-        mrpInr: Number(values.mrpInr), sellingPriceInr: Number(values.sellingPriceInr),
+        mrpInr: Number(values.mrpInr), sellingPriceInr: Number(values.sellingPriceInr), codInitialPaymentPercent: Number(values.codInitialPaymentPercent),
         stitchingChargeInr: Number(values.stitchingChargeInr), stitchingDays: Number(values.stitchingDays),
         minFabricCount: Number(values.minFabricCount), maxFabricCount: Number(values.maxFabricCount),
         minLaceCount: Number(values.minLaceCount), maxLaceCount: Number(values.maxLaceCount),
@@ -334,6 +334,7 @@ export function ProductsModule() {
               <>
                 <Field label="MRP (INR)"><TextInput type="number" min={0} required value={form.mrpInr} onChange={(e) => setForm({ ...form, mrpInr: Number(e.target.value) })} /></Field>
                 <Field label="Selling price (INR)"><TextInput type="number" min={0} required value={form.sellingPriceInr} onChange={(e) => setForm({ ...form, sellingPriceInr: Number(e.target.value) })} /></Field>
+                <Field label="COD initial payment (%)" hint="Delivery se pehle customer se kitna advance lena hai. 20–30% recommended."><TextInput type="number" min={0} max={100} value={form.codInitialPaymentPercent} onChange={(e) => setForm({ ...form, codInitialPaymentPercent: Number(e.target.value) })} /></Field>
                 {(form.mrpInr > form.sellingPriceInr) ? <p className="text-sm font-bold text-leaf sm:col-span-2">Discount: {Math.round(((form.mrpInr - form.sellingPriceInr) / form.mrpInr) * 100)}% off</p> : null}
               </>
             )}

@@ -22,13 +22,14 @@ import type { QuotedLine } from '../lib/types';
 export function CartPage() {
   const navigate = useNavigate();
   const lines = useCart((state) => state.lines);
+  const appliedCoupon = useCart((state) => state.appliedCoupon);
+  const setAppliedCoupon = useCart((state) => state.setAppliedCoupon);
   const remove = useCart((state) => state.remove);
   const setQuantity = useCart((state) => state.setQuantity);
   const toast = useUi((state) => state.toast);
   const { data: config } = useConfig();
 
-  const [couponInput, setCouponInput] = useState('');
-  const [appliedCoupon, setAppliedCoupon] = useState('');
+  const [couponInput, setCouponInput] = useState(appliedCoupon);
 
   const { data: quote, isFetching, isError: quoteFailed, error: quoteError, refetch: retryQuote } = useCartQuote(appliedCoupon);
   const currency = quote?.currency ?? config?.currency ?? 'INR';
@@ -53,7 +54,7 @@ export function CartPage() {
   const pendingMeasurements = customLines.filter((line) => !line.measurementReady).length;
 
   const applyCoupon = () => {
-    setAppliedCoupon(couponInput.trim().toUpperCase());
+    setAppliedCoupon(couponInput);
   };
 
   const onCheckout = () => {
@@ -253,8 +254,8 @@ function CartRow({
   return (
     <article className={clsx('card overflow-hidden', hasIssues && 'ring-1 ring-alert/40')}>
       <div className="flex gap-3 p-3">
-        <Link to={`/blouse/${line.slug}`} className="h-24 w-20 shrink-0 overflow-hidden rounded-lg bg-maroon-50">
-          <SmartImage src={line.image} alt={line.name} />
+        <Link to={`/blouse/${line.slug}`} className="h-28 w-24 shrink-0 overflow-hidden rounded-lg bg-maroon-50">
+          <SmartImage src={line.image} alt={line.name} className="object-contain" />
         </Link>
 
         <div className="min-w-0 flex-1">
@@ -290,6 +291,17 @@ function CartRow({
           {line.latkanNames.length > 0 ? (
             <p className="text-[12px] text-ink-muted">Latkan: {line.latkanNames.join(', ')}</p>
           ) : null}
+
+          {line.type === 'CUSTOMIZE' ? (
+            <div className="mt-1.5 grid gap-1 rounded-lg bg-maroon-50/60 px-2 py-1.5 text-[11.5px] text-ink-muted sm:grid-cols-2">
+              <span>Fabric: {line.fabricName || 'Not selected'}</span>
+              <span>Material: {line.fabricMaterial || 'Not specified'}</span>
+              <span>Fabric colour: {line.fabricColorName || 'Not specified'}</span>
+              <span>Extras: {line.laceNames.length + line.latkanNames.length} selected</span>
+            </div>
+          ) : null}
+
+          {line.type === 'CUSTOMIZE' ? <MaterialDetails line={line} /> : null}
 
           {/* Measurement status (README §27) */}
           {line.type === 'CUSTOMIZE' ? (
@@ -352,6 +364,31 @@ function CartRow({
         </ul>
       ) : null}
     </article>
+  );
+}
+
+function MaterialDetails({ line }: { line: QuotedLine }) {
+  const materials = [
+    ...line.fabricDetails.map((item) => ({ type: 'Fabric', name: item.name, detail: `${item.material} • ${item.colorName}`, image: item.image })),
+    ...line.laceDetails.map((item) => ({ type: 'Lace', name: item.name, detail: item.colorName, image: item.image })),
+    ...line.latkanDetails.map((item) => ({ type: 'Latkan', name: item.name, detail: item.colorName, image: item.image })),
+  ];
+  if (materials.length === 0) return null;
+  return (
+    <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+      {materials.map((item, index) => (
+        <div key={`${item.type}-${item.name}-${index}`} className="flex min-w-[145px] items-center gap-2 rounded-lg border border-maroon-100 bg-white px-1.5 py-1.5">
+          <div className="h-10 w-10 shrink-0 overflow-hidden rounded-md bg-maroon-50">
+            <SmartImage src={item.image} alt={item.name} className="object-contain" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase text-maroon-700">{item.type}</p>
+            <p className="truncate text-[11px] font-semibold text-ink">{item.name}</p>
+            <p className="truncate text-[10px] text-ink-muted">{item.detail}</p>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 

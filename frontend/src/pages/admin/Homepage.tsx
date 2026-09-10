@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '../../lib/api';
 import { BtnGhost, BtnPrimary, Empty, Field, Modal, Select, TextInput, Toolbar, Toggle } from './shared';
+import { SettingsForm, type SettingDef } from './Settings';
 import { ArrowDown, ArrowUp, Check, Pencil, Plus, Trash2 } from 'lucide-react';
 
 interface HomeSection {
@@ -21,6 +22,31 @@ const sectionPresets: Array<{ key: string; title: string; type: string }> = [
   { key: 'trending', title: 'Trending Designs', type: 'TRENDING' },
   { key: 'featured', title: 'Featured Collection', type: 'FEATURED' },
   { key: 'showcase', title: 'Upcoming / Showcase', type: 'SHOWCASE' },
+];
+
+const feedSettingDefs: SettingDef[] = [
+  {
+    key: 'homeFeedMode',
+    label: 'Product feed mode',
+    hint: 'Sequential mein ek type ke saare products ke baad next type aata hai. Mixed mein sab types popularity ke hisaab se milte hain.',
+    type: 'select',
+    options: [
+      { value: 'SEQUENTIAL', label: 'Sequential: Customize → Ready-made → Upcoming' },
+      { value: 'MIXED', label: 'Mixed: sab types together' },
+    ],
+  },
+  {
+    key: 'homeFeedOrder',
+    label: 'Sequential type order',
+    hint: 'Comma-separated selected types. Example: CUSTOMIZE,READY_MADE,SHOWCASE. Type hataoge to woh homepage feed mein nahi dikhega.',
+    type: 'text',
+  },
+  {
+    key: 'homeFeedPageSize',
+    label: 'Products per infinite-scroll batch',
+    hint: '6 se 30 ke beech. Bada number fewer loading steps dikhata hai.',
+    type: 'number',
+  },
 ];
 
 export function HomepageModule() {
@@ -79,7 +105,13 @@ export function HomepageModule() {
   const existingKeys = new Set(items.map((i) => i.key));
 
   return (
-    <section className="card overflow-hidden">
+    <>
+      <section className="card mb-4 overflow-hidden">
+        <Toolbar title="Homepage product feed" count={feedSettingDefs.length} />
+        <p className="hint px-5 pb-2">Customize, ready-made aur upcoming products ka order, mix aur infinite-scroll size yahan control karein.</p>
+        <SettingsForm definitions={feedSettingDefs} />
+      </section>
+      <section className="card overflow-hidden">
       <Toolbar title="Homepage sections" count={items.length} onAdd={() => setForm({ ...emptySection(`custom_${Date.now()}`, 'New Section'), order: items.length })} addLabel="Add section" />
       <p className="hint px-5 pb-2">Homepage par kis sequence mein kya dikhega — drag-order system. Titles, subtitles, button text sab change kar sakte hain.</p>
       {error ? <div className="m-4 rounded-xl border border-alert/30 bg-alert/10 p-4 text-sm font-semibold text-alert">{error}</div> : null}
@@ -135,6 +167,7 @@ export function HomepageModule() {
           </form>
         </Modal>
       ) : null}
-    </section>
+      </section>
+    </>
   );
 }

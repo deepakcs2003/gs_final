@@ -9,7 +9,7 @@ import { presentProductCard } from '../presenters/product.js';
 import { analyticsLimiter, readLimiter, writeLimiter } from '../middleware/rateLimit.js';
 import { classifySource, hashIp, resolveGeo } from '../services/geo.js';
 import { getSettings } from '../services/settings.js';
-import { checkPincodeServiceability } from '../services/shipping/shiprocket.js';
+import { checkPincodeServiceability, lookupPincode } from '../services/shipping/shiprocket.js';
 import { getPublicKeyId, razorpayEnabled } from '../services/payment/razorpay.js';
 import { objectId } from '../schemas/cart.js';
 import { ANALYTICS_EVENTS } from '../domain/constants.js';
@@ -39,6 +39,9 @@ router.get('/config', readLimiter, async (req: Request, res: Response) => {
     razorpay: { enabled: razorpayEnabled(), keyId: getPublicKeyId() },
     googleClientId: env.GOOGLE_CLIENT_ID,
     appBaseUrl: env.APP_BASE_URL,
+    homeFeedMode: settings.homeFeedMode,
+    homeFeedOrder: settings.homeFeedOrder.split(','),
+    homeFeedPageSize: settings.homeFeedPageSize,
   });
 });
 
@@ -203,11 +206,21 @@ router.get(
   async (req: Request, res: Response) => {
     const { pincode } = (req as Request & { validated: { params: { pincode: string } } }).validated.params;
     const settings = await getSettings();
+    const location = await lookupPincode(pincode);
+    if (!location.valid) {
+      res.json({ pincode, valid: false, serviceable: false, codAvailable: false, city: '', district: '', state: '', areas: [], estimatedDays: null, courier: '', shippingChargeInr: settings.shippingFlatInr, estimatedDeliveryText: 'Pincode verify nahi hua. Pincode check karein.' });
+      return;
+    }
 
     const result = await checkPincodeServiceability(pincode, '400001', 0.5, true);
 
     res.json({
       pincode,
+      valid: true,
+      city: location.city,
+      district: location.district,
+      state: location.state,
+      areas: location.areas,
       serviceable: result.serviceable,
       codAvailable: result.codAvailable,
       estimatedDays: result.estimatedDays,
@@ -310,6 +323,8 @@ router.get('/banners', readLimiter, async (_req: Request, res: Response) => {
       ctaLink: b.ctaLink,
       offerText: b.offerText,
       position: b.position,
+      startsAt: b.startsAt,
+      expiresAt: b.expiresAt,
     })),
   });
 });

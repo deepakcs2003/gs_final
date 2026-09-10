@@ -32,6 +32,8 @@ interface CreateOrderResponse {
   amountMinor?: number;
   currency?: 'INR' | 'USD';
   totalMinor?: number;
+  codAdvanceMinor?: number;
+  codBalanceMinor?: number;
   prefill?: { name: string; contact: string; email: string };
 }
 
@@ -51,13 +53,14 @@ function loadRazorpay(): Promise<boolean> {
 export function CheckoutPage() {
   const navigate = useNavigate();
   const lines = useCart((state) => state.lines);
+  const appliedCoupon = useCart((state) => state.appliedCoupon);
   const clearCart = useCart((state) => state.clear);
   const toast = useUi((state) => state.toast);
   const openLogin = useUi((state) => state.openLogin);
 
   const { data: config } = useConfig();
   const { data: user } = useCurrentUser();
-  const { data: quote } = useCartQuote('');
+  const { data: quote } = useCartQuote(appliedCoupon);
   const pincodeCheck = usePincodeCheck();
 
   const [form, setForm] = useState({
@@ -102,6 +105,16 @@ export function CheckoutPage() {
     if (!codAllowed && paymentMethod === 'COD') setPaymentMethod('RAZORPAY');
   }, [codAllowed, paymentMethod]);
 
+  useEffect(() => {
+    if (!pincodeCheck.data?.valid || pincodeCheck.data.pincode !== form.pincode) return;
+    setForm((current) => ({
+      ...current,
+      city: pincodeCheck.data.city,
+      state: pincodeCheck.data.state,
+      line2: pincodeCheck.data.areas[0] || current.line2,
+    }));
+  }, [form.pincode, pincodeCheck.data]);
+
   if (lines.length === 0) {
     return (
       <EmptyState
@@ -135,6 +148,7 @@ export function CheckoutPage() {
     if (form.city.trim().length < 2) next.city = 'City likhein.';
     if (form.state.trim().length < 2) next.state = 'State likhein.';
     if (!/^\d{6}$/.test(form.pincode)) next.pincode = '6 digit ka pincode likhein.';
+    if (!pincodeCheck.data?.valid || pincodeCheck.data.pincode !== form.pincode) next.pincode = 'Pincode pehle verify karein.';
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -161,13 +175,14 @@ export function CheckoutPage() {
             country: config?.country ?? 'IN',
           },
           paymentMethod,
+          ...(appliedCoupon ? { couponCode: appliedCoupon } : {}),
           ...(customerNote ? { customerNote } : {}),
         },
       });
 
       track('ORDER_PLACED', { value: quote?.amounts.totalMinor ?? 0 });
 
-      if (order.paymentMethod === 'COD') {
+      if (order.paymentMethod === 'COD' && !order.razorpayOrderId) {
         clearCart();
         navigate(`/order/${order.orderNumber}?mobile=${form.mobile}`);
         return;
@@ -200,7 +215,7 @@ export function CheckoutPage() {
       amount: order.amountMinor,
       currency: order.currency,
       name: 'Guddi Silai',
-      description: `Order ${order.orderNumber}`,
+      description: order.paymentMethod === 'COD' ? `COD advance for ${order.orderNumber}` : `Order ${order.orderNumber}`,
       order_id: order.razorpayOrderId,
       prefill: order.prefill,
       theme: { color: '#7B1E3B' },
@@ -312,7 +327,23 @@ export function CheckoutPage() {
                 <div className="flex gap-2">
                   <input
                     value={form.pincode}
-                    onChange={(e) => set('pincode', e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      onChange={(e) => {
+                        pincodeCheck.reset();
+                        setForm((current) => ({
+                          ...current,
+                          pincode: e.target.value.replace(/\D/g, '').slice(0, 6),
+                          city: '',
+                          state: '',
+                          line2: '',
+                        }));
+                        setErrors((current) => {
+                          const next = { ...current };
+                          delete next.pincode;
+                          delete next.city;
+                          delete next.state;
+                          return next;
+                        });
+                      }}
                     inputMode="numeric"
                     className="field"
                   />
@@ -335,9 +366,11 @@ export function CheckoutPage() {
                   )}
                 >
                   {pincodeResult.serviceable ? <Check size={15} className="mt-0.5" /> : null}
-                  {pincodeResult.serviceable
-                    ? `${pincodeResult.estimatedDeliveryText}${pincodeResult.courier ? ` • ${pincodeResult.courier}` : ''}`
-                    : 'Is pincode par abhi delivery nahi hai. WhatsApp par baat karein.'}
+                  {pincodeResult.valid && pincodeResult.serviceable
+                    ? `${pincodeResult.city}, ${pincodeResult.state} • ${pincodeResult.estimatedDeliveryText}${pincodeResult.courier ? ` • ${pincodeResult.courier}` : ''}`
+                    : pincodeResult.valid
+                      ? 'Pincode valid hai, lekin is address par delivery available nahi hai.'
+                      : 'Pincode verify nahi hua. Pincode check karein.'}
                 </p>
               ) : null}
             </div>
@@ -393,6 +426,13 @@ export function CheckoutPage() {
                       <span className="text-ink-muted">
                         {line.quantity} × {line.colorName || line.fabricName || line.designId}
                       </span>
+                      {line.type === 'CUSTOMIZE' ? (
+                        <span className="block text-[11px] text-ink-muted">
+                          Fabric: {line.fabricName || 'Not selected'}
+                          {line.laceNames.length ? ` • Lace: ${line.laceNames.join(', ')}` : ''}
+                          {line.latkanNames.length ? ` • Latkan: ${line.latkanNames.join(', ')}` : ''}
+                        </span>
+                      ) : null}
                     </span>
                     <span className={line.lineTotalMinor === 0 ? 'shrink-0 font-black uppercase tracking-wide text-leaf' : 'shrink-0 font-semibold'}>
                       {line.lineTotalMinor === 0 ? 'FREE' : formatMoney(line.lineTotalMinor, currency)}
@@ -423,6 +463,18 @@ export function CheckoutPage() {
                           : formatMoney(quote.amounts.shippingMinor, currency)}
                     </dd>
                   </div>
+                  {paymentMethod === 'COD' && quote.amounts.codAdvanceMinor > 0 ? (
+                    <>
+                      <div className="flex justify-between border-t border-maroon-100 pt-2">
+                        <dt className="font-semibold text-maroon-700">COD advance ({Math.round((quote.amounts.codAdvanceMinor / Math.max(quote.amounts.codAdvanceMinor + quote.amounts.codBalanceMinor, 1)) * 100)}%)</dt>
+                        <dd className="font-bold text-maroon-700">{formatMoney(quote.amounts.codAdvanceMinor, currency)} now</dd>
+                      </div>
+                      <div className="flex justify-between">
+                        <dt className="text-ink-muted">Delivery par balance</dt>
+                        <dd className="font-semibold">{formatMoney(quote.amounts.codBalanceMinor, currency)}</dd>
+                      </div>
+                    </>
+                  ) : null}
                   <div className="!mt-3 flex items-center justify-between border-t border-maroon-100 pt-3">
                     <dt className="text-[15px] font-bold">Total</dt>
                     <dd className="text-xl font-bold text-maroon-700">
@@ -441,7 +493,9 @@ export function CheckoutPage() {
                 {placing
                   ? 'Ruk jaiye…'
                   : paymentMethod === 'COD'
-                    ? 'COD Order Confirm Karein'
+                    ? quote && quote.amounts.codAdvanceMinor > 0
+                      ? `Pay COD advance ${formatMoney(quote.amounts.codAdvanceMinor, currency)}`
+                      : 'COD Order Confirm Karein'
                     : `Pay ${quote ? formatMoney(quote.amounts.totalMinor, currency) : ''}`}
               </button>
 

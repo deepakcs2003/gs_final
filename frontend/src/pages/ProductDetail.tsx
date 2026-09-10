@@ -176,6 +176,11 @@ export function ProductDetailPage() {
           <ZoomableImage
             src={product.images[activeImage]?.url ?? product.image}
             alt={product.images[activeImage]?.alt ?? product.name}
+            aspectRatio={
+              product.images[activeImage]?.width && product.images[activeImage]?.height
+                ? product.images[activeImage].width / product.images[activeImage].height
+                : undefined
+            }
             onZoom={() => track('IMAGE_ZOOM', { productId: product.id })}
           />
 
@@ -196,8 +201,11 @@ export function ProductDetailPage() {
                     index === activeImage ? 'border-maroon-600' : 'border-transparent opacity-70',
                   )}
                 >
-                  <span className="block aspect-[3/4]">
-                    <SmartImage src={image.url} alt={image.alt} />
+                  <span
+                    className="block"
+                    style={{ aspectRatio: image.width && image.height ? image.width / image.height : 3 / 4 }}
+                  >
+                    <SmartImage src={image.url} alt={image.alt} className="object-contain" />
                   </span>
                   <span className="block bg-white py-0.5 text-center text-[9.5px] font-semibold text-ink-muted">
                     {IMAGE_KIND_LABEL[image.kind] ?? 'View'}

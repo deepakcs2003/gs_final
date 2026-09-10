@@ -59,11 +59,14 @@ export interface QuotedLine {
   sku: string;
 
   fabricId: string | null;
+  fabricColorName: string;
+  fabricDetails: Array<{ name: string; material: string; colorName: string; image: string }>;
   fabricName: string;
   fabricMaterial: string;
-  fabricColorName: string;
+  laceDetails: Array<{ name: string; colorName: string; image: string }>;
   laceIds: string[];
   laceNames: string[];
+  latkanDetails: Array<{ name: string; colorName: string; image: string }>;
   latkanIds: string[];
   latkanNames: string[];
 
@@ -77,6 +80,7 @@ export interface QuotedLine {
   unitStitchingMinor: number;
   unitTotalMinor: number;
   lineTotalMinor: number;
+  codInitialPaymentPercent: number;
 
   /** Non-empty means this line cannot be ordered as-is. */
   issues: string[];
@@ -95,6 +99,8 @@ export interface CartQuote {
     shippingMinor: number;
     totalMinor: number;
     couponCode: string;
+    codAdvanceMinor: number;
+    codBalanceMinor: number;
   };
   couponError: string;
   /** True for foreign orders: delivery is quoted at payment time (README §32). */
@@ -213,9 +219,12 @@ export async function quoteCart(inputLines: CartLineInput[], ctx: QuoteContext):
     let fabricName = '';
     let fabricMaterial = '';
     let fabricColorName = '';
+    const fabricDetails: Array<{ name: string; material: string; colorName: string; image: string }> = [];
     const laceNames: string[] = [];
+    const laceDetails: Array<{ name: string; colorName: string; image: string }> = [];
     const chosenLaceIds: string[] = [];
     const latkanNames: string[] = [];
+    const latkanDetails: Array<{ name: string; colorName: string; image: string }> = [];
     const chosenLatkanIds: string[] = [];
 
     if (type === 'CUSTOMIZE') {
@@ -236,12 +245,12 @@ export async function quoteCart(inputLines: CartLineInput[], ctx: QuoteContext):
             fabricName = fabricName ? `${fabricName}, ${fabric.name}` : fabric.name;
             fabricMaterial = fabricMaterial ? `${fabricMaterial}, ${fabric.material}` : fabric.material;
             fabricColorName = fabricColorName ? `${fabricColorName}, ${fabric.colorName}` : fabric.colorName;
+            fabricDetails.push({ name: fabric.name, material: fabric.material, colorName: fabric.colorName, image: fabric.image ?? '' });
           }
         }
       }
 
       const laceColorBy = new Map((line.laceColors ?? []).slice(0, 6).map((c) => [String(c.laceId), c.colorName]));
-      if ((line.laceIds ?? []).length < (product.minLaceCount ?? 1)) issues.push(`Is blouse mein minimum ${product.minLaceCount ?? 1} lace choose karein.`);
       if ((line.laceIds ?? []).length > (product.maxLaceCount ?? 1)) issues.push(`Is blouse mein maximum ${product.maxLaceCount ?? 1} laces choose kar sakte hain.`);
       for (const rawId of (line.laceIds ?? []).slice(0, 6)) {
         const lace = laceMap.get(String(rawId));
@@ -253,12 +262,13 @@ export async function quoteCart(inputLines: CartLineInput[], ctx: QuoteContext):
         }
         laceUnitInr += lace.priceInr;
         const color = laceColorBy.get(String(lace._id));
-        laceNames.push(color && color !== lace.colorName ? `${lace.name} (${color})` : lace.name);
+        const selectedColor = color || lace.colorName;
+        laceNames.push(selectedColor !== lace.colorName ? `${lace.name} (${selectedColor})` : lace.name);
+        laceDetails.push({ name: lace.name, colorName: selectedColor, image: lace.image ?? '' });
         chosenLaceIds.push(String(lace._id));
       }
 
       const latkanColorBy = new Map((line.latkanColors ?? []).slice(0, 6).map((c) => [String(c.latkanId), c.colorName]));
-      if ((line.latkanIds ?? []).length < (product.minLatkanCount ?? 1)) issues.push(`Is blouse mein minimum ${product.minLatkanCount ?? 1} latkan choose karein.`);
       if ((line.latkanIds ?? []).length > (product.maxLatkanCount ?? 1)) issues.push(`Is blouse mein maximum ${product.maxLatkanCount ?? 1} latkans choose kar sakte hain.`);
       for (const rawId of (line.latkanIds ?? []).slice(0, 6)) {
         const latkan = latkanMap.get(String(rawId));
@@ -271,7 +281,9 @@ export async function quoteCart(inputLines: CartLineInput[], ctx: QuoteContext):
         }
         latkanUnitInr += latkan.priceInr;
         const color = latkanColorBy.get(String(latkan._id));
-        latkanNames.push(color && color !== latkan.colorName ? `${latkan.name} (${color})` : latkan.name);
+        const selectedColor = color || latkan.colorName;
+        latkanNames.push(selectedColor !== latkan.colorName ? `${latkan.name} (${selectedColor})` : latkan.name);
+        latkanDetails.push({ name: latkan.name, colorName: selectedColor, image: latkan.image ?? '' });
         chosenLatkanIds.push(String(latkan._id));
       }
 
@@ -308,10 +320,13 @@ export async function quoteCart(inputLines: CartLineInput[], ctx: QuoteContext):
       fabricName,
       fabricMaterial,
       fabricColorName,
+      fabricDetails,
       laceIds: chosenLaceIds,
       laceNames,
+      laceDetails,
       latkanIds: chosenLatkanIds,
       latkanNames,
+      latkanDetails,
       measurementReady: type === 'CUSTOMIZE' ? isMeasurementReady(line.measurement) : true,
       note: (line.note ?? '').slice(0, 300),
       unitBaseMinor,
@@ -321,6 +336,7 @@ export async function quoteCart(inputLines: CartLineInput[], ctx: QuoteContext):
       unitStitchingMinor,
       unitTotalMinor,
       lineTotalMinor: unitTotalMinor * quantity,
+      codInitialPaymentPercent: type === 'CUSTOMIZE' || type === 'READY_MADE' ? Math.min(Math.max(product.codInitialPaymentPercent ?? 25, 0), 100) : 0,
       issues,
       stockLeft,
     });
@@ -340,6 +356,14 @@ export async function quoteCart(inputLines: CartLineInput[], ctx: QuoteContext):
   // Foreign orders: delivery is quoted at payment time (README §32).
   const shippingChargedLater = currency !== 'INR';
   const subtotalAfterDiscountMinor = Math.max(subtotalMinor - discountMinor, 0);
+  const discountRatio = subtotalMinor > 0 ? discountMinor / subtotalMinor : 0;
+  const codAdvanceMinor = Math.min(
+    subtotalAfterDiscountMinor,
+    sellableLines.reduce(
+      (sum, line) => sum + Math.round(line.lineTotalMinor * (1 - discountRatio) * (line.codInitialPaymentPercent / 100)),
+      0,
+    ),
+  );
   const shippingMinor =
     shippingChargedLater || subtotalMinor === 0
       ? 0
@@ -358,6 +382,8 @@ export async function quoteCart(inputLines: CartLineInput[], ctx: QuoteContext):
       shippingMinor,
       totalMinor: subtotalAfterDiscountMinor + shippingMinor,
       couponCode,
+      codAdvanceMinor,
+      codBalanceMinor: Math.max(subtotalAfterDiscountMinor + shippingMinor - codAdvanceMinor, 0),
     },
     couponError,
     shippingChargedLater,
@@ -443,10 +469,13 @@ function emptyLine(line: CartLineInput, quantity: number, issues: string[]): Quo
     fabricName: '',
     fabricMaterial: '',
     fabricColorName: '',
+    fabricDetails: [],
     laceIds: [],
     laceNames: [],
+    laceDetails: [],
     latkanIds: [],
     latkanNames: [],
+    latkanDetails: [],
     measurementReady: false,
     note: '',
     unitBaseMinor: 0,
@@ -456,6 +485,7 @@ function emptyLine(line: CartLineInput, quantity: number, issues: string[]): Quo
     unitStitchingMinor: 0,
     unitTotalMinor: 0,
     lineTotalMinor: 0,
+    codInitialPaymentPercent: 0,
     issues,
     stockLeft: 0,
   };
