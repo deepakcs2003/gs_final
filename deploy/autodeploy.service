@@ -1,0 +1,19 @@
+[Unit]
+# Guddi Silai auto-deploy webhook listener.
+Description=Guddi Silai GitHub webhook auto-deploy
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/app
+Environment=WEBHOOK_PORT=17400
+Environment=WEBHOOK_SECRET=CHANGE_ME
+Environment=APP_DIR=/home/ubuntu/app
+ExecStart=/usr/bin/node /home/ubuntu/app/deploy/autodeploy.mjs
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

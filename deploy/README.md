@@ -57,14 +57,17 @@ ssh ubuntu@<PUBLIC_IP>
 docker --version
 ```
 
-## 4. Copy the app to the VM
+## 4. Put the app on the VM (clone, so auto-deploy can pull later)
 
-From Windows (in the repo folder):
-```powershell
-scp -r .\Dockerfile .\docker-compose.yml .\package.json .\package-lock.json .\frontend .\backend .\deploy ubuntu@<PUBLIC_IP>:~/app
+The VM needs git + the repo so the auto-deploy webhook can `git pull`. On the VM:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y git
+git clone https://github.com/deepakcs2003/gs_final.git ~/app
+cd ~/app
 ```
-(The `deploy\` folder is needed for the Caddyfile; `.dockerignore` keeps the
-image lean.)
+> Keep `~/app` on the *main* branch — the auto-deploy resets it to `origin/main`.
 
 ## 5. Create the production env file on the VM
 
@@ -115,7 +118,7 @@ Generate secrets: `openssl rand -base64 48` twice.
 cd ~/app
 docker compose up -d --build
 docker compose ps
-curl -s https://yourdomain.com/health        # {"ok":true,"service":"guddi-silai-api"}
+curl -s http://127.0.0.1:4000/health        # {"ok":true,"service":"guddi-silai-api"}
 ```
 
 Then register the Razorpay **webhook** in the Razorpay dashboard pointing at:
@@ -125,10 +128,45 @@ https://yourdomain.com/api/payments/webhook
 (events: `payment.captured`, `payment.failed`, `order.paid`) using the same
 `RAZORPAY_WEBHOOK_SECRET`.
 
-## 8. Update & redeploy after future merges
+## 8. Auto-deploy (merge `main` -> the VM goes live)
+
+Everything is in the repo already — only the webhook secret + systemd enable
+is manual.
+
+1. Pick a secret: `openssl rand -hex 32`
+2. Point the service at it:
+   ```bash
+   cd ~/app
+   sudo sed -i "s/CHANGE_ME/YOUR_SECRET/" deploy/autodeploy.service
+   ```
+3. Install & start the listener (it's just a small Node webhook, port 17400):
+   ```bash
+   sudo cp deploy/autodeploy.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now autodeploy
+   systemctl status autodeploy          # should be "active (running)"
+   ```
+4. Open the same **TCP 17400** ingress rule on the Oracle security list
+   (restrict source to GitHub's IPs `140.82.112.0/20`, `192.30.252.0/22`,
+   `185.199.108.0/22` — optional but tidy).
+5. Tell GitHub to ping it. Repo → **Settings → Webhooks → Add webhook**:
+   - Payload URL: `http://<PUBLIC_IP>:17400/`
+   - Content type: `application/json`
+   - Secret: the same `YOUR_SECRET`
+   - Events: **Just the push event** → Add
+6. Test end-to-end: merge (or push) to `main`, then
+   ```bash
+   journalctl -u autodeploy -f      # watch pull + rebuild in real time
+   docker compose ps                # both containers restarted
+   ```
+   GitHub shows a green ✓ on the webhook delivery panel after each push.
+
+Each future `git merge` to `main` now auto-pulls and redeploys. No login needed.
+
+## 9. Update & redeploy manually (if auto-deploy is off)
 
 ```bash
-cd ~/app && git pull   # or scp the changed files again
+cd ~/app && git pull
 docker compose up -d --build
 ```
 
@@ -141,6 +179,9 @@ docker compose up -d --build
 | Boot refuses | env.ts validation — `docker compose logs` prints the exact missing keys |
 | Payments fail | key is `rzp_test_` in prod (boot blocks it) or webhook URL/secret wrong |
 | Can't get the site | Oracle security list missing ports 80/443, or instance is stopped |
+| Webhook shows red ✗ in GitHub | port 17400 ingress closed, wrong secret in `autodeploy.service`, or node not running (`systemctl status autodeploy`) |
+| Merge happened but nothing deployed | push was to a different branch; only `main` triggers. Check `journalctl -u autodeploy -f` |
+| `update.sh` fails: `git.lock exists` | a manual `git pull` is mid-run — wait, then re-trigger webhook |
 
 ## What NOT to do
 - Don't run `npm run seed` on the live DB — it wipes the real catalogue.
