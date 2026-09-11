@@ -11,6 +11,14 @@ const router = Router();
 /* POST /api/payments/webhook                                                  */
 /* -------------------------------------------------------------------------- */
 
+interface WebhookEvent {
+  event?: string;
+  payload?: {
+    payment?: { entity?: Record<string, unknown> };
+    refund?: { entity?: Record<string, unknown> };
+  };
+}
+
 /**
  * Razorpay's server-to-server notification — the authoritative record of what
  * was actually paid. It runs before the JSON body parser (see app.ts) because
@@ -30,11 +38,42 @@ router.post('/webhook', async (req: Request, res: Response) => {
     return;
   }
 
-  let event: { event?: string; payload?: { payment?: { entity?: Record<string, unknown> } } };
+  let event: WebhookEvent;
   try {
     event = JSON.parse(rawBody.toString('utf8'));
   } catch {
     res.status(400).json({ ok: false });
+    return;
+  }
+
+  // Refund events arrive as payload.refund with payment_id (no order_id), so
+  // they are resolved via the payment that was refunded.
+  if (event.event === 'refund.processed' || event.event === 'refund.failed') {
+    const refundEntity = event.payload?.refund?.entity;
+    if (!refundEntity) {
+      res.json({ ok: true });
+      return;
+    }
+    const paymentId = typeof refundEntity.payment_id === 'string' ? refundEntity.payment_id : '';
+    if (paymentId) {
+      const refundedOrder = await Order.findOne({ 'payment.razorpayPaymentId': paymentId });
+      if (refundedOrder) {
+        const settled = event.event === 'refund.processed' ? 'COMPLETED' : 'FAILED';
+        if (refundedOrder.cancellation?.refund?.status !== settled) {
+          refundedOrder.set('cancellation.refund.status', settled);
+          refundedOrder.set('cancellation.refund.razorpayRefundId', typeof refundEntity.id === 'string' ? refundEntity.id : refundedOrder.cancellation?.refund?.razorpayRefundId ?? '');
+          refundedOrder.set('cancellation.refund.completedAt', settled === 'COMPLETED' ? new Date() : refundedOrder.cancellation?.refund?.completedAt ?? null);
+          refundedOrder.set('cancellation.refund.failureReason', settled === 'FAILED' ? String(refundEntity.error_description ?? refundEntity.error_reason ?? 'refund failed').slice(0, 300) : '');
+          if (settled === 'COMPLETED') refundedOrder.set('payment.status', 'REFUNDED');
+          await refundedOrder.save();
+        }
+        logger.info({ orderNumber: refundedOrder.orderNumber, settled }, 'refund webhook processed');
+        res.json({ ok: true });
+        return;
+      }
+    }
+    // Unknown refund — acknowledge so Razorpay stops retrying.
+    res.json({ ok: true });
     return;
   }
 

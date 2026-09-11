@@ -13,6 +13,8 @@ import { logger } from '../../utils/logger.js';
 export interface SmsProvider {
   readonly name: string;
   sendOtp(mobile: string, code: string): Promise<void>;
+  /** Free-form transactional message (order updates, cancellations…). */
+  sendMessage(mobile: string, message: string): Promise<void>;
 }
 
 const consoleProvider: SmsProvider = {
@@ -20,6 +22,9 @@ const consoleProvider: SmsProvider = {
   async sendOtp(mobile, code) {
     // The one place a code is intentionally printed. Never in production.
     logger.info(`[dev-otp] mobile=${maskMobile(mobile)} code=${code}`);
+  },
+  async sendMessage(mobile, message) {
+    logger.info(`[dev-sms] mobile=${maskMobile(mobile)} message=${message.slice(0, 160)}`);
   },
 };
 
@@ -52,6 +57,31 @@ const msg91Provider: SmsProvider = {
     const body = response.data as { type?: string; message?: string } | undefined;
     if (body?.type && body.type !== 'success') {
       throw new Error(`MSG91 rejected the request: ${String(body.type)}`);
+    }
+  },
+  async sendMessage(mobile, message) {
+    if (!integrations.msg91) {
+      throw new Error('MSG91 is not configured');
+    }
+
+    // Legacy transactional route (route 0) with the same auth key used for OTP.
+    const response = await axios.get('https://api.msg91.com/api/sendhttp.php', {
+      params: {
+        authkey: env.MSG91_AUTH_KEY,
+        mobiles: mobile,
+        message: message.slice(0, 1000),
+        sender: env.MSG91_SENDER_ID,
+        route: '0',
+        country: '91',
+      },
+      timeout: 10_000,
+      maxRedirects: 0,
+      validateStatus: (status) => status >= 200 && status < 300,
+    });
+
+    const body = response.data as { type?: string; message?: string } | undefined;
+    if (body && typeof body === 'object' && 'type' in body && body.type === 'error') {
+      throw new Error(`MSG91 rejected the message: ${String(body.message ?? body.type)}`);
     }
   },
 };

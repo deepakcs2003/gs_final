@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from '../../lib/api';
 import { Badge, BtnGhost, BtnOutline, Empty, Modal, Toolbar, inr } from './shared';
 import { Eye, X, Ban, Check } from 'lucide-react';
@@ -14,13 +14,14 @@ interface CustomerOrder {
   items: Array<{ designId: string; name: string; quantity: number }>;
 }
 
-export function CustomersModule() {
+export function CustomersModule({ initialCustomerId }: { initialCustomerId?: string } = {}) {
   const [items, setItems] = useState<Customer[]>([]);
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Customer | null>(null);
   const [selectedOrders, setSelectedOrders] = useState<CustomerOrder[]>([]);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const targetRef = useRef(initialCustomerId ?? null);
 
   const load = async () => {
     setError('');
@@ -30,6 +31,19 @@ export function CustomersModule() {
     } catch (err) { setError(err instanceof ApiError ? err.message : 'Customers load nahi hue.'); }
   };
   useEffect(() => { void load(); }, []);
+
+  useEffect(() => {
+    if (!initialCustomerId || !targetRef.current) return;
+    targetRef.current = null;
+    const cached = items.find((c) => c._id === initialCustomerId);
+    if (cached) { void openDetail(cached); return; }
+    api<{ user: Customer; orders: CustomerOrder[] }>(`/admin/customers/${initialCustomerId}`)
+      .then((res) => {
+        setSelected({ ...res.user, stats: { orderCount: 0, totalSpentMinor: 0, lastOrderAt: null } });
+        setSelectedOrders(res.orders);
+      })
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Customer kholte waqt gadbad.'));
+  }, [items, initialCustomerId]);
 
   const filtered = useMemo(() => items.filter((c) =>
     `${c.name} ${c.mobile} ${c.email ?? ''}`.toLowerCase().includes(query.toLowerCase()),

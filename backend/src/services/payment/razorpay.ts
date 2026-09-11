@@ -95,3 +95,78 @@ export function getPublicKeyId(): string {
 }
 
 export const razorpayEnabled = () => integrations.razorpay;
+
+/* -------------------------------------------------------------------------- */
+/* Refunds                                                                     */
+/* -------------------------------------------------------------------------- */
+
+export interface RazorpayRefund {
+  id: string;
+  /** Razorpay status: pending / processed / failed. */
+  status: string;
+  amountMinor: number;
+  createdAt: Date | null;
+}
+
+/**
+ * Initiates a refund on a *captured* payment. Amounts are in the minor unit.
+ * Razorpay refuses a refund on a non-captured payment, so callers must check
+ * `payment.status` first. Duplicate-invocation protection happens at the caller
+ * (an order-level refund state machine), not here.
+ */
+export async function createRefund(paymentId: string, amountMinor?: number): Promise<RazorpayRefund> {
+  if (!integrations.razorpay) {
+    throw serviceUnavailable('Razorpay configure nahi hai — refund manually karni padegi.');
+  }
+  try {
+    // The SDK's overloads return Promise<void> in the callback form, so read
+    // the refund off a narrow structural type instead of the SDK's union.
+    const refund = (await getClient().payments.refund(paymentId, { amount: amountMinor ?? 0 })) as unknown as {
+      id?: string;
+      status?: string;
+      amount?: number;
+      created_at?: number;
+    };
+    return {
+      id: String(refund.id ?? ''),
+      status: String(refund.status ?? 'pending'),
+      amountMinor: Number(refund.amount ?? 0),
+      createdAt: refund.created_at ? new Date(Number(refund.created_at) * 1000) : null,
+    };
+  } catch (err) {
+    logger.error({ err: (err as Error).message, paymentId }, 'razorpay refund initiation failed');
+    throw serviceUnavailable('Refund start nahi ho payi. Thodi der baad dobara try karein.');
+  }
+}
+
+/** Re-queries a refund we already created (idempotent resync for the admin). */
+export async function fetchRefund(refundId: string): Promise<RazorpayRefund> {
+  if (!integrations.razorpay) {
+    throw serviceUnavailable('Razorpay configure nahi hai.');
+  }
+  try {
+    const refund = await getClient().refunds.fetch(refundId);
+    return {
+      id: String(refund.id),
+      status: String(refund.status),
+      amountMinor: Number(refund.amount),
+      createdAt: refund.created_at ? new Date(Number(refund.created_at) * 1000) : null,
+    };
+  } catch (err) {
+    logger.error({ err: (err as Error).message, refundId }, 'razorpay refund fetch failed');
+    throw serviceUnavailable('Refund status check nahi ho paya.');
+  }
+}
+
+/** Readable refund lifecycle state for the admin UI. */
+export function refundLifecycle(status: string): 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' {
+  switch (status) {
+    case 'processed':
+    case 'completed':
+      return 'COMPLETED';
+    case 'failed':
+      return 'FAILED';
+    default:
+      return 'PENDING';
+  }
+}

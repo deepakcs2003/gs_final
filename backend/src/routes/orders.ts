@@ -16,7 +16,8 @@ import { getShiprocketSettings } from '../services/shipping/shiprocket-settings.
 import { cartLinesSchema, couponCodeSchema } from '../schemas/cart.js';
 import { logger } from '../utils/logger.js';
 import { AppError, badRequest, conflict, notFound } from '../utils/errors.js';
-import { ORDER_STATUS_LABELS, type OrderStatus } from '../domain/constants.js';
+import { ORDER_STATUS_LABELS, type OrderStatus, type ComplexityKey } from '../domain/constants.js';
+import { detectComplexity, computeEstimate, type EstimateResult } from '../services/production.js';
 
 const router = Router();
 
@@ -112,6 +113,36 @@ async function releaseStock(lines: QuotedLine[]): Promise<void> {
   }
 }
 
+/**
+ * Delivery estimate for a quoted cart: highest-severity complexity across the
+ * CUSTOMIZE lines, workload-aware stitching estimate, and a delivery range.
+ */
+export async function estimateForQuote(lines: QuotedLine[]): Promise<EstimateResult> {
+  const custom = lines.filter((line) => line.type === 'CUSTOMIZE');
+  let complexity: ComplexityKey = 'medium';
+  let fallbackStitchingDays = 0;
+
+  if (custom.length > 0) {
+    const products = await Product.find({ _id: { $in: custom.map((line) => line.productId) } })
+      .select('name embroidery tags stitchingDays')
+      .lean();
+    const severity: Record<ComplexityKey, number> = { simple: 1, medium: 2, designer: 3, heavy_designer: 4, bridal: 5 };
+    for (const line of custom) {
+      const product = products.find((p) => String(p._id) === line.productId);
+      if (!product) continue;
+      const detected = detectComplexity(product);
+      if ((severity[detected] ?? 0) > (severity[complexity] ?? 0)) complexity = detected;
+      fallbackStitchingDays = Math.max(fallbackStitchingDays, product.stitchingDays ?? 0);
+    }
+  }
+
+  return computeEstimate({
+    items: lines.map((line) => ({ type: line.type, quantity: line.quantity })),
+    complexity,
+    fallbackStitchingDays: fallbackStitchingDays || 7,
+  });
+}
+
 /* -------------------------------------------------------------------------- */
 /* POST /api/orders                                                            */
 /* -------------------------------------------------------------------------- */
@@ -169,6 +200,11 @@ router.post('/', checkoutLimiter, validate({ body: createOrderSchema }), async (
   const isCod = body.paymentMethod === 'COD';
   const orderNumber = generateOrderNumber();
 
+  // Review-first: every new order — paid or not — waits for an admin to confirm
+  // it. Complexity + delivery estimate are snapshotted now and recomputed when
+  // the admin confirms / assigns a tailor (workload changes).
+  const estimate = await estimateForQuote(quote.lines);
+
   try {
     const order = await Order.create({
       orderNumber,
@@ -219,8 +255,24 @@ router.post('/', checkoutLimiter, validate({ body: createOrderSchema }), async (
         method: body.paymentMethod,
         status: isCod && quote.amounts.codAdvanceMinor > 0 ? 'COD_ADVANCE_PENDING' : isCod ? 'COD_PENDING' : 'PENDING',
       },
-      status: 'PLACED',
-      statusHistory: [{ status: 'PLACED', at: new Date(), note: '' }],
+      status: 'AWAITING_REVIEW',
+      statusHistory: [{ status: 'AWAITING_REVIEW', at: new Date(), note: '' }],
+      review: { status: 'PENDING', flags: [] },
+      production: {
+        complexity: estimate.complexity,
+        productionUnits: estimate.productionUnits,
+        estimatedWorkingDays: estimate.stitchingWorkingDays,
+        calculatedAt: new Date(),
+      },
+      deliveryEstimate: {
+        stitchingWorkingDays: estimate.estimate.stitchingWorkingDays,
+        packingWorkingDays: estimate.estimate.packingWorkingDays,
+        shippingDays: estimate.estimate.shippingDays,
+        fromDate: estimate.estimate.fromDate,
+        toDate: estimate.estimate.toDate,
+        bufferDays: 0,
+        calculatedAt: new Date(),
+      },
       customerNote: body.customerNote,
       measurementInstructionVersion: settings.measurementInstructionVersion,
       placedAt: new Date(),
@@ -239,12 +291,9 @@ router.post('/', checkoutLimiter, validate({ body: createOrderSchema }), async (
 
     if (isCod) {
       if (quote.amounts.codAdvanceMinor <= 0) {
-        // A product configured with 0% advance can be confirmed immediately.
-        order.status = 'CONFIRMED';
-        order.statusHistory.push({ status: 'CONFIRMED', at: new Date(), note: 'COD order — no advance' });
+        // No advance required — but the order still waits for admin review
+        // before stitching or shipping starts (pushToShiprocket fires there).
         await order.save();
-        void pushToShiprocket(String(order._id));
-
         res.status(201).json({
           orderNumber: order.orderNumber,
           paymentMethod: 'COD',
@@ -459,6 +508,13 @@ interface OrderLike {
   contact?: unknown;
   customerNote?: string;
   placedAt?: Date;
+  deliveryEstimate?: {
+    stitchingWorkingDays?: number;
+    packingWorkingDays?: number;
+    shippingDays?: number;
+    fromDate?: Date | null;
+    toDate?: Date | null;
+  } | null;
 }
 
 function presentOrder(order: OrderLike, detailed = false) {
@@ -505,6 +561,14 @@ function presentOrder(order: OrderLike, detailed = false) {
       label: ORDER_STATUS_LABELS[entry.status as OrderStatus] ?? entry.status,
       at: entry.at,
     })),
+    // Customer-safe delivery range — never exposes internal workload or tailors.
+    deliveryEstimate: order.deliveryEstimate?.fromDate && order.deliveryEstimate?.toDate
+      ? {
+          stitchingWorkingDays: order.deliveryEstimate.stitchingWorkingDays ?? 0,
+          from: order.deliveryEstimate.fromDate,
+          to: order.deliveryEstimate.toDate,
+        }
+      : null,
     tracking: {
       awb: order.shipping?.awb ?? '',
       courier: order.shipping?.courier ?? '',
@@ -517,7 +581,11 @@ function presentOrder(order: OrderLike, detailed = false) {
   };
 }
 
-/** Idempotent: a webhook and the browser callback both routinely arrive. */
+/**
+ * Money arrived. The order itself stays AWAITING_REVIEW — confirmation is an
+ * admin decision (review-first policy), not an automatic side-effect of being
+ * paid. Shipping is pushed only after the admin confirms.
+ */
 export async function markPaid(order: InstanceType<typeof Order>, paymentId: string): Promise<void> {
   if (order.payment.status === 'PAID') return;
 
@@ -525,11 +593,7 @@ export async function markPaid(order: InstanceType<typeof Order>, paymentId: str
   order.payment.razorpayPaymentId = paymentId;
   order.payment.verifiedAt = new Date();
   order.payment.paidAt = new Date();
-  order.status = 'CONFIRMED';
-  order.statusHistory.push({ status: 'CONFIRMED', at: new Date(), note: 'Payment received' });
   await order.save();
-
-  void pushToShiprocket(String(order._id));
 }
 
 export async function markCodAdvancePaid(order: InstanceType<typeof Order>, paymentId: string): Promise<void> {
@@ -538,10 +602,7 @@ export async function markCodAdvancePaid(order: InstanceType<typeof Order>, paym
   order.payment.razorpayPaymentId = paymentId;
   order.payment.verifiedAt = new Date();
   order.payment.paidAt = new Date();
-  order.status = 'CONFIRMED';
-  order.statusHistory.push({ status: 'CONFIRMED', at: new Date(), note: 'COD advance received' });
   await order.save();
-  void pushToShiprocket(String(order._id));
 }
 
 export async function markPaymentFailed(order: InstanceType<typeof Order>, reason: string): Promise<void> {
@@ -567,8 +628,11 @@ async function releaseStockForOrder(order: InstanceType<typeof Order>): Promise<
   }
 }
 
-/** Fire-and-forget: courier problems must not fail a paid order. */
-async function pushToShiprocket(orderId: string): Promise<void> {
+/**
+ * Fire-and-forget: courier problems must not fail a paid order. Called from
+ * the admin confirm endpoint once a reviewed order is approved.
+ */
+export async function pushToShiprocket(orderId: string): Promise<void> {
   try {
     const [order, srSettings] = await Promise.all([
       Order.findById(orderId),

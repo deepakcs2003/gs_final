@@ -6,12 +6,17 @@ import { adminReadLimiter, adminWriteLimiter } from '../middleware/rateLimit.js'
 import { Category, Fabric, Lace, Latkan, Product } from '../models/catalog.js';
 import { Coupon, Enquiry, Order, Review } from '../models/commerce.js';
 import { MeasurementField, User } from '../models/user.js';
+import { Tailor } from '../models/tailor.js';
 import { AdminActivityLog, AnalyticsEvent, Setting } from '../models/analytics.js';
 import { Color, Size, Banner, OfferPopup, Page, HomepageSection } from '../models/admin-content.js';
 import { validate, type ValidatedRequest } from '../middleware/validate.js';
-import { ORDER_STATUSES, ADMIN_ROLES, type AdminRole, type OrderStatus } from '../domain/constants.js';
+import { ORDER_STATUSES, ADMIN_ROLES, TAILOR_SPECIALIZATIONS, TAILOR_STATUSES, COMPLEXITY_KEYS, type AdminRole, type OrderStatus, type ComplexityKey, type TailorSpecialization, type TailorStatus } from '../domain/constants.js';
 import { notFound, forbidden, badRequest, conflict } from '../utils/errors.js';
 import { invalidateSettingsCache } from '../services/settings.js';
+import { computeEstimate, detectComplexity, complexitySpecialization, dailyCapacityFor, activeWorkload, tailorWorkloads, pendingWorkload, awaitingTailorCount, getProductionConfig } from '../services/production.js';
+import { createRefund, fetchRefund, refundLifecycle } from '../services/payment/razorpay.js';
+import { notifyOrderCancellation } from '../services/notifications.js';
+import { pushToShiprocket } from './orders.js';
 import { uploadImage, MAX_UPLOAD_BYTES } from '../services/media/cloudinary.js';
 import { generateLatkanSuggestion, generateFabricSuggestion, generateLaceSuggestion, generateProductSuggestions } from '../services/ai/qwen.js';
 import { env, integrations, shiprocketMock } from '../config/env.js';
@@ -39,6 +44,43 @@ const orderNumberSchema = z.object({ orderNumber: z.string().trim().min(6).max(3
 const statusSchema = z.object({ status: z.enum([...ORDER_STATUSES] as [OrderStatus, ...OrderStatus[]]), note: z.string().trim().max(200).default('') }).strict();
 const reviewStatusSchema = z.object({ status: z.enum(['PENDING', 'APPROVED', 'REJECTED']) }).strict();
 const settingSchema = z.object({ value: z.unknown() }).strict();
+
+const tailorSchema = z
+  .object({
+    name: z.string().trim().min(1).max(80),
+    mobile: z.string().trim().max(20).default(''),
+    email: z.string().trim().email().max(120).default('').or(z.literal('')),
+    address: z.string().trim().max(300).default(''),
+    specializationCaps: z
+      .array(z.object({ code: z.enum([...TAILOR_SPECIALIZATIONS] as [TailorSpecialization, ...TailorSpecialization[]]), capacityPerDay: z.number().min(0.5).max(20) }))
+      .max(12)
+      .default([]),
+    experienceYears: z.number().int().min(0).max(60).default(0),
+    workingDays: z.array(z.number().int().min(0).max(6)).default([1, 2, 3, 4, 5, 6]),
+    workingHours: z.string().trim().max(40).default('10:00–18:00'),
+    status: z.enum([...TAILOR_STATUSES] as [TailorStatus, ...TailorStatus[]]).default('ACTIVE'),
+    notes: z.string().max(1000).default(''),
+  })
+  .strict();
+
+const confirmOrderSchema = z
+  .object({
+    reviewNote: z.string().trim().max(500).default(''),
+    complexity: z.enum([...COMPLEXITY_KEYS] as [ComplexityKey, ...ComplexityKey[]]).optional(),
+  })
+  .strict();
+
+const cancelOrderSchema = z.object({ reason: z.string().trim().min(1).max(400) }).strict();
+
+const assignTailorSchema = z
+  .object({
+    tailorId: z.string().trim().min(1).max(30),
+    notes: z.string().trim().max(500).default(''),
+    reason: z.string().trim().max(300).default(''),
+  })
+  .strict();
+
+const productionPatchSchema = z.object({ complexity: z.enum([...COMPLEXITY_KEYS] as [ComplexityKey, ...ComplexityKey[]]) }).strict();
 
 const measurementSchema = z.object({
   key: z.string().trim().min(1).max(40),
@@ -340,7 +382,7 @@ router.get('/dashboard', adminReadLimiter, async (req: Request, res: Response) =
   const from = req.query.from ? new Date(String(req.query.from)) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const to = req.query.to ? new Date(String(req.query.to)) : new Date();
   const range = { $gte: from, $lte: to };
-  const [products, orders, customers, events, revenue, statuses, topProducts, cartEvents, wishlistEvents, whatsappEnquiries, lowStockProducts, failedPayments] = await Promise.all([
+  const [products, orders, customers, events, revenue, statuses, topProducts, cartEvents, wishlistEvents, whatsappEnquiries, lowStockProducts, failedPayments, alerts] = await Promise.all([
     Product.countDocuments({ isActive: true }), Order.countDocuments(),
     User.countDocuments(), AnalyticsEvent.countDocuments({ at: range }),
     Order.aggregate([{ $match: { placedAt: range, 'payment.status': { $in: ['PAID', 'COD_PENDING'] } } }, { $group: { _id: null, totalMinor: { $sum: '$amounts.totalMinor' }, count: { $sum: 1 } } }]),
@@ -351,6 +393,16 @@ router.get('/dashboard', adminReadLimiter, async (req: Request, res: Response) =
     Enquiry.countDocuments({ createdAt: { $lte: to } }),
     Product.aggregate([{ $unwind: '$variants' }, { $group: { _id: '$_id', designId: { $first: '$designId' }, name: { $first: '$name' }, totalStock: { $sum: '$variants.stock' } } }, { $match: { totalStock: { $lte: 5 } } }, { $limit: 10 }]),
     Order.countDocuments({ 'payment.status': 'FAILED' }),
+    Promise.all([
+      Order.countDocuments({ status: 'AWAITING_REVIEW' }).then((n) => ({ key: 'awaitingReview', label: 'Awaiting review', count: n, status: 'AWAITING_REVIEW' })),
+      awaitingTailorCount().then((n) => ({ key: 'unassigned', label: 'Confirmed, no tailor', count: n, status: 'CONFIRMED' })),
+      Order.countDocuments({ 'cancellation.refund.status': 'FAILED' }).then((n) => ({ key: 'refundFailed', label: 'Refund failed', count: n, status: 'CANCELLED' })),
+      dailyCapacityFor('simple_blouse').then(async (capacity) => {
+        const pending = await pendingWorkload();
+        const highWorkload = capacity > 0 && pending.units + pending.orders > capacity * 14;
+        return { key: 'highWorkload', label: 'High stitching workload', count: highWorkload ? pending.units : 0, status: 'CONFIRMED' };
+      }),
+    ]),
   ]);
   res.json({
     range: { from, to },
@@ -362,8 +414,123 @@ router.get('/dashboard', adminReadLimiter, async (req: Request, res: Response) =
       whatsappEnquiries, failedPayments,
     },
     statuses, topProducts, lowStockProducts,
+    alerts: alerts.filter((alert) => alert.count > 0),
   });
 });
+
+/* ========================================================================== */
+/* Order risk helpers (review-first workflow)                                 */
+/* ========================================================================== */
+
+interface CustomerStatsRow {
+  recent: number;
+  cancelled: number;
+}
+
+interface OrderRecord {
+  _id?: string;
+  orderNumber?: string;
+  status?: string;
+  isGuest?: boolean;
+  placedAt?: Date | string;
+  contact?: { mobile?: string; name?: string } | null;
+  payment?: { method?: string; status?: string } | null;
+  address?: { country?: string } | null;
+  items?: Array<{ _id?: unknown; product?: string; type?: string; quantity?: number }>;
+  production?: { complexity?: string; productionUnits?: number; estimatedWorkingDays?: number } | null;
+  tailor?: { tailorName?: string; status?: string; assignedAt?: Date | string } | null;
+  cancellation?: {
+    refund?: { status?: string; razorpayRefundId?: string; amountMinor?: number } | null;
+    reason?: string;
+  } | null;
+  deliveryEstimate?: { fromDate?: Date | string | null; toDate?: Date | string | null; stitchingWorkingDays?: number } | null;
+}
+
+const REVIEW_FLAG_LABELS: Record<string, string> = {
+  UNPAID: 'Online payment abhi nahi hui',
+  GUEST: 'Guest checkout',
+  MULTIPLE_RECENT: '30 din mein kai orders',
+  PREVIOUS_CANCELLED: 'Pehle ka order cancel hua tha',
+  CODE_PAYMENT_ISSUE: 'Payment status unusual',
+  OUTSIDE_INDIA: 'Delivery address India ke bahar',
+};
+
+/** Risk signals for an order, given its 30-day customer history. */
+function riskFlagsFor(order: OrderRecord, stats: CustomerStatsRow | undefined): string[] {
+  const flags: string[] = [];
+  const payment = order.payment;
+  if (payment?.method === 'RAZORPAY' && payment.status !== 'PAID') flags.push('UNPAID');
+  if (payment?.method === 'COD' && !['COD_PENDING', 'COD_ADVANCE_PENDING', 'COD_ADVANCE_PAID'].includes(payment.status ?? '')) {
+    flags.push('CODE_PAYMENT_ISSUE');
+  }
+  if (order.isGuest) flags.push('GUEST');
+  const previous = Math.max((stats?.recent ?? 1) - 1, 0);
+  if (previous >= 3) flags.push('MULTIPLE_RECENT');
+  if ((stats?.cancelled ?? 0) > 0) flags.push('PREVIOUS_CANCELLED');
+  if (order.address && !['IN', 'BD', 'PK', 'NP', 'BT', 'LK'].includes(order.address.country ?? '')) flags.push('OUTSIDE_INDIA');
+  return flags;
+}
+
+/** 30-day order history per mobile, in one query for a whole admin page. */
+async function customerStatsMap(mobiles: string[]): Promise<Map<string, CustomerStatsRow>> {
+  const unique = [...new Set(mobiles.filter((m) => m && m.length > 0))];
+  if (unique.length === 0) return new Map();
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const rows = await Order.aggregate<{ _id: string; recent: number; cancelled: number }>([
+    {
+      $match: { placedAt: { $gte: since }, 'contact.mobile': { $in: unique } },
+    },
+    {
+      $group: {
+        _id: '$contact.mobile',
+        recent: { $sum: 1 },
+        cancelled: { $sum: { $cond: [{ $eq: ['$status', 'CANCELLED'] }, 1, 0] } },
+      },
+    },
+  ]);
+  const map = new Map<string, CustomerStatsRow>();
+  for (const row of rows) map.set(String(row._id), { recent: row.recent, cancelled: row.cancelled });
+  return map;
+}
+
+/**
+ * Enriches a lean order document with review risk + customer history. The
+ * `detailed` flag also resolves category names for the item list (one
+ * additional pair of queries, used only for the detail modal).
+ */
+async function enrichAdminOrder(
+  doc: OrderRecord,
+  opts: { stats?: CustomerStatsRow; detailed?: boolean } = {},
+): Promise<Record<string, unknown>> {
+  const enriched: Record<string, unknown> = { ...doc };
+  const flags = riskFlagsFor(doc, opts.stats);
+  const previous = Math.max((opts.stats?.recent ?? 1) - 1, 0);
+  const cancelledIncludingCurrent = opts.stats?.cancelled ?? 0;
+  enriched.risk = {
+    flags,
+    flagLabels: flags.map((flag) => REVIEW_FLAG_LABELS[flag] ?? flag.replace(/_/g, ' ')),
+    reviewRecommended: flags.length > 0,
+  };
+  enriched.customerStats = {
+    previousOrders: previous,
+    previousCancelled: Math.max(cancelledIncludingCurrent - (doc.status === 'CANCELLED' ? 1 : 0), 0),
+  };
+
+  if (opts.detailed) {
+    const itemProducts = (doc.items ?? []).map((item) => item.product).filter(Boolean);
+    const products = await Product.find({ _id: { $in: itemProducts } }).select('category name designId').lean();
+    const categoryIds = [...new Set(products.map((p) => String(p.category)).filter(Boolean))];
+    const categories = categoryIds.length ? await Category.find({ _id: { $in: categoryIds } }).select('name').lean() : [];
+    const categoryNameById = new Map(categories.map((c) => [String(c._id), c.name]));
+    const productById = new Map(products.map((p) => [String(p._id), p]));
+    enriched.itemCategories = (doc.items ?? []).map((item) => {
+      const product = productById.get(String(item.product));
+      return product ? categoryNameById.get(String((product as { category?: unknown }).category)) ?? '' : '';
+    });
+  }
+
+  return enriched;
+}
 
 /* ========================================================================== */
 /* Orders — 85.19–85.23                                                       */
@@ -371,7 +538,8 @@ router.get('/dashboard', adminReadLimiter, async (req: Request, res: Response) =
 
 router.get('/orders', adminReadLimiter, async (req: Request, res: Response) => {
   const filter: Record<string, unknown> = {};
-  if (req.query.status && ORDER_STATUSES.includes(String(req.query.status) as OrderStatus)) filter.status = req.query.status;
+  const requestedStatus = String(req.query.status ?? '');
+  if (requestedStatus && ORDER_STATUSES.includes(requestedStatus as OrderStatus)) filter.status = requestedStatus;
   if (req.query.q) {
     const q = String(req.query.q).trim().slice(0, 80).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     if (q) filter.$or = [{ orderNumber: new RegExp(q, 'i') }, { 'contact.name': new RegExp(q, 'i') }, { 'contact.mobile': new RegExp(q, 'i') }];
@@ -382,8 +550,41 @@ router.get('/orders', adminReadLimiter, async (req: Request, res: Response) => {
     if (req.query.to) range.$lte = new Date(String(req.query.to));
     filter.placedAt = range;
   }
-  const items = await Order.find(filter).sort({ placedAt: -1 }).limit(300).select('-__v').lean();
-  res.json({ items });
+
+  // Extra filters for the review workflow.
+  const tailorFilter = String(req.query.tailor ?? '');
+  if (tailorFilter === 'unassigned') {
+    // Confirmed-and-waiting-for-a-tailor shortcut.
+    filter.status = 'CONFIRMED';
+    filter['tailor.status'] = { $ne: 'ASSIGNED' };
+  } else if (tailorFilter === 'assigned') {
+    filter['tailor.status'] = 'ASSIGNED';
+  }
+
+  const reviewFilter = String(req.query.review ?? '');
+  if (reviewFilter === 'pending') filter['review.status'] = 'PENDING';
+  else if (reviewFilter === 'approved') filter['review.status'] = 'APPROVED';
+  else if (reviewFilter === 'rejected') filter['review.status'] = 'REJECTED';
+
+  const refundFilter = String(req.query.refund ?? '');
+  if (refundFilter === 'pending') {
+    filter.status = 'CANCELLED';
+    filter['cancellation.refund.status'] = { $in: ['PENDING', 'PROCESSING'] };
+  } else if (refundFilter === 'failed') {
+    filter.status = 'CANCELLED';
+    filter['cancellation.refund.status'] = 'FAILED';
+  } else if (refundFilter === 'refunded') {
+    filter.status = 'CANCELLED';
+    filter['cancellation.refund.status'] = 'COMPLETED';
+  }
+
+  const docs = await Order.find(filter).sort({ placedAt: -1 }).limit(300).select('-__v').lean();
+  const mobiles = docs.map((doc) => (doc.contact as { mobile?: string } | undefined)?.mobile ?? '');
+  const statsMap = await customerStatsMap(mobiles);
+  const items = docs.map((doc) =>
+    enrichAdminOrder(doc as unknown as OrderRecord, { stats: statsMap.get((doc.contact as { mobile?: string } | undefined)?.mobile ?? '') }),
+  );
+  res.json({ items: await Promise.all(items) });
 });
 
 router.get('/orders/search', adminReadLimiter, async (_req: Request, res: Response) => res.json({ ok: true }));
@@ -392,14 +593,35 @@ router.get('/orders/:orderNumber', adminReadLimiter, validate({ params: orderNum
   const { orderNumber } = (req as ValidatedRequest<unknown, unknown, { orderNumber: string }>).validated.params;
   const order = await Order.findOne({ orderNumber }).lean();
   if (!order) throw notFound('Order nahi mila.');
-  res.json({ order });
+
+  const live = await activeWorkload(String(order._id));
+  const stats = await customerStatsMap([(order.contact as { mobile?: string } | undefined)?.mobile ?? '']);
+  const enriched = await enrichAdminOrder(order as unknown as OrderRecord, {
+    stats: stats.get((order.contact as { mobile?: string } | undefined)?.mobile ?? ''),
+    detailed: true,
+  });
+  enriched.liveWorkload = {
+    activeUnits: live.units,
+    activeOrders: live.orderCount,
+    dailyCapacity: await dailyCapacityFor(
+      complexitySpecialization(((order as unknown as OrderRecord).production?.complexity as ComplexityKey) ?? 'medium'),
+    ),
+  };
+  res.json({ order: enriched });
 });
 
 router.patch('/orders/:orderNumber/status', adminWriteLimiter, validate({ params: orderNumberSchema, body: statusSchema }), async (req: Request, res: Response) => {
   const { orderNumber } = (req as ValidatedRequest<unknown, unknown, { orderNumber: string }>).validated.params;
   const { status, note } = (req as ValidatedRequest<{ status: OrderStatus; note: string }>).validated.body;
+  if (status === 'CONFIRMED' || status === 'CANCELLED') {
+    throw badRequest('Confirm/cancel dedicated flow se karein (review controls).');
+  }
   const order = await Order.findOneAndUpdate({ orderNumber }, { $set: { status }, $push: { statusHistory: { status, note, at: new Date() } } }, { new: true });
   if (!order) throw notFound('Order nahi mila.');
+  if (order.cancellation?.refund?.status && order.cancellation.refund.status !== 'COMPLETED') {
+    // Cancelled + refund in flight — do not let a status edit un-cancel it.
+    throw badRequest('Cancelled order modify nahi ho sakta jab tak refund settle na ho.');
+  }
   await logAction(req, 'UPDATE_STATUS', 'ORDER', orderNumber, `${orderNumber} -> ${status}${note ? ` (${note})` : ''}`);
   res.json({ order });
 });
@@ -429,6 +651,358 @@ router.patch('/orders/:orderNumber/shipping', adminWriteLimiter, validate({
   await logAction(req, 'UPDATE_SHIPPING', 'ORDER', orderNumber, `Shipping updated for ${orderNumber}`);
   const fresh = await Order.findOne({ orderNumber }).lean();
   res.json({ order: fresh });
+});
+
+/* ========================================================================== */
+/* Order review workflow — confirm / cancel / tailor / production / refund     */
+/* ========================================================================== */
+
+const objectIdParamSchema = z.object({ id: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid id') }).strict();
+
+/** Highest-severity complexity across the order's products (a suggestion). */
+async function detectOrderComplexity(order: InstanceType<typeof Order>): Promise<ComplexityKey> {
+  const ids = order.items.map((item) => item.product).filter(Boolean);
+  if (ids.length === 0) return 'medium';
+  const products = await Product.find({ _id: { $in: ids } }).select('name embroidery tags').lean();
+  const severity: Record<ComplexityKey, number> = { simple: 1, medium: 2, designer: 3, heavy_designer: 4, bridal: 5 };
+  let best: ComplexityKey = 'medium';
+  for (const product of products) {
+    const detected = detectComplexity(product);
+    if (severity[detected] > severity[best]) best = detected;
+  }
+  return best;
+}
+
+/**
+ * Recomputes the production + delivery-estimate snapshots. The workload math
+ * always excludes this order itself (it is being added, not double-counted).
+ */
+async function applyProductionEstimate(order: InstanceType<typeof Order>, complexity: ComplexityKey): Promise<void> {
+  const cfg = await getProductionConfig();
+  const estimate = await computeEstimate({
+    items: order.items.map((item) => ({
+      type: (item.type as 'CUSTOMIZE' | 'READY_MADE') ?? 'READY_MADE',
+      quantity: item.quantity ?? 1,
+    })),
+    complexity,
+    fallbackStitchingDays: order.production?.estimatedWorkingDays ?? 7,
+    excludeOrderId: String(order._id),
+  });
+  const hasCustom = order.items.some((item) => item.type === 'CUSTOMIZE');
+  order.set('production', {
+    complexity,
+    productionUnits: estimate.productionUnits,
+    estimatedWorkingDays: estimate.estimate.stitchingWorkingDays,
+    calculatedAt: new Date(),
+  });
+  order.set('deliveryEstimate', {
+    stitchingWorkingDays: estimate.estimate.stitchingWorkingDays,
+    packingWorkingDays: estimate.estimate.packingWorkingDays,
+    shippingDays: estimate.estimate.shippingDays,
+    bufferDays: cfg.bufferWorkingDays,
+    fromDate: estimate.estimate.fromDate,
+    toDate: estimate.estimate.toDate,
+    workingDaysUsed: Math.max(
+      1,
+      estimate.estimate.stitchingWorkingDays + cfg.packingWorkingDays + (hasCustom ? cfg.bufferWorkingDays : 0),
+    ),
+    calculatedAt: new Date(),
+  });
+}
+
+/**
+ * Idempotent (per-order state machine) Razorpay refund for a cancelled order.
+ * Returns 'already' when a refund is in flight / settled, 'none' when nothing
+ * was paid, otherwise 'requested' / 'failed'. FAILED orders can be retried.
+ */
+async function issueRefund(order: InstanceType<typeof Order>): Promise<'requested' | 'already' | 'failed' | 'none'> {
+  const refund = (order.cancellation?.refund ?? {}) as { status?: string; attempts?: number; razorpayRefundId?: string };
+  if (['PENDING', 'PROCESSING', 'COMPLETED'].includes(refund.status ?? '')) return 'already';
+  const payment = (order.payment ?? {}) as { method?: string; status?: string; razorpayPaymentId?: string };
+  if (!payment.razorpayPaymentId) return 'none';
+  const paidAmount = payment.status === 'PAID' ? order.amounts.totalMinor : payment.status === 'COD_ADVANCE_PAID' ? order.amounts.codAdvanceMinor : 0;
+  if (paidAmount <= 0) return 'none';
+
+  const attempts = (refund.attempts ?? 0) + 1;
+  try {
+    const refundObj = await createRefund(payment.razorpayPaymentId, paidAmount);
+    order.set('cancellation.refund', {
+      status: refundObj.id ? 'PROCESSING' : 'PENDING',
+      razorpayRefundId: refundObj.id ?? '',
+      amountMinor: paidAmount,
+      requestedAt: new Date(),
+      completedAt: null,
+      failureReason: '',
+      attempts,
+    });
+    await order.save();
+    return 'requested';
+  } catch (err) {
+    order.set('cancellation.refund', {
+      status: 'FAILED',
+      razorpayRefundId: refund.razorpayRefundId ?? '',
+      amountMinor: paidAmount,
+      requestedAt: order.cancellation?.refund?.requestedAt ?? null,
+      completedAt: null,
+      failureReason: (err as Error).message.slice(0, 300),
+      attempts,
+    });
+    await order.save();
+    return 'failed';
+  }
+}
+
+/** Confirm an AWAITING_REVIEW order: APPROVED review + CONFIRMED + estimate. */
+router.post('/orders/:orderNumber/confirm', adminWriteLimiter, validate({ params: orderNumberSchema, body: confirmOrderSchema }), async (req: Request, res: Response) => {
+  const { orderNumber } = (req as ValidatedRequest<unknown, unknown, { orderNumber: string }>).validated.params;
+  const body = (req as ValidatedRequest<{ reviewNote: string; complexity?: ComplexityKey }>).validated.body;
+  const order = await Order.findOne({ orderNumber });
+  if (!order) throw notFound('Order nahi mila.');
+  if (order.status !== 'AWAITING_REVIEW') throw badRequest('Sirf AWAITING_REVIEW order confirm ho sakta hai.');
+
+  const complexity = body.complexity ?? (order.production?.complexity as ComplexityKey | undefined) ?? (await detectOrderComplexity(order));
+  await applyProductionEstimate(order, complexity);
+
+  order.set('review', {
+    status: 'APPROVED',
+    reviewedBy: (req as Request & { user?: { _id?: unknown } }).user?._id ?? null,
+    reviewedAt: new Date(),
+    reviewNote: body.reviewNote,
+    flags: (order.review?.flags as string[] | undefined) ?? [],
+  });
+  order.status = 'CONFIRMED';
+  order.statusHistory.push({ status: 'CONFIRMED', at: new Date(), note: 'Review approved — production + delivery estimated' });
+
+  await order.save();
+  // Shiprocket auto-create gated inside pushToShiprocket (settings.autoCreate).
+  void pushToShiprocket(String(order._id));
+  await logAction(req, 'CONFIRM_ORDER', 'ORDER', orderNumber, `${orderNumber} confirmed (complexity → ${complexity})`);
+
+  const fresh = await Order.findOne({ orderNumber });
+  res.json({ order: fresh });
+});
+
+/** Cancel an order: REJECTED review + CANCELLED + optional refund + SMS. */
+router.post('/orders/:orderNumber/cancel', adminWriteLimiter, validate({ params: orderNumberSchema, body: cancelOrderSchema }), async (req: Request, res: Response) => {
+  const { orderNumber } = (req as ValidatedRequest<unknown, unknown, { orderNumber: string }>).validated.params;
+  const { reason } = (req as ValidatedRequest<{ reason: string }>).validated.body;
+  const order = await Order.findOne({ orderNumber });
+  if (!order) throw notFound('Order nahi mila.');
+
+  if (order.status === 'CANCELLED') {
+    const fresh = await Order.findOne({ orderNumber });
+    res.json({ order: fresh, alreadyCancelled: true });
+    return;
+  }
+  if (!['AWAITING_REVIEW', 'CONFIRMED'].includes(order.status)) {
+    throw badRequest('Is status se cancel allowed nahi hai (shipping ke baad nahi).');
+  }
+
+  const paymentStatusAtCancel = order.payment.status;
+  const mobile = order.contact.mobile ?? '';
+  const refundText = paymentStatusAtCancel === 'PAID' ? `Rs${(order.amounts.totalMinor / 100).toLocaleString('en-IN')}` : paymentStatusAtCancel === 'COD_ADVANCE_PAID' ? `Rs${(order.amounts.codAdvanceMinor / 100).toLocaleString('en-IN')}` : '';
+
+  order.status = 'CANCELLED';
+  order.statusHistory.push({ status: 'CANCELLED', at: new Date(), note: `Cancelled by admin: ${reason}` });
+  order.set('review', {
+    status: 'REJECTED',
+    reviewedBy: (req as Request & { user?: { _id?: unknown } }).user?._id ?? null,
+    reviewedAt: new Date(),
+    reviewNote: `Cancelled — ${reason}`,
+    flags: (order.review?.flags as string[] | undefined) ?? [],
+  });
+  order.set('cancellation', {
+    cancelledBy: (req as Request & { user?: { _id?: unknown } }).user?._id ?? null,
+    cancelledByLabel: 'admin',
+    cancelledAt: new Date(),
+    reason,
+    paymentStatusAtCancel,
+    refund: { status: 'NONE', razorpayRefundId: '', amountMinor: 0, requestedAt: null, completedAt: null, failureReason: '', attempts: 0 },
+    notificationStatus: 'NOT_SENT',
+    notificationMessage: '',
+  });
+  await order.save();
+
+  const refundOutcome = await issueRefund(order);
+
+  const notification = await notifyOrderCancellation({ mobile, orderNumber, reason, refundText });
+  order.set('cancellation.notificationStatus', notification.ok ? 'SENT' : 'FAILED');
+  order.set('cancellation.notificationMessage', notification.message.slice(0, 700));
+  await order.save();
+
+  await logAction(req, 'CANCEL_ORDER', 'ORDER', orderNumber, `${orderNumber} cancelled: ${reason} (refund=${refundOutcome})`);
+
+  const fresh = await Order.findOne({ orderNumber });
+  res.json({ order: fresh, refund: refundOutcome });
+});
+
+/** Manual tailor assignment / reassignment (history preserved). */
+router.post('/orders/:orderNumber/assign-tailor', adminWriteLimiter, validate({ params: orderNumberSchema, body: assignTailorSchema }), async (req: Request, res: Response) => {
+  const { orderNumber } = (req as ValidatedRequest<unknown, unknown, { orderNumber: string }>).validated.params;
+  const body = (req as ValidatedRequest<{ tailorId: string; notes: string; reason: string }>).validated.body;
+  const order = await Order.findOne({ orderNumber });
+  if (!order) throw notFound('Order nahi mila.');
+  if (!['CONFIRMED', 'STITCHING', 'QUALITY_CHECK', 'PACKED'].includes(order.status)) {
+    throw badRequest('Confirm ho-chuki order par hi tailor assign hota hai.');
+  }
+  const tailor = await Tailor.findById(body.tailorId).lean();
+  if (!tailor) throw notFound('Tailor nahi mila.');
+
+  const current = order.tailor ?? {};
+  const history = [...((current.history ?? []) as unknown as Array<{ tailorId: unknown; tailorName: string; assignedBy: unknown; at: Date; reason?: string }>)];
+  const reAssign = current.tailorId && String(current.tailorId) !== body.tailorId;
+  if (reAssign) {
+    history.push({
+      tailorId: current.tailorId ?? null,
+      tailorName: current.tailorName ?? '',
+      assignedBy: current.assignedBy ?? null,
+      at: current.assignedAt ?? new Date(),
+      reason: `Replaced by ${tailor.name}${body.reason ? ` — ${body.reason}` : ''}`,
+    });
+  }
+  history.push({
+    tailorId: tailor._id,
+    tailorName: tailor.name,
+    assignedBy: (req as Request & { user?: { _id?: unknown } }).user?._id ?? null,
+    at: new Date(),
+    reason: body.reason || (reAssign ? 'Reassign' : 'Assign'),
+  });
+
+  order.set('tailor', {
+    tailorId: tailor._id,
+    tailorName: tailor.name,
+    assignedBy: (req as Request & { user?: { _id?: unknown } }).user?._id ?? null,
+    assignedAt: new Date(),
+    status: 'ASSIGNED',
+    notes: body.notes,
+    history,
+  });
+  await order.save();
+  await logAction(req, 'ASSIGN_TAILOR', 'ORDER', orderNumber, `${orderNumber} -> ${tailor.name}`);
+
+  const fresh = await Order.findOne({ orderNumber });
+  res.json({ order: fresh });
+});
+
+/** Override the per-order complexity; delivery estimate is recomputed. */
+router.patch('/orders/:orderNumber/production', adminWriteLimiter, validate({ params: orderNumberSchema, body: productionPatchSchema }), async (req: Request, res: Response) => {
+  const { orderNumber } = (req as ValidatedRequest<unknown, unknown, { orderNumber: string }>).validated.params;
+  const { complexity } = (req as ValidatedRequest<{ complexity: ComplexityKey }>).validated.body;
+  const order = await Order.findOne({ orderNumber });
+  if (!order) throw notFound('Order nahi mila.');
+  if (order.status === 'CANCELLED') throw badRequest('Cancelled order ka production update nahi hota.');
+
+  await applyProductionEstimate(order, complexity);
+  await order.save();
+  await logAction(req, 'UPDATE_PRODUCTION', 'ORDER', orderNumber, `${orderNumber} complexity → ${complexity}`);
+
+  const fresh = await Order.findOne({ orderNumber });
+  res.json({ order: fresh, message: 'Estimate recomputed.' });
+});
+
+/** Retry a FAILED refund (idempotent; only useful when the provider failed). */
+router.post('/orders/:orderNumber/refund/retry', adminWriteLimiter, validate({ params: orderNumberSchema }), async (req: Request, res: Response) => {
+  const { orderNumber } = (req as ValidatedRequest<unknown, unknown, { orderNumber: string }>).validated.params;
+  const order = await Order.findOne({ orderNumber });
+  if (!order) throw notFound('Order nahi mila.');
+  if (order.status !== 'CANCELLED') throw badRequest('Cancelled order ka refund hi retry hota hai.');
+  if ((order.cancellation?.refund?.status ?? 'NONE') !== 'FAILED') throw badRequest('Refund FAILED state mein hi retry hota hai.');
+  const outcome = await issueRefund(order);
+  const fresh = await Order.findOne({ orderNumber });
+  res.json({ order: fresh, refund: outcome });
+});
+
+/** Re-sync refund state straight from Razorpay. */
+router.post('/orders/:orderNumber/refund/sync', adminWriteLimiter, validate({ params: orderNumberSchema }), async (req: Request, res: Response) => {
+  const { orderNumber } = (req as ValidatedRequest<unknown, unknown, { orderNumber: string }>).validated.params;
+  const order = await Order.findOne({ orderNumber });
+  if (!order) throw notFound('Order nahi mila.');
+  const refundId = order.cancellation?.refund?.razorpayRefundId;
+  if (!refundId) throw badRequest('Refund request nahi mila.');
+
+  let refundStatus = 'pending';
+  try {
+    const refundObj = await fetchRefund(refundId);
+    refundStatus = refundObj.status ?? 'pending';
+  } catch (err) {
+    throw badRequest(`Refund fetch fail: ${(err as Error).message.slice(0, 200)}`);
+  }
+
+  const settled = refundLifecycle(refundStatus);
+  if (settled === 'COMPLETED') {
+    order.set('cancellation.refund.status', 'COMPLETED');
+    order.set('cancellation.refund.completedAt', new Date());
+    order.set('payment.status', 'REFUNDED');
+  } else {
+    order.set('cancellation.refund.status', settled);
+    if (settled === 'FAILED') order.set('cancellation.refund.failureReason', 'Provider reported failure.');
+  }
+  await order.save();
+  await logAction(req, 'SYNC_REFUND', 'ORDER', orderNumber, `${orderNumber} refund → ${settled}`);
+
+  const fresh = await Order.findOne({ orderNumber });
+  res.json({ order: fresh });
+});
+
+/* ========================================================================== */
+/* Tailors — CRUD + production dashboard                                      */
+/* ========================================================================== */
+
+router.get('/tailors', adminReadLimiter, async (_req: Request, res: Response) => {
+  const [tailors, workloads] = await Promise.all([Tailor.find().sort({ status: 1, name: 1 }).lean(), tailorWorkloads()]);
+  const items = tailors.map((tailor) => {
+    const workload = workloads.get(String(tailor._id)) ?? { assignedOrders: 0, assignedUnits: 0 };
+    return { ...tailor, workload };
+  });
+  res.json({ items, total: items.length });
+});
+
+router.post('/tailors', adminWriteLimiter, validate({ body: tailorSchema }), async (req: Request, res: Response) => {
+  const body = (req as ValidatedRequest<z.infer<typeof tailorSchema>>).validated.body;
+  const tailor = await Tailor.create({ ...body });
+  await logAction(req, 'CREATE_TAILOR', 'TAILOR', String(tailor._id), `Tailor created: ${tailor.name}`);
+  res.status(201).json({ tailor });
+});
+
+router.patch('/tailors/:id', adminWriteLimiter, validate({ params: objectIdParamSchema, body: tailorSchema.partial() }), async (req: Request, res: Response) => {
+  const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
+  const body = (req as ValidatedRequest<Record<string, unknown>>).validated.body;
+  const tailor = await Tailor.findByIdAndUpdate(id, { $set: body }, { new: true, runValidators: true });
+  if (!tailor) throw notFound('Tailor nahi mila.');
+  await logAction(req, 'UPDATE_TAILOR', 'TAILOR', id, `Tailor updated: ${tailor.name}`);
+  res.json({ tailor });
+});
+
+router.delete('/tailors/:id', adminWriteLimiter, validate({ params: objectIdParamSchema }), async (req: Request, res: Response) => {
+  const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
+  const activeAssigned = await Order.countDocuments({
+    'tailor.tailorId': id,
+    status: { $in: ['CONFIRMED', 'STITCHING', 'QUALITY_CHECK', 'PACKED'] },
+  });
+  if (activeAssigned > 0) throw conflict('Tailor ke active orders hain — pehle reassign karke INACTIVE karein.');
+  const tailor = await Tailor.findByIdAndUpdate(id, { $set: { status: 'INACTIVE' } }, { new: true });
+  if (!tailor) throw notFound('Tailor nahi mila.');
+  await logAction(req, 'DELETE_TAILOR', 'TAILOR', id, `Tailor deactivated: ${tailor.name}`);
+  res.json({ ok: true, tailor });
+});
+
+router.get('/tailor-dashboard', adminReadLimiter, async (_req: Request, res: Response) => {
+  const [tailors, workloads, pending, awaiting] = await Promise.all([
+    Tailor.find().sort({ status: 1, name: 1 }).lean(),
+    tailorWorkloads(),
+    pendingWorkload(),
+    awaitingTailorCount(),
+  ]);
+  const items = tailors.map((tailor) => {
+    const workload = workloads.get(String(tailor._id)) ?? { assignedOrders: 0, assignedUnits: 0 };
+    return { tailor, workload };
+  });
+  res.json({
+    tailors: items,
+    totalActiveTailors: items.filter((item) => item.tailor.status === 'ACTIVE').length,
+    pendingWorkload: pending,
+    awaitingTailorCount: awaiting,
+  });
 });
 
 /* ========================================================================== */
@@ -1311,7 +1885,10 @@ router.delete('/measurements/:id', adminWriteLimiter, validate({ params: idSchem
 router.get('/enquiries', adminReadLimiter, async (req: Request, res: Response) => {
   const filter: Record<string, unknown> = {};
   if (req.query.channel) filter.channel = String(req.query.channel);
-  const items = await Enquiry.find(filter).sort({ createdAt: -1 }).limit(200).populate('product', 'designId name').lean();
+  const items = await Enquiry.find(filter).sort({ createdAt: -1 }).limit(200)
+    .populate('product', 'designId name')
+    .populate('user', 'name mobile email avatarUrl')
+    .lean();
   res.json({ items });
 });
 
@@ -1358,6 +1935,327 @@ router.get('/analytics/products', adminReadLimiter, async (req: Request, res: Re
     (perProduct[productId] ??= {})[row._id.type] = row.count;
   }
   res.json({ items: items.map((p) => ({ ...p, events: perProduct[String(p._id)] ?? {} })) });
+});
+
+/* ========================================================================== */
+/* Dashboard drill-downs — real records behind the Overview KPI cards          */
+/* ========================================================================== */
+
+function dashboardRange(req: Request): { from: Date; to: Date; range: { $gte: Date; $lte: Date } } {
+  const from = req.query.from ? new Date(String(req.query.from)) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const to = req.query.to ? new Date(String(req.query.to)) : new Date();
+  return { from, to, range: { $gte: from, $lte: to } };
+}
+
+interface DrillOrderRow {
+  orderNumber: string;
+  status?: string;
+  placedAt?: Date | string;
+  totalMinor?: number;
+  paymentStatus?: string;
+  mobile?: string;
+  name?: string;
+}
+
+/** Orders that contain any of the given product ids — used to flag conversions. */
+async function productConversionOrders(productIds: string[]): Promise<Map<string, DrillOrderRow[]>> {
+  const map = new Map<string, DrillOrderRow[]>();
+  if (productIds.length === 0) return map;
+  const docs = await Order.find({ 'items.product': { $in: productIds } })
+    .select('orderNumber status placedAt amounts.totalMinor payment.status contact.mobile contact.name items.product')
+    .sort({ placedAt: -1 })
+    .limit(2000)
+    .lean();
+  for (const doc of docs) {
+    const row: DrillOrderRow = {
+      orderNumber: (doc as { orderNumber: string }).orderNumber,
+      status: (doc as { status?: string }).status,
+      placedAt: (doc as { placedAt?: Date }).placedAt,
+      totalMinor: (doc as { amounts?: { totalMinor?: number } }).amounts?.totalMinor ?? 0,
+      paymentStatus: (doc as { payment?: { status?: string } }).payment?.status ?? '',
+      mobile: (doc as { contact?: { mobile?: string } }).contact?.mobile ?? '',
+      name: (doc as { contact?: { name?: string } }).contact?.name ?? '',
+    };
+    const items = (doc as { items?: Array<{ product?: unknown }> }).items ?? [];
+    for (const item of items) {
+      const key = String(item.product);
+      const bucket = map.get(key) ?? [];
+      if (bucket.length < 3) bucket.push(row);
+      map.set(key, bucket);
+    }
+  }
+  return map;
+}
+
+/** Attaches product + customer + conversion facts to CART_ADD / WISHLIST_ADD events. */
+async function attachmentEvents(eventType: 'CART_ADD' | 'WISHLIST_ADD', range: { $gte: Date; $lte: Date }): Promise<Record<string, unknown>[]> {
+  const events = await AnalyticsEvent.find({ type: eventType, at: range })
+    .sort({ at: -1 })
+    .limit(200)
+    .lean();
+  const productIds = [...new Set(events.map((e) => (e.product ? String(e.product) : '')).filter(Boolean))];
+  const userIds = [...new Set(events.map((e) => (e.user ? String(e.user) : '')).filter(Boolean))];
+
+  const [products, users, removes, conversions] = await Promise.all([
+    Product.find({ _id: { $in: productIds } }).select('designId name slug sellingPriceInr images variants').lean(),
+    User.find({ _id: { $in: userIds } }).select('name mobile email avatarUrl').lean(),
+    AnalyticsEvent.find({ type: eventType === 'CART_ADD' ? 'CART_REMOVE' : 'WISHLIST_REMOVE', product: { $in: productIds } })
+      .select('product sessionId at')
+      .lean(),
+    productConversionOrders(productIds),
+  ]);
+
+  const productById = new Map(products.map((p) => [String(p._id), p]));
+  const userById = new Map(users.map((u) => [String(u._id), u]));
+  const removalKeys = new Set(removes.map((r) => `${String(r.product)}|${r.sessionId}`));
+
+  const items = events.map((ev) => {
+    const product = productById.get(String(ev.product));
+    const user = ev.user ? userById.get(String(ev.user)) : undefined;
+    const quantity = Math.max(1, Math.round((ev.value ?? 0)) || 1);
+    const priceMinor = product ? Number((product as { sellingPriceInr?: number }).sellingPriceInr ?? 0) * 100 : 0;
+    const userMobile = (user as { mobile?: string } | undefined)?.mobile ?? '';
+    const matches = (conversions.get(String(ev.product)) ?? []).filter((row) => {
+      const placed = new Date(row.placedAt ?? 0);
+      return placed.getTime() >= new Date(ev.at ?? 0).getTime() && (!userMobile || row.mobile === userMobile);
+    });
+    const converted = matches[0] ?? null;
+    const removed = removalKeys.has(`${String(ev.product)}|${ev.sessionId}`);
+    return {
+      _id: String(ev._id),
+      at: ev.at,
+      product: product
+        ? {
+            _id: String(product._id),
+            designId: (product as { designId: string }).designId,
+            name: (product as { name: string }).name,
+            image: (product as { images?: Array<{ url?: string }> }).images?.[0]?.url ?? '',
+            sku: (product as { variants?: Array<{ sku?: string }> }).variants?.[0]?.sku ?? '',
+            priceMinor,
+          }
+        : null,
+      customer: user ? { _id: String(user._id), name: (user as { name?: string }).name, mobile: userMobile, email: (user as { email?: string }).email } : null,
+      quantity,
+      cartValueMinor: quantity * priceMinor,
+      inCart: !removed && !converted,
+      converted: converted
+        ? {
+            orderNumber: converted.orderNumber,
+            status: converted.status ?? '',
+            totalMinor: converted.totalMinor ?? 0,
+            paymentStatus: converted.paymentStatus ?? '',
+            placedAt: converted.placedAt,
+          }
+        : null,
+    };
+  });
+
+  return items as Record<string, unknown>[];
+}
+
+router.get('/dashboard/cart-adds', adminReadLimiter, async (req: Request, res: Response) => {
+  const { range } = dashboardRange(req);
+  const items = await attachmentEvents('CART_ADD', range);
+  res.json({ items });
+});
+
+router.get('/dashboard/wishlist-adds', adminReadLimiter, async (req: Request, res: Response) => {
+  const { range } = dashboardRange(req);
+  const items = await attachmentEvents('WISHLIST_ADD', range);
+  // Wishlist rows also expose the current stock and whether the design uses orders.
+  const itemsWithStock = await Promise.all(
+    (items as Array<{ product?: { _id?: string } | null }>).map(async (item) => {
+      const productId = item.product?._id;
+      if (!productId) return item;
+      const doc = await Product.findById(productId).select('variants').lean();
+      const stock = (doc?.variants ?? []).reduce((sum, v) => sum + Number((v as { stock?: number }).stock ?? 0), 0);
+      return { ...item, currentStock: stock };
+    }),
+  );
+  res.json({ items: itemsWithStock });
+});
+
+router.get('/dashboard/revenue', adminReadLimiter, async (req: Request, res: Response) => {
+  const { range } = dashboardRange(req);
+  const paidStatuses = ['PAID', 'COD_PENDING'];
+  const pendingStatuses = ['PENDING', 'COD_ADVANCE_PENDING', 'COD_ADVANCE_PAID'];
+
+  const [revenue, pending, refunded, recent] = await Promise.all([
+    Order.aggregate([
+      { $match: { placedAt: range, 'payment.status': { $in: paidStatuses } } },
+      { $group: { _id: null, totalMinor: { $sum: '$amounts.totalMinor' }, count: { $sum: 1 } } },
+    ]),
+    Order.aggregate([
+      { $match: { placedAt: range, 'payment.status': { $in: pendingStatuses } } },
+      { $group: { _id: null, totalMinor: { $sum: '$amounts.totalMinor' }, count: { $sum: 1 } } },
+    ]),
+    Order.aggregate([
+      { $match: { placedAt: range, 'cancellation.refund.status': 'COMPLETED' } },
+      { $group: { _id: null, totalMinor: { $sum: '$cancellation.refund.amountMinor' } } },
+    ]),
+    Order.find({ placedAt: range, 'payment.status': { $in: paidStatuses } })
+      .sort({ placedAt: -1 })
+      .limit(8)
+      .select('orderNumber placedAt amounts payment.status contact.name contact.mobile items')
+      .lean(),
+  ]);
+
+  const totalMinor = revenue[0]?.totalMinor ?? 0;
+  const paidOrders = revenue[0]?.count ?? 0;
+
+  res.json({
+    totalMinor,
+    paidOrders,
+    averageMinor: paidOrders > 0 ? Math.round(totalMinor / paidOrders) : 0,
+    pendingMinor: pending[0]?.totalMinor ?? 0,
+    pendingOrders: pending[0]?.count ?? 0,
+    refundedMinor: refunded[0]?.totalMinor ?? 0,
+    recent: recent.map((doc) => {
+      const order = doc as unknown as {
+        orderNumber: string; placedAt?: Date; amounts?: { totalMinor?: number };
+        payment?: { status?: string }; contact?: { name?: string; mobile?: string }; items?: Array<{ name?: string; designId?: string; image?: string }>;
+      };
+      return {
+        orderNumber: order.orderNumber,
+        placedAt: order.placedAt,
+        totalMinor: order.amounts?.totalMinor ?? 0,
+        paymentStatus: order.payment?.status ?? '',
+        customer: order.contact?.name ?? '',
+        mobile: order.contact?.mobile ?? '',
+        item: order.items?.[0] ? { name: order.items[0].name ?? '', designId: order.items[0].designId ?? '', image: order.items[0].image ?? '' } : null,
+      };
+    }),
+  });
+});
+
+router.get('/dashboard/customers', adminReadLimiter, async (req: Request, res: Response) => {
+  const { range } = dashboardRange(req);
+
+  const users = await User.find()
+    .sort({ createdAt: -1 })
+    .limit(200)
+    .select('name mobile email avatarUrl isBlocked createdAt lastLoginAt')
+    .lean();
+
+  const mobiles = [...new Set(users.map((u) => (u as { mobile?: string }).mobile ?? '').filter(Boolean))];
+  const userIds = users.map((u) => String(u._id));
+
+  const [orderRows, cartRows, wishlistRows] = await Promise.all([
+    Order.aggregate([
+      { $match: { 'contact.mobile': { $in: mobiles } } },
+      { $group: { _id: '$contact.mobile', orderCount: { $sum: 1 }, totalMinor: { $sum: '$amounts.totalMinor' }, lastOrderAt: { $max: '$placedAt' } } },
+    ]),
+    AnalyticsEvent.aggregate([
+      { $match: { type: 'CART_ADD', at: range, user: { $in: userIds } } },
+      { $group: { _id: '$user', count: { $sum: 1 } } },
+    ]),
+    AnalyticsEvent.aggregate([
+      { $match: { type: 'WISHLIST_ADD', at: range, user: { $in: userIds } } },
+      { $group: { _id: '$user', count: { $sum: 1 } } },
+    ]),
+  ]);
+
+  const orderByMobile = new Map(orderRows.map((r) => [String((r as { _id: string })._id), r]));
+  const cartByUser = new Map(cartRows.map((r) => [String((r as { _id: unknown })._id), (r as { count: number }).count]));
+  const wishlistByUser = new Map(wishlistRows.map((r) => [String((r as { _id: unknown })._id), (r as { count: number }).count]));
+
+  res.json({
+    items: users.map((raw) => {
+      const user = raw as { _id: unknown; name?: string; mobile?: string; email?: string; avatarUrl?: string; isBlocked?: boolean; createdAt?: Date; lastLoginAt?: Date | null };
+      const orders = orderByMobile.get(user.mobile ?? '') ?? { orderCount: 0, totalMinor: 0, lastOrderAt: null };
+      return {
+        _id: String(user._id),
+        name: user.name ?? '',
+        mobile: user.mobile ?? '',
+        email: user.email ?? '',
+        avatarUrl: user.avatarUrl ?? '',
+        isBlocked: Boolean(user.isBlocked),
+        createdAt: user.createdAt,
+        lastLoginAt: user.lastLoginAt ?? null,
+        orderCount: orders.orderCount ?? 0,
+        totalSpentMinor: orders.totalMinor ?? 0,
+        lastOrderAt: orders.lastOrderAt ?? null,
+        cartAdds: cartByUser.get(String(user._id)) ?? 0,
+        wishlistAdds: wishlistByUser.get(String(user._id)) ?? 0,
+      };
+    }),
+  });
+});
+
+router.get('/dashboard/products', adminReadLimiter, async (req: Request, res: Response) => {
+  const { range } = dashboardRange(req);
+
+  const [products, eventCounts] = await Promise.all([
+    Product.find()
+      .sort({ isActive: -1, 'stats.views': -1 })
+      .limit(200)
+      .select('designId name slug type sellingPriceInr mrpInr images variants isActive stats')
+      .lean(),
+    AnalyticsEvent.aggregate([
+      { $match: { at: range, type: { $in: ['PRODUCT_VIEW', 'CART_ADD', 'WISHLIST_ADD'] }, product: { $ne: null } } },
+      { $group: { _id: { product: '$product', type: '$type' }, count: { $sum: 1 } } },
+    ]),
+  ]);
+
+  const perProduct: Record<string, Record<string, number>> = {};
+  for (const row of eventCounts) {
+    const productId = String((row._id as { product: unknown }).product);
+    (perProduct[productId] ??= {})[(row._id as { type: string }).type] = (row as { count: number }).count;
+  }
+
+  res.json({
+    items: products.map((raw) => {
+      const p = raw as { _id: unknown; designId: string; name: string; type: string; sellingPriceInr: number; mrpInr: number; isActive?: boolean; images?: Array<{ url?: string }>; variants?: Array<{ sku?: string; stock?: number }>; stats?: Record<string, number> };
+      const views = Number(p.stats?.views ?? 0);
+      const orders = Number(p.stats?.orders ?? 0);
+      return {
+        _id: String(p._id),
+        designId: p.designId,
+        name: p.name,
+        type: p.type,
+        image: p.images?.[0]?.url ?? '',
+        sku: p.variants?.[0]?.sku ?? '',
+        priceMinor: Number(p.sellingPriceInr ?? 0) * 100,
+        mrpMinor: Number(p.mrpInr ?? 0) * 100,
+        stock: p.type === 'READY_MADE' ? (p.variants ?? []).reduce((sum, v) => sum + Number(v.stock ?? 0), 0) : null,
+        isActive: Boolean(p.isActive),
+        allTimeOrders: orders,
+        views,
+        cartAdds: perProduct[String(p._id)]?.CART_ADD ?? 0,
+        wishlistAdds: perProduct[String(p._id)]?.WISHLIST_ADD ?? 0,
+        conversionRatePercent: views > 0 ? Math.round((orders / views) * 1000) / 10 : 0,
+      };
+    }),
+  });
+});
+
+router.get('/dashboard/failed-payments', adminReadLimiter, async (req: Request, res: Response) => {
+  const { range } = dashboardRange(req);
+  const docs = await Order.find({ placedAt: range, 'payment.status': 'FAILED' })
+    .sort({ placedAt: -1 })
+    .limit(100)
+    .select('orderNumber placedAt amounts payment contact')
+    .lean();
+  res.json({
+    items: docs.map((raw) => {
+      const doc = raw as unknown as {
+        orderNumber: string; placedAt?: Date; amounts?: { totalMinor?: number };
+        payment?: { razorpayPaymentId?: string; razorpayOrderId?: string; method?: string; status?: string; failureReason?: string };
+        contact?: { name?: string; mobile?: string };
+      };
+      return {
+        orderNumber: doc.orderNumber,
+        placedAt: doc.placedAt,
+        totalMinor: doc.amounts?.totalMinor ?? 0,
+        paymentId: doc.payment?.razorpayPaymentId ?? doc.payment?.razorpayOrderId ?? '',
+        method: doc.payment?.method ?? '',
+        status: doc.payment?.status ?? '',
+        failureReason: doc.payment?.failureReason ?? '',
+        customer: doc.contact?.name ?? '',
+        mobile: doc.contact?.mobile ?? '',
+      };
+    }),
+  });
 });
 
 /* ========================================================================== */

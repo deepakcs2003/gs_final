@@ -83,6 +83,15 @@ const businessDefs: SettingDef[] = [
   { key: 'measurementInstructionVersion', label: 'Measurement guide version', hint: 'Har measurement change par version badhao taaki order par pata rahe kaunsi guide thi.', type: 'text' },
 ];
 
+const productionDefs: SettingDef[] = [
+  { key: 'productionWorkingDays', label: 'Working days', hint: 'Comma separated, 0=Monday … 6=Sunday. e.g. 1,2,3,4,5,6 (Sunday off).', type: 'text' },
+  { key: 'productionHolidays', label: 'Holidays', hint: 'Comma separated YYYY-MM-DD dates, e.g. 2026-01-26,2026-08-15.', type: 'text' },
+  { key: 'productionComplexityUnits', label: 'Complexity units (JSON)', hint: 'Har complexity par stitching ka units — simple (≤1), bridal tak zyada.', type: 'textarea' },
+  { key: 'productionPackingDays', label: 'Packing (working days)', type: 'number' },
+  { key: 'productionStandardShippingDays', label: 'Standard shipping (calendar days)', hint: 'Estimate ke "to" date: stitching ke baad itne din shipping.', type: 'number' },
+  { key: 'productionBufferDays', label: 'Buffer (working days)', hint: 'Thoda cushion rakhe taaki late na ho.', type: 'number' },
+];
+
 export function SettingsModule() {
   const [all, setAll] = useState<SettingItem[]>([]);
   const [newKey, setNewKey] = useState('');
@@ -112,6 +121,14 @@ export function SettingsModule() {
       <Toolbar title="Website settings" count={businessDefs.length} />
       {error ? <div className="m-4 rounded-xl border border-alert/30 bg-alert/10 p-4 text-sm font-semibold text-alert">{error}</div> : null}
       <SettingsForm definitions={businessDefs} />
+
+      <div className="border-t border-maroon-100">
+        <div className="px-4 pt-4">
+          <h4 className="section-title">Production & stitching</h4>
+          <p className="hint mt-1">Custom order estimates inhi settings se bante hain — Tailors module ke capacity se mil kar delivery range deta hai.</p>
+        </div>
+        <SettingsForm definitions={productionDefs} />
+      </div>
 
       <div className="border-t border-maroon-100 p-4">
         <h4 className="section-title">Custom setting</h4>

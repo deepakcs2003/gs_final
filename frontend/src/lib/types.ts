@@ -302,6 +302,12 @@ export interface CartQuote {
   couponError: string;
   shippingChargedLater: boolean;
   blocking: boolean;
+  /** Present only when the cart has a custom-stitched line. */
+  deliveryEstimate?: {
+    stitchingWorkingDays: number;
+    from: string;
+    to: string;
+  };
 }
 
 export interface SiteConfig {
@@ -390,6 +396,11 @@ export interface OrderDetail extends OrderSummary {
     statusText: string;
     lastSyncedAt: string | null;
   };
+  deliveryEstimate: {
+    stitchingWorkingDays: number;
+    from: string;
+    to: string;
+  } | null;
 }
 
 export interface Review {

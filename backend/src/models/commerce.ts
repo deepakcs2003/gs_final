@@ -1,5 +1,6 @@
 import { Schema, model, type InferSchemaType, type Types } from 'mongoose';
 import {
+  COMPLEXITY_KEYS,
   CURRENCIES,
   MEASUREMENT_UNITS,
   ORDER_STATUSES,
@@ -218,6 +219,111 @@ const statusHistorySchema = new Schema(
   { _id: false },
 );
 
+/* -------------------------------------------------------------------------- */
+/* Order workflow sub-documents (admin review, tailoring, refunds)             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Every order starts in AWAITING_REVIEW. An admin approves it (→ CONFIRMED) or
+ * cancels it (→ CANCELLED + optional refund). Paid orders are reviewed too —
+ * payment is recorded in `payment`, the order status is decided here.
+ */
+const orderReviewSchema = new Schema(
+  {
+    status: { type: String, enum: ['PENDING', 'APPROVED', 'REJECTED'], default: 'PENDING' },
+    reviewedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    reviewedAt: { type: Date, default: null },
+    reviewNote: { type: String, default: '', maxlength: 500 },
+    /** Operator-visible risk signals computed at review time. */
+    flags: { type: [String], default: [] },
+  },
+  { _id: false },
+);
+
+/**
+ * Who stitches this order. Assignment is always manual — no auto-assignment.
+ * `history` keeps every past and current assignment so the silk-thread of who
+ * did what is never lost, even after a reassignment.
+ */
+const tailorAssignmentSchema = new Schema(
+  {
+    tailorId: { type: Schema.Types.ObjectId, ref: 'Tailor', default: null },
+    tailorName: { type: String, default: '' },
+    assignedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    assignedAt: { type: Date, default: null },
+    status: { type: String, enum: ['NOT_ASSIGNED', 'ASSIGNED', 'UNASSIGNED'], default: 'NOT_ASSIGNED' },
+    notes: { type: String, default: '', maxlength: 500 },
+    history: {
+      type: [
+        {
+          tailorId: { type: Schema.Types.ObjectId, ref: 'Tailor', default: null },
+          tailorName: { type: String, default: '' },
+          assignedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+          at: { type: Date, default: Date.now },
+          reason: { type: String, default: '', maxlength: 300 },
+        },
+      ],
+      default: [],
+    },
+  },
+  { _id: false },
+);
+
+/** Stitching workload snapshot — never exposed to the customer. */
+const productionSchema = new Schema(
+  {
+    complexity: { type: String, enum: COMPLEXITY_KEYS, default: 'medium' },
+    /** Units of stitching work: Σ ceil(quantity × complexity units). */
+    productionUnits: { type: Number, default: 0, min: 0 },
+    estimatedWorkingDays: { type: Number, default: 0, min: 0 },
+    calculatedAt: { type: Date, default: null },
+  },
+  { _id: false },
+);
+
+/** Customer-facing delivery estimate, calculated from the production config. */
+const deliveryEstimateSchema = new Schema(
+  {
+    stitchingWorkingDays: { type: Number, default: 0, min: 0 },
+    packingWorkingDays: { type: Number, default: 0, min: 0 },
+    shippingDays: { type: Number, default: 0, min: 0 },
+    bufferDays: { type: Number, default: 0, min: 0 },
+    fromDate: { type: Date, default: null },
+    toDate: { type: Date, default: null },
+    workingDaysUsed: { type: Number, default: 0, min: 0 },
+    calculatedAt: { type: Date, default: null },
+  },
+  { _id: false },
+);
+
+const refundSchema = new Schema(
+  {
+    status: { type: String, enum: ['NONE', 'PENDING', 'PROCESSING', 'COMPLETED', 'FAILED'], default: 'NONE' },
+    razorpayRefundId: { type: String, default: '' },
+    amountMinor: { type: Number, default: 0, min: 0 },
+    requestedAt: { type: Date, default: null },
+    completedAt: { type: Date, default: null },
+    failureReason: { type: String, default: '', maxlength: 300 },
+    attempts: { type: Number, default: 0, min: 0 },
+  },
+  { _id: false },
+);
+
+/** Cancellation record — a cancelled order is never silently deleted. */
+const cancellationSchema = new Schema(
+  {
+    cancelledBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    cancelledByLabel: { type: String, default: '', maxlength: 60 },
+    cancelledAt: { type: Date, default: null },
+    reason: { type: String, default: '', maxlength: 400 },
+    paymentStatusAtCancel: { type: String, default: '' },
+    refund: { type: refundSchema, default: () => ({}) },
+    notificationStatus: { type: String, enum: ['NOT_SENT', 'SENT', 'FAILED'], default: 'NOT_SENT' },
+    notificationMessage: { type: String, default: '', maxlength: 700 },
+  },
+  { _id: false },
+);
+
 const orderSchema = new Schema(
   {
     orderNumber: { type: String, required: true, unique: true, uppercase: true },
@@ -238,8 +344,19 @@ const orderSchema = new Schema(
     amounts: { type: amountsSchema, required: true },
     payment: { type: paymentSchema, required: true },
 
-    status: { type: String, enum: ORDER_STATUSES, default: 'PLACED', index: true },
+    status: { type: String, enum: ORDER_STATUSES, default: 'AWAITING_REVIEW', index: true },
     statusHistory: { type: [statusHistorySchema], default: [] },
+
+    /** Order-review workflow (manual admin confirmation). */
+    review: { type: orderReviewSchema, default: () => ({}) },
+    /** Stitching assignment + immutable assignment history. */
+    tailor: { type: tailorAssignmentSchema, default: () => ({}) },
+    /** Internal stitching workload snapshot. */
+    production: { type: productionSchema, default: () => ({}) },
+    /** Customer-facing "estimated delivery" range. */
+    deliveryEstimate: { type: deliveryEstimateSchema, default: () => ({}) },
+    /** Present only after a cancellation. */
+    cancellation: { type: cancellationSchema, default: () => ({}) },
 
     shipping: { type: shippingSchema, required: true, default: () => ({}) },
 

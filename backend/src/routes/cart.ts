@@ -10,6 +10,7 @@ import { resolveGeo } from '../services/geo.js';
 import { getSettings } from '../services/settings.js';
 import { presentProductCard } from '../presenters/product.js';
 import { cartLinesSchema, couponCodeSchema, objectId } from '../schemas/cart.js';
+import { estimateForQuote } from './orders.js';
 
 const router = Router();
 
@@ -38,7 +39,23 @@ router.post('/quote', writeLimiter, validate({ body: quoteSchema }), async (req:
     { country: geo.country, couponCode, strict: false },
   );
 
-  res.json(quote);
+  const hasCustom = quote.lines.some((line) => line.type === 'CUSTOMIZE');
+  let deliveryEstimate: { stitchingWorkingDays: number; from: Date; to: Date } | undefined;
+  if (hasCustom) {
+    // Best-effort; checkout shows an exact snapshot only after an order exists.
+    try {
+      const estimate = await estimateForQuote(quote.lines);
+      deliveryEstimate = {
+        stitchingWorkingDays: estimate.estimate.stitchingWorkingDays,
+        from: estimate.estimate.fromDate,
+        to: estimate.estimate.toDate,
+      };
+    } catch {
+      deliveryEstimate = undefined;
+    }
+  }
+
+  res.json({ ...quote, deliveryEstimate });
 });
 
 /* -------------------------------------------------------------------------- */

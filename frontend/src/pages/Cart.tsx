@@ -7,7 +7,7 @@ import { EmptyState } from '../components/ui';
 import { useCartQuote, useConfig } from '../hooks/queries';
 import { useCart } from '../store/cart';
 import { useUi } from '../store/ui';
-import { formatMoney } from '../lib/format';
+import { formatDate, formatMoney } from '../lib/format';
 import { track } from '../lib/analytics';
 import type { QuotedLine } from '../lib/types';
 
@@ -191,6 +191,17 @@ export function CartPage() {
                 <p className="mt-3 flex items-start gap-2 rounded-xl bg-marigold-50 p-3 text-[13px] font-medium text-marigold-800">
                   <Ruler size={15} className="mt-0.5 shrink-0" />
                   {pendingMeasurements} custom blouse ka measurement baaki hai. Order se pehle bharna zaroori hai.
+                </p>
+              ) : null}
+
+              {quote?.deliveryEstimate && quote.lines.some((l) => l.type === 'CUSTOMIZE') ? (
+                <p className="mt-3 flex items-start gap-2 rounded-xl bg-marigold-50 p-3 text-[13px] font-medium text-marigold-800">
+                  <Ruler size={15} className="mt-0.5 shrink-0" />
+                  <span>
+                    Custom stitching mein approx {quote.deliveryEstimate.stitchingWorkingDays} working day
+                    {quote.deliveryEstimate.stitchingWorkingDays === 1 ? '' : 's'} lagenge — estimated delivery{' '}
+                    {formatDate(quote.deliveryEstimate.from)} → {formatDate(quote.deliveryEstimate.to)}.
+                  </span>
                 </p>
               ) : null}
 

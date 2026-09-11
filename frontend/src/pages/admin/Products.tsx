@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from '../../lib/api';
 import { Badge, BtnGhost, BtnOutline, BtnPrimary, Checkbox, ColorPaletteSelect, Field, ImagePicker, Modal, PaletteColor, Select, StringListEditor, TextArea, TextInput, Toolbar, Toggle, inr, slugify } from './shared';
 import { Archive, Copy, Plus, Pencil, X, Check, Sparkles } from 'lucide-react';
@@ -44,7 +44,7 @@ interface QwenSuggestion {
   categoryIds?: string[];
 }
 
-export function ProductsModule() {
+export function ProductsModule({ initialProductId }: { initialProductId?: string } = {}) {
   const [items, setItems] = useState<AdminProduct[]>([]);
   const [categories, setCategories] = useState<AdminCategory[]>([]);
   const [palette, setPalette] = useState<PaletteColor[]>([]);
@@ -58,6 +58,7 @@ export function ProductsModule() {
   const [qwenMsg, setQwenMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   /** Snapshot of what the last Qwen run wrote, so regenerating never clobbers manual edits. */
   const [lastGen, setLastGen] = useState<Record<string, unknown>>({});
+  const targetRef = useRef(initialProductId ?? null);
 
   const load = async () => {
     setError('');
@@ -73,6 +74,16 @@ export function ProductsModule() {
     } catch (err) { setError(err instanceof ApiError ? err.message : 'Products load nahi hue.'); }
   };
   useEffect(() => { void load(); }, []);
+
+  useEffect(() => {
+    if (!initialProductId || !targetRef.current) return;
+    targetRef.current = null;
+    const cached = items.find((p) => p._id === initialProductId);
+    if (cached) { openEdit(cached); return; }
+    api<{ product: AdminProduct }>(`/admin/products/${initialProductId}`)
+      .then((res) => openEdit(res.product))
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Product kholte waqt gadbad.'));
+  }, [items, initialProductId]);
 
   const isEmptyVal = (value: unknown): boolean => {
     if (value === null || value === undefined || value === '') return true;

@@ -7,7 +7,7 @@ import { useCartQuote, useConfig, useCurrentUser, usePincodeCheck } from '../hoo
 import { toApiLines, useCart } from '../store/cart';
 import { useUi } from '../store/ui';
 import { api, ApiError } from '../lib/api';
-import { formatMoney } from '../lib/format';
+import { formatDate, formatMoney } from '../lib/format';
 import { track } from '../lib/analytics';
 
 /**
@@ -488,6 +488,14 @@ export function CheckoutPage() {
                     </dd>
                   </div>
                 </dl>
+              ) : null}
+
+              {quote?.deliveryEstimate && quote.lines.some((l) => l.type === 'CUSTOMIZE') ? (
+                <p className="mt-4 rounded-xl bg-marigold-50 px-3 py-2 text-[12px] font-medium text-marigold-800">
+                  Custom stitching mein approx {quote.deliveryEstimate.stitchingWorkingDays} working day
+                  {quote.deliveryEstimate.stitchingWorkingDays === 1 ? '' : 's'} lagenge — estimated delivery{' '}
+                  {formatDate(quote.deliveryEstimate.from)} → {formatDate(quote.deliveryEstimate.to)}.
+                </p>
               ) : null}
 
               {quote?.blocking ? (

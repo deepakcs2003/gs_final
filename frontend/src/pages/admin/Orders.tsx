@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from '../../lib/api';
 import { Badge, BtnGhost, BtnOutline, BtnPrimary, Field, ImageLightbox, Modal, TextInput, Toolbar, inr } from './shared';
-import { Eye, X, Check, Truck, Wallet, LinkIcon, Image as ImageIcon } from 'lucide-react';
+import { Eye, X, Check, Truck, Wallet, LinkIcon, Image as ImageIcon, Scissors, RefreshCw, UserRound } from 'lucide-react';
 
-const statuses = ['PLACED', 'CONFIRMED', 'PROCESSING', 'STITCHING', 'QUALITY_CHECK', 'PACKED', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'RETURNED', 'FAILED'];
+const statuses = ['AWAITING_REVIEW', 'PLACED', 'CONFIRMED', 'PROCESSING', 'STITCHING', 'QUALITY_CHECK', 'PACKED', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'RETURNED', 'FAILED'];
+
+interface TailorHistoryEntry { tailorId: string; tailorName: string; at: string; reason: string; }
+interface TailorAssignment { tailorId: string; tailorName: string; assignedAt: string | null; status: string; notes: string; history: TailorHistoryEntry[]; }
 
 interface AdminOrder {
   _id: string; orderNumber: string; status: string; isGuest: boolean;
@@ -19,27 +22,55 @@ interface AdminOrder {
     status: string; statusText: string; lastSyncedAt: string | null; pickupScheduledAt: string | null; shippedAt: string | null; deliveredAt: string | null;
   };
   customerNote: string; placedAt: string;
+  review: { status: string; reviewedAt: string | null; reviewNote: string; flags: string[] } | null;
+  production: { complexity: string; productionUnits: number; estimatedWorkingDays: number; calculatedAt: string | null } | null;
+  deliveryEstimate: { stitchingWorkingDays: number; packingWorkingDays: number; shippingDays: number; bufferDays: number; fromDate: string | null; toDate: string | null; workingDaysUsed: number; calculatedAt: string | null } | null;
+  tailor: TailorAssignment | null;
+  cancellation: {
+    cancelledByLabel: string; cancelledAt: string | null; reason: string; paymentStatusAtCancel: string;
+    refund: { status: string; razorpayRefundId: string; amountMinor: number; requestedAt: string | null; completedAt: string | null; failureReason: string; attempts: number };
+    notificationStatus: string; notificationMessage: string;
+  } | null;
+  risk: { flags: string[]; flagLabels: string[]; reviewRecommended: boolean } | null;
+  customerStats: { previousOrders: number; previousCancelled: number } | null;
+  itemCategories?: string[];
+  liveWorkload?: { activeUnits: number; activeOrders: number; dailyCapacity: number };
 }
 
-export function OrdersModule() {
+export function OrdersModule({ initialFilter, initialOrderNumber }: { initialFilter?: string; initialOrderNumber?: string } = {}) {
   const [items, setItems] = useState<AdminOrder[]>([]);
   const [query, setQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState(initialFilter ?? 'ALL');
   const [selected, setSelected] = useState<AdminOrder | null>(null);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const targetRef = useRef(initialOrderNumber ?? null);
 
   const load = async () => {
     setError('');
     try {
       const params = new URLSearchParams();
-      if (statusFilter !== 'ALL') params.set('status', statusFilter);
+      if (statusFilter === 'UNASSIGNED') params.set('tailor', 'unassigned');
+      else if (statusFilter === 'REFUND_PENDING') params.set('refund', 'pending');
+      else if (statusFilter === 'REFUND_FAILED') params.set('refund', 'failed');
+      else if (statusFilter === 'REFUNDED') params.set('refund', 'refunded');
+      else if (statusFilter !== 'ALL') params.set('status', statusFilter);
       if (query.trim()) params.set('q', query.trim());
       const res = await api<{ items: AdminOrder[] }>(`/admin/orders?${params.toString()}`);
       setItems(res.items);
     } catch (err) { setError(err instanceof ApiError ? err.message : 'Orders load nahi hue.'); }
   };
   useEffect(() => { void load(); }, [statusFilter]);
+
+  useEffect(() => {
+    if (!initialOrderNumber || !targetRef.current) return;
+    targetRef.current = null;
+    const cached = items.find((o) => o.orderNumber === initialOrderNumber);
+    if (cached) { setSelected(cached); return; }
+    api<{ order: AdminOrder }>(`/admin/orders/${initialOrderNumber}`)
+      .then((res) => setSelected(res.order))
+      .catch(() => setError('Order kholte waqt gadbad.'));
+  }, [items, initialOrderNumber]);
 
   const search = (q: string) => { setQuery(q); };
   useEffect(() => {
@@ -70,16 +101,27 @@ export function OrdersModule() {
     const map: Record<string, number> = {};
     for (const s of statuses) map[s] = 0;
     for (const o of items) map[o.status] = (map[o.status] ?? 0) + 1;
+    map.UNASSIGNED = items.filter((o) => o.status !== 'CANCELLED' && o.status !== 'RETURNED' && o.tailor?.status !== 'ASSIGNED').length;
+    map.REFUND_PENDING = items.filter((o) => o.cancellation?.refund?.status === 'PENDING' || o.cancellation?.refund?.status === 'PROCESSING').length;
+    map.REFUND_FAILED = items.filter((o) => o.cancellation?.refund?.status === 'FAILED').length;
+    map.REFUNDED = items.filter((o) => o.cancellation?.refund?.status === 'COMPLETED').length;
     return map;
   }, [items]);
+
+  const specialFilters = ['UNASSIGNED', 'REFUND_PENDING', 'REFUND_FAILED', 'REFUNDED'];
 
   return (
     <section className="card overflow-hidden">
       <Toolbar title="Order management" count={filtered.length} searchPlaceholder="Order ID, customer, mobile" query={query} onQuery={search} />
       <div className="flex gap-2 overflow-x-auto px-2 py-3">
         <button onClick={() => { setStatusFilter('ALL'); }} className={`chip whitespace-nowrap ${statusFilter === 'ALL' ? 'chip-active' : ''}`}>All ({items.length})</button>
-        {statuses.map((s) => (
+        <button onClick={() => { setStatusFilter('AWAITING_REVIEW'); }} className={`chip whitespace-nowrap ${statusFilter === 'AWAITING_REVIEW' ? 'chip-active' : ''}`}>Awaiting review ({counts.AWAITING_REVIEW ?? 0})</button>
+        <button onClick={() => { setStatusFilter('UNASSIGNED'); }} className={`chip whitespace-nowrap ${statusFilter === 'UNASSIGNED' ? 'chip-active' : ''}`}>No tailor ({counts.UNASSIGNED ?? 0})</button>
+        {statuses.filter((s) => s !== 'AWAITING_REVIEW').map((s) => (
           <button key={s} onClick={() => { setStatusFilter(s); }} className={`chip whitespace-nowrap ${statusFilter === s ? 'chip-active' : ''}`}>{s.replace('_', ' ')} ({counts[s] ?? 0})</button>
+        ))}
+        {specialFilters.map((f) => (
+          <button key={f} onClick={() => { setStatusFilter(f); }} className={`chip whitespace-nowrap ${statusFilter === f ? 'chip-active' : ''}`}>{f.replace('_', ' ')} ({counts[f] ?? 0})</button>
         ))}
       </div>
       {error ? <div className="m-4 rounded-xl border border-alert/30 bg-alert/10 p-4 text-sm font-semibold text-alert">{error}</div> : null}
@@ -105,15 +147,16 @@ export function OrdersModule() {
 
       {selected ? (
         <OrderDetailModal order={selected} onClose={() => setSelected(null)} busy={busy}
-          onStatus={(status) => updateStatus(selected, status)} onUpdated={reloadSelected}
+          onStatus={(status) => updateStatus(selected, status)} onUpdated={reloadSelected} onListRefresh={load}
           setError={(msg) => setError(msg)} />
       ) : null}
     </section>
   );
 }
 
-function OrderDetailModal({ order, onClose, busy, onStatus, onUpdated, setError }: {
-  order: AdminOrder; onClose: () => void; busy: string; onStatus: (status: string) => void; onUpdated: () => Promise<void>; setError: (msg: string) => void;
+function OrderDetailModal({ order, onClose, busy, onStatus, onUpdated, onListRefresh, setError }: {
+  order: AdminOrder; onClose: () => void; busy: string; onStatus: (status: string) => void;
+  onUpdated: () => Promise<void>; onListRefresh: () => void; setError: (msg: string) => void;
 }) {
   const [shipForm, setShipForm] = useState(order.shipping ?? { shiprocketOrderId: '', shipmentId: '', awb: '', courier: '', trackingUrl: '', estimatedDeliveryAt: null });
   // Defensive defaults: legacy/test documents may be missing fields.
@@ -126,6 +169,68 @@ function OrderDetailModal({ order, onClose, busy, onStatus, onUpdated, setError 
   const hasCustom = items.some((i) => i.type === 'CUSTOMIZE');
   const imrs = (v: number) => inr(v);
   const [preview, setPreview] = useState<string | null>(null);
+
+  const [complexity, setComplexity] = useState(order.production?.complexity ?? 'medium');
+  const [reviewNote, setReviewNote] = useState('');
+  const [cancelReason, setCancelReason] = useState('');
+  const [reviewBusy, setReviewBusy] = useState('');
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [refundBusy, setRefundBusy] = useState('');
+
+  const confirmOrder = async () => {
+    setReviewBusy('confirm');
+    try {
+      await api(`/admin/orders/${order.orderNumber}/confirm`, {
+        method: 'POST',
+        body: { reviewNote: reviewNote.trim(), complexity },
+      });
+      setReviewNote('');
+      await onUpdated();
+      onListRefresh();
+    } catch (err) { setError(err instanceof ApiError ? err.message : 'Confirm nahi hua.'); }
+    finally { setReviewBusy(''); }
+  };
+
+  const cancelOrder = async () => {
+    if (!cancelReason.trim()) { setError('Cancel ka reason likhein.'); return; }
+    setReviewBusy('cancel');
+    try {
+      await api(`/admin/orders/${order.orderNumber}/cancel`, { method: 'POST', body: { reason: cancelReason.trim() } });
+      await onUpdated();
+      onListRefresh();
+    } catch (err) { setError(err instanceof ApiError ? err.message : 'Cancel nahi hua.'); }
+    finally { setReviewBusy(''); }
+  };
+
+  const recomputeProduction = async (nextComplexity: string) => {
+    setReviewBusy('production');
+    try {
+      await api(`/admin/orders/${order.orderNumber}/production`, { method: 'PATCH', body: { complexity: nextComplexity } });
+      await onUpdated();
+    } catch (err) { setError(err instanceof ApiError ? err.message : 'Estimate update nahi hua.'); }
+    finally { setReviewBusy(''); }
+  };
+
+  const assignTailor = async (tailorId: string, notes: string, reason: string) => {
+    setReviewBusy('assign');
+    try {
+      await api(`/admin/orders/${order.orderNumber}/assign-tailor`, { method: 'POST', body: { tailorId, notes, reason } });
+      setAssignOpen(false);
+      await onUpdated();
+      onListRefresh();
+    } catch (err) { setError(err instanceof ApiError ? err.message : 'Tailor assign nahi hua.'); }
+    finally { setReviewBusy(''); }
+  };
+
+  const refundAction = async (action: 'retry' | 'sync') => {
+    setRefundBusy(action);
+    try {
+      await api(`/admin/orders/${order.orderNumber}/refund/${action}`, { method: 'POST' });
+      await onUpdated();
+      onListRefresh();
+    } catch (err) { setError(err instanceof ApiError ? err.message : 'Refund action fail hua.'); }
+    finally { setRefundBusy(''); }
+  };
 
   const saveShipping = async () => {
     void api(`/admin/orders/${order.orderNumber}/shipping`, { method: 'PATCH', body: shipForm })
@@ -144,10 +249,18 @@ function OrderDetailModal({ order, onClose, busy, onStatus, onUpdated, setError 
             {hasCustom ? <span className="mt-1 inline-block rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-bold text-purple-700">CUSTOM ORDER</span> : null}
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <Badge label={order.status} />
-              <select className="field min-h-10 w-auto py-2 text-sm" value={order.status} disabled={busy === order.orderNumber} onChange={(e) => onStatus(e.target.value)}>
-                {statuses.map((s) => <option key={s}>{s}</option>)}
-              </select>
+              {order.status === 'AWAITING_REVIEW' ? (
+                <ReviewControls busy={reviewBusy} complexity={complexity} onComplexity={setComplexity}
+                  note={reviewNote} onNote={setReviewNote} cancelReason={cancelReason} onCancelReason={setCancelReason}
+                  onConfirm={() => void confirmOrder()} onCancel={() => void cancelOrder()} />
+              ) : (
+                <select className="field min-h-10 w-auto py-2 text-sm" value={order.status} disabled={busy === order.orderNumber}
+                  onChange={(e) => onStatus(e.target.value)}>
+                  {['PROCESSING', 'STITCHING', 'QUALITY_CHECK', 'PACKED', 'SHIPPED', 'DELIVERED', 'RETURNED', 'FAILED'].map((s) => <option key={s}>{s}</option>)}
+                </select>
+              )}
             </div>
+            <ReviewBanner order={order} />
             <div className="mt-4 space-y-1.5">
               {statusHistory.map((h, i) => (
                 <div className="flex items-start gap-2 text-xs" key={i}>
@@ -159,6 +272,85 @@ function OrderDetailModal({ order, onClose, busy, onStatus, onUpdated, setError 
               ))}
             </div>
           </section>
+
+          <section className="rounded-xl border border-maroon-100 p-4">
+            <h4 className="text-sm font-bold text-maroon-700"><Scissors size={15} className="mr-1 inline" />Production & delivery estimate</h4>
+            {order.production ? (
+              <div className="mt-3 space-y-1.5 text-sm">
+                <Row k="Complexity" v={
+                  <span className="inline-flex items-center gap-2">
+                    <select value={complexity} onChange={(e) => setComplexity(e.target.value)}
+                      className="field min-h-8 w-auto py-1 text-xs" disabled={reviewBusy === 'production' || order.status === 'CANCELLED'}>
+                      {complexityOptions.map((c) => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
+                    </select>
+                    <BtnGhost className="min-h-8 px-2 text-xs" onClick={() => void recomputeProduction(complexity)}
+                      disabled={reviewBusy === 'production' || order.status === 'CANCELLED'}>
+                      <RefreshCw size={13} />Recompute
+                    </BtnGhost>
+                  </span>
+                } />
+                <Row k="Stitching units" v={order.production.productionUnits} />
+                <Row k="Stitching (working days)" v={order.production.estimatedWorkingDays} />
+                {order.deliveryEstimate && (order.deliveryEstimate.fromDate || order.deliveryEstimate.toDate) ? (
+                  <>
+                    <Row k="Estimated delivery range" v={`${fmtDate(order.deliveryEstimate.fromDate)} → ${fmtDate(order.deliveryEstimate.toDate)}`} />
+                    <Row k="Packing / shipping / buffer (days)" v={`${order.deliveryEstimate.packingWorkingDays} / ${order.deliveryEstimate.shippingDays} / ${order.deliveryEstimate.bufferDays}`} />
+                  </>
+                ) : null}
+                {order.liveWorkload ? (
+                  <Row k="Live workload / capacity" v={`${order.liveWorkload.activeUnits} units (${order.liveWorkload.activeOrders} orders) / ${order.liveWorkload.dailyCapacity} per day`} />
+                ) : null}
+              </div>
+            ) : <p className="mt-2 text-xs text-ink-muted">Confirm hote hi estimate banega.</p>}
+          </section>
+
+          <section className="rounded-xl border border-maroon-100 p-4">
+            <h4 className="text-sm font-bold text-maroon-700"><UserRound size={15} className="mr-1 inline" />Tailor</h4>
+            {order.tailor?.tailorName ? (
+              <div className="mt-3 space-y-1.5 text-sm">
+                <Row k="Tailor" v={order.tailor.tailorName} />
+                <Row k="Assigned" v={order.tailor.assignedAt ? new Date(order.tailor.assignedAt).toLocaleString('en-IN') : '—'} />
+                <Row k="Status" v={<Badge label={order.tailor.status} />} />
+                {order.tailor.notes ? <Row k="Notes" v={order.tailor.notes} /> : null}
+                {order.tailor.history?.length ? (
+                  <div className="mt-2 space-y-1 border-t border-maroon-100 pt-2 text-xs text-ink-muted">
+                    {order.tailor.history.map((h, i) => (
+                      <div key={i}>· {h.tailorName}{h.reason ? ` — ${h.reason}` : ''}<span className="ml-1">{new Date(h.at).toLocaleDateString('en-IN')}</span></div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : <p className="mt-2 text-xs text-ink-muted">Tailor assign nahi hua.</p>}
+            {['CONFIRMED', 'STITCHING', 'QUALITY_CHECK', 'PACKED'].includes(order.status) ? (
+              <BtnOutline className="mt-3" onClick={() => setAssignOpen(true)} disabled={reviewBusy === 'assign'}>
+                <UserRound size={15} />{order.tailor?.tailorName ? 'Reassign' : 'Assign tailor'}
+              </BtnOutline>
+            ) : null}
+          </section>
+
+          {order.cancellation ? (
+            <section className="rounded-xl border border-maroon-100 p-4">
+              <h4 className="text-sm font-bold text-maroon-700">Cancellation & refund</h4>
+              <div className="mt-3 space-y-1.5 text-sm">
+                <Row k="Cancelled at" v={order.cancellation.cancelledAt ? new Date(order.cancellation.cancelledAt).toLocaleString('en-IN') : '—'} />
+                <Row k="Reason" v={order.cancellation.reason} />
+                <Row k="Refund" v={<Badge label={order.cancellation.refund?.status ?? 'NONE'} />} />
+                {(order.cancellation.refund?.amountMinor ?? 0) > 0 ? <Row k="Refund amount" v={imrs(order.cancellation.refund.amountMinor)} /> : null}
+                {order.cancellation.refund?.razorpayRefundId ? <Row k="Razorpay refund" v={order.cancellation.refund.razorpayRefundId} /> : null}
+                {order.cancellation.refund?.completedAt ? <Row k="Refunded at" v={new Date(order.cancellation.refund.completedAt).toLocaleString('en-IN')} /> : null}
+                {order.cancellation.refund?.failureReason ? <Row k="Refund failure" v={order.cancellation.refund.failureReason} /> : null}
+                {order.cancellation.notificationMessage ? <Row k="SMS" v={order.cancellation.notificationMessage} /> : null}
+                {order.cancellation.refund && (order.cancellation.refund.status === 'FAILED' || (order.cancellation.refund.razorpayRefundId && order.cancellation.refund.status !== 'COMPLETED')) ? (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <BtnOutline className="min-h-8 px-2 text-xs" onClick={() => void refundAction('sync')} disabled={refundBusy !== ''}><RefreshCw size={14} />Sync</BtnOutline>
+                    {order.cancellation.refund.status === 'FAILED' ? (
+                      <BtnPrimary className="min-h-8 px-2 text-xs" onClick={() => void refundAction('retry')} disabled={refundBusy !== ''}>Retry refund</BtnPrimary>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
 
           <section className="rounded-xl border border-maroon-100 p-4">
             <h4 className="text-sm font-bold text-maroon-700">Payment</h4>
@@ -259,6 +451,7 @@ function OrderDetailModal({ order, onClose, busy, onStatus, onUpdated, setError 
           </section>
         </div>
       </div>
+      <TailorAssignModal open={assignOpen} onClose={() => setAssignOpen(false)} onAssign={assignTailor} busy={reviewBusy === 'assign'} />
       {preview ? <ImageLightbox url={preview} alt="Product image" onClose={() => setPreview(null)} /> : null}
     </Modal>
   );
@@ -461,6 +654,116 @@ function CourierModal({ open, onClose, couriers, chosen, onChoose, manual, onMan
           <TextInput value={manual} onChange={(e) => onManual(e.target.value)} placeholder="e.g. 1234" />
         </Field>
         <BtnPrimary className="w-full" type="button" onClick={onAssign} disabled={busy}>{busy ? 'Assigning AWB...' : 'Assign AWB'}</BtnPrimary>
+      </div>
+    </Modal>
+  );
+}
+
+const complexityOptions = ['simple', 'medium', 'designer', 'heavy_designer', 'bridal'];
+
+function fmtDate(v: string | null | undefined): string {
+  return v ? new Date(v).toLocaleDateString('en-IN') : '—';
+}
+
+function ReviewBanner({ order }: { order: AdminOrder }) {
+  const flags = order.risk?.flagLabels ?? [];
+  if (flags.length === 0) return null;
+  return (
+    <div className="mt-3 rounded-lg border border-alert/30 bg-alert/10 p-3 text-xs">
+      <p className="font-bold text-alert">Review Recommended — Suspicious Signals</p>
+      <div className="mt-1.5 flex flex-wrap gap-1.5">
+        {flags.map((f, i) => <span key={i} className="rounded-full bg-alert/10 px-2 py-0.5 font-semibold text-alert">{f}</span>)}
+      </div>
+      {order.customerStats ? (
+        <p className="mt-1.5 text-ink-muted">Pehle {order.customerStats.previousOrders} order, {order.customerStats.previousCancelled} cancelled (30 din).</p>
+      ) : null}
+    </div>
+  );
+}
+
+function ReviewControls({ busy, complexity, onComplexity, note, onNote, cancelReason, onCancelReason, onConfirm, onCancel }: {
+  busy: string; complexity: string; onComplexity: (v: string) => void;
+  note: string; onNote: (v: string) => void; cancelReason: string; onCancelReason: (v: string) => void;
+  onConfirm: () => void; onCancel: () => void;
+}) {
+  return (
+    <div className="w-full space-y-3">
+      <div className="grid gap-2 rounded-lg bg-maroon-50/50 p-3 sm:grid-cols-2">
+        <Field label="Complexity (production plan)">
+          <select className="field min-h-10 w-full text-sm" value={complexity} onChange={(e) => onComplexity(e.target.value)}>
+            {complexityOptions.map((c) => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
+          </select>
+        </Field>
+        <Field label="Review note (optional)">
+          <TextInput value={note} onChange={(e) => onNote(e.target.value)} placeholder="Approve note" />
+        </Field>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <BtnPrimary onClick={onConfirm} disabled={busy === 'confirm'}><Check size={15} />{busy === 'confirm' ? 'Confirming...' : 'Confirm order'}</BtnPrimary>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <TextInput value={cancelReason} onChange={(e) => onCancelReason(e.target.value)} placeholder="Cancel ka reason (zaroori)" />
+          <BtnGhost onClick={onCancel} disabled={busy === 'cancel'} className="shrink-0"><X size={15} />{busy === 'cancel' ? '...' : 'Cancel'}</BtnGhost>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface TailorOption {
+  _id: string; name: string; status: string;
+  specializationCaps: Array<{ code: string; capacityPerDay: number }>;
+  workload: { assignedOrders: number; assignedUnits: number };
+}
+
+function TailorAssignModal({ open, onClose, onAssign, busy }: {
+  open: boolean; onClose: () => void; onAssign: (tailorId: string, notes: string, reason: string) => void; busy: boolean;
+}) {
+  const [tailors, setTailors] = useState<TailorOption[]>([]);
+  const [chosen, setChosen] = useState('');
+  const [notes, setNotes] = useState('');
+  const [reason, setReason] = useState('');
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    setMsg('');
+    void api<{ tailors: Array<{ tailor: TailorOption; workload: TailorOption['workload'] }> }>('/admin/tailor-dashboard')
+      .then((res) => {
+        const all = res.tailors.map((row) => ({ ...row.tailor, workload: row.workload }));
+        const active = all.filter((t) => t.status === 'ACTIVE');
+        setTailors(active);
+        setChosen(active[0]?._id ?? '');
+        setNotes('');
+        setReason('');
+      })
+      .catch((err) => setMsg(err instanceof ApiError ? err.message : 'Tailor list nahi mili.'));
+  }, [open]);
+
+  return (
+    <Modal open={open} onClose={onClose} title="Tailor assign karein" subtitle="Manual assignment — history save hogi" maxWidth="sm:max-w-lg">
+      <div className="space-y-2">
+        {tailors.length === 0 ? (
+          <p className="text-sm text-ink-muted">Koi ACTIVE tailor nahi. Pehle Tailors tab se add karein.</p>
+        ) : tailors.map((t) => (
+          <button type="button" key={t._id} onClick={() => setChosen(t._id)}
+            className={`w-full rounded-xl border p-3 text-left text-sm ${chosen === t._id ? 'border-maroon-500 bg-maroon-50/60' : 'border-ink-light/30'}`}>
+            <span className="font-semibold">{t.name}</span>
+            <span className="ml-2 text-xs text-ink-muted">{t._id.slice(-6)}</span>
+            <div className="mt-1 text-xs text-ink-muted">
+              Load: {t.workload.assignedOrders} orders / {t.workload.assignedUnits} units · Caps: {t.specializationCaps.map((c) => `${c.code} ${c.capacityPerDay}/day`).join(', ') || '—'}
+            </div>
+          </button>
+        ))}
+        <Field label="Notes (optional)">
+          <TextInput value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </Field>
+        <Field label="Reason (reassign ke liye)">
+          <TextInput value={reason} onChange={(e) => setReason(e.target.value)} />
+        </Field>
+        {msg ? <p className="text-xs font-medium text-ink-muted">{msg}</p> : null}
+        <BtnPrimary className="w-full" type="button" disabled={busy || chosen === ''} onClick={() => onAssign(chosen, notes, reason)}>
+          {busy ? 'Assigning...' : 'Assign'}
+        </BtnPrimary>
       </div>
     </Modal>
   );

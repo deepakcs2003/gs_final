@@ -1,10 +1,11 @@
-import { useState, type ComponentType } from 'react';
-import { Activity, BarChart3, ChevronRight, ClipboardList, CreditCard, DatabaseBackup, FolderTree, GalleryHorizontalEnd, Gauge, Globe2, Image, LayoutDashboard, LifeBuoy, Package, RefreshCw, Settings, ShieldCheck, SlidersHorizontal, Star, Store, Truck, Users, Wallet } from 'lucide-react';
+import { useState, useEffect, type ComponentType } from 'react';
+import { Activity, BarChart3, ChevronRight, ClipboardList, CreditCard, DatabaseBackup, FolderTree, GalleryHorizontalEnd, Gauge, Globe2, Image, LayoutDashboard, LifeBuoy, Package, RefreshCw, Scissors, Settings, ShieldCheck, SlidersHorizontal, Star, Store, Truck, Users, Wallet } from 'lucide-react';
 import { useCurrentUser } from '../hooks/queries';
 import { OverviewModule } from './admin/Overview';
 import { ProductsModule } from './admin/Products';
 import { CatalogModule } from './admin/Catalog';
 import { OrdersModule } from './admin/Orders';
+import { TailorsModule } from './admin/Tailors';
 import { CustomersModule } from './admin/Customers';
 import { InventoryModule } from './admin/Inventory';
 import { MeasurementsModule } from './admin/Measurements';
@@ -26,6 +27,7 @@ import { BackupModule } from './admin/Backup';
 const nav = {
   overview: { label: 'Overview', icon: LayoutDashboard },
   orders: { label: 'Orders', icon: ClipboardList },
+  tailors: { label: 'Tailors & production', icon: Scissors },
   customers: { label: 'Customers', icon: Users },
   inventory: { label: 'Inventory & stock', icon: Gauge },
   measurements: { label: 'Measurements', icon: SlidersHorizontal },
@@ -48,22 +50,23 @@ const nav = {
 } as const;
 
 const navOrder = [
-  'overview', 'orders', 'customers', 'inventory', 'measurements', 'reviews',
+  'overview', 'orders', 'tailors', 'customers', 'inventory', 'measurements', 'reviews',
   'products', 'catalog', 'coupons', 'homepage', 'banners',
   'analytics', 'notifications', 'seo',
   'shipping', 'payments', 'content', 'admin-users', 'settings', 'activity', 'backup',
 ] as const;
 
 const navGroups: Array<{ label: string; items: Array<keyof typeof nav> }> = [
-  { label: 'Command centre', items: ['overview', 'orders', 'customers', 'inventory', 'measurements', 'reviews'] },
+  { label: 'Command centre', items: ['overview', 'orders', 'tailors', 'customers', 'inventory', 'measurements', 'reviews'] },
   { label: 'Store & catalogue', items: ['products', 'catalog', 'coupons', 'homepage', 'banners'] },
   { label: 'Growth', items: ['analytics', 'notifications', 'seo'] },
   { label: 'Governance', items: ['shipping', 'payments', 'content', 'admin-users', 'settings', 'activity', 'backup'] },
 ];
 
-const modules: Record<string, ComponentType> = {
+const modules: Record<string, ComponentType<Record<string, unknown>>> = {
   overview: OverviewModule,
   orders: OrdersModule,
+  tailors: TailorsModule,
   customers: CustomersModule,
   inventory: InventoryModule,
   measurements: MeasurementsModule,
@@ -88,6 +91,54 @@ const modules: Record<string, ComponentType> = {
 export function AdminPage() {
   const { data: user, isLoading: userLoading } = useCurrentUser();
   const [tab, setTab] = useState<keyof typeof nav>('overview');
+  const [ordersFilter, setOrdersFilter] = useState<string | null>(null);
+  const [orderNumber, setOrderNumber] = useState<string | null>(null);
+  const [productTarget, setProductTarget] = useState<string | null>(null);
+  const [customerTarget, setCustomerTarget] = useState<string | null>(null);
+
+  const resetDeepLink = () => {
+    setOrdersFilter(null);
+    setOrderNumber(null);
+    setProductTarget(null);
+    setCustomerTarget(null);
+  };
+
+  useEffect(() => {
+    const onOrders = (e: Event) => {
+      const detail = (e as CustomEvent<{ filter?: string; orderNumber?: string }>).detail;
+      setOrdersFilter(detail?.filter ?? 'ALL');
+      setOrderNumber(detail?.orderNumber ?? null);
+      setProductTarget(null);
+      setCustomerTarget(null);
+      setTab('orders');
+    };
+    const onProducts = (e: Event) => {
+      const detail = (e as CustomEvent<{ productId: string }>).detail;
+      if (!detail?.productId) return;
+      setProductTarget(detail.productId);
+      setOrdersFilter(null);
+      setOrderNumber(null);
+      setCustomerTarget(null);
+      setTab('products');
+    };
+    const onCustomers = (e: Event) => {
+      const detail = (e as CustomEvent<{ customerId: string }>).detail;
+      if (!detail?.customerId) return;
+      setCustomerTarget(detail.customerId);
+      setOrdersFilter(null);
+      setOrderNumber(null);
+      setProductTarget(null);
+      setTab('customers');
+    };
+    window.addEventListener('admin-nav-orders', onOrders);
+    window.addEventListener('admin-nav-products', onProducts);
+    window.addEventListener('admin-nav-customers', onCustomers);
+    return () => {
+      window.removeEventListener('admin-nav-orders', onOrders);
+      window.removeEventListener('admin-nav-products', onProducts);
+      window.removeEventListener('admin-nav-customers', onCustomers);
+    };
+  }, []);
 
   if (userLoading) return <div className="grid min-h-dvh place-items-center bg-cream text-ink-muted">Loading admin...</div>;
   if (!user?.isAdmin) return (
@@ -119,7 +170,7 @@ export function AdminPage() {
                 {group.items.map((id) => {
                   const GroupIcon = nav[id].icon;
                   return (
-                    <button key={id} type="button" onClick={() => setTab(id)}
+                    <button key={id} type="button" onClick={() => { resetDeepLink(); setTab(id); }}
                       className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] font-semibold transition ${tab === id ? 'bg-marigold-500 text-ink' : 'text-white/70 hover:bg-white/10 hover:text-white'}`}>
                       <GroupIcon size={17} />{nav[id].label}<ChevronRight className="ml-auto" size={14} />
                     </button>
@@ -148,13 +199,28 @@ export function AdminPage() {
           </div>
           <div className="mt-4 flex gap-2 overflow-x-auto lg:hidden">
             {navOrder.map((id) => (
-              <button key={id} onClick={() => setTab(id)} className={`chip whitespace-nowrap ${tab === id ? 'chip-active' : ''}`}>{nav[id].label}</button>
+              <button key={id} onClick={() => { resetDeepLink(); setTab(id); }} className={`chip whitespace-nowrap ${tab === id ? 'chip-active' : ''}`}>{nav[id].label}</button>
             ))}
           </div>
         </header>
 
         <div className="mx-auto max-w-7xl p-4 sm:p-8">
-          {ActiveModule ? <ActiveModule key={tab} /> : (
+          {ActiveModule ? (
+            <ActiveModule
+              key={
+                tab === 'orders' ? `orders|${ordersFilter ?? 'ALL'}|${orderNumber ?? ''}`
+                  : tab === 'products' ? `products|${productTarget ?? ''}`
+                  : tab === 'customers' ? `customers|${customerTarget ?? ''}`
+                  : 'default'
+              }
+              {...(tab === 'orders' ? {
+                initialFilter: ordersFilter ?? 'ALL',
+                initialOrderNumber: orderNumber ?? undefined,
+              } : {})}
+              {...(tab === 'products' ? { initialProductId: productTarget ?? undefined } : {})}
+              {...(tab === 'customers' ? { initialCustomerId: customerTarget ?? undefined } : {})}
+            />
+          ) : (
             <section className="card overflow-hidden">
               <div className="border-b border-maroon-100 bg-white p-6 sm:p-8">
                 <div className="flex items-start gap-4">

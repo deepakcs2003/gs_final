@@ -8,6 +8,7 @@ export const PRODUCT_TYPES = ['READY_MADE', 'CUSTOMIZE', 'SHOWCASE'] as const;
 export type ProductType = (typeof PRODUCT_TYPES)[number];
 
 export const ORDER_STATUSES = [
+  'AWAITING_REVIEW',
   'PLACED',
   'CONFIRMED',
   'PROCESSING',
@@ -24,6 +25,7 @@ export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 /** Customer-facing labels for the tracking timeline (README §35). */
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
+  AWAITING_REVIEW: 'Awaiting Review',
   PLACED: 'Order Placed',
   CONFIRMED: 'Confirmed',
   PROCESSING: 'Processing',
@@ -37,10 +39,57 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   FAILED: 'Failed',
 };
 
+/**
+ * Workload complexity of a stitched order. The units per level are editable via
+ * the `productionComplexityUnits` setting; the keys must never change because
+ * they are referenced from stored orders.
+ */
+export const COMPLEXITY_KEYS = ['simple', 'medium', 'designer', 'heavy_designer', 'bridal'] as const;
+export type ComplexityKey = (typeof COMPLEXITY_KEYS)[number];
+
+export const COMPLEXITY_LABELS: Record<ComplexityKey, string> = {
+  simple: 'Simple',
+  medium: 'Medium',
+  designer: 'Designer',
+  heavy_designer: 'Heavy Designer',
+  bridal: 'Bridal',
+};
+
+/**
+ * Stitching specialisations a tailor can cover. Capacity is tracked per
+ * specialisation (`Tailor.specializationCaps`) because a bridal blouse and a
+ * simple blouse take very different amounts of a day.
+ */
+export const TAILOR_SPECIALIZATIONS = [
+  'simple_blouse',
+  'designer_blouse',
+  'bridal_blouse',
+  'dress',
+  'kurti',
+  'alteration',
+  'saree_work',
+  'other',
+] as const;
+export type TailorSpecialization = (typeof TAILOR_SPECIALIZATIONS)[number];
+
+export const TAILOR_SPECIALIZATION_LABELS: Record<TailorSpecialization, string> = {
+  simple_blouse: 'Simple Blouse',
+  designer_blouse: 'Designer Blouse',
+  bridal_blouse: 'Bridal Blouse',
+  dress: 'Dress',
+  kurti: 'Kurti',
+  alteration: 'Alteration',
+  saree_work: 'Saree Work',
+  other: 'Other',
+};
+
+export const TAILOR_STATUSES = ['ACTIVE', 'ON_LEAVE', 'INACTIVE'] as const;
+export type TailorStatus = (typeof TAILOR_STATUSES)[number];
+
 export const PAYMENT_METHODS = ['RAZORPAY', 'COD'] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
-export const PAYMENT_STATUSES = ['PENDING', 'PAID', 'FAILED', 'REFUNDED', 'COD_PENDING', 'COD_ADVANCE_PENDING', 'COD_ADVANCE_PAID'] as const;
+export const PAYMENT_STATUSES = ['PENDING', 'PAID', 'FAILED', 'REFUND_PENDING', 'REFUNDED', 'REFUND_FAILED', 'COD_PENDING', 'COD_ADVANCE_PENDING', 'COD_ADVANCE_PAID'] as const;
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 
 export const CURRENCIES = ['INR', 'USD'] as const;

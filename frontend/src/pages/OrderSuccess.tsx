@@ -106,7 +106,27 @@ export function OrderSuccessPage() {
               : `Delivery ke waqt ${formatMoney(order.totalMinor, order.currency)} dena hoga`}
           </p>
         ) : null}
+
+        {order.status === 'AWAITING_REVIEW' ? (
+          <p className="mt-3 rounded-xl bg-marigold-50 px-3 py-2 text-[13px] font-semibold text-marigold-800">
+            Aapka order hamare team ke review mein hai — kuch hi waqt mein confirm hoke timeline yahan aa jayegi.
+          </p>
+        ) : null}
       </div>
+
+      {order.deliveryEstimate && isCustom ? (
+        <section className="card mb-4 p-4">
+          <h2 className="font-display text-base font-bold">Estimated delivery</h2>
+          <p className="hint mt-1">
+            Custom stitching mein approx {order.deliveryEstimate.stitchingWorkingDays} working day
+            {order.deliveryEstimate.stitchingWorkingDays === 1 ? '' : 's'} lagenge, uske baad shipping.
+          </p>
+          <p className="mt-3 text-sm font-semibold text-ink">
+            {formatDate(order.deliveryEstimate.from)} → {formatDate(order.deliveryEstimate.to)}
+          </p>
+          <p className="hint mt-1">Ye ek estimation hai — exact date confirm hokar WhatsApp/SMS par bheji jayegi.</p>
+        </section>
+      ) : null}
 
       {/* Timeline */}
       {!failed ? (
