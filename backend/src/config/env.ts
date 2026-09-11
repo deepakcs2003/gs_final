@@ -35,6 +35,10 @@ const schema = z
     JWT_SECRET: z.string().min(32, 'must be at least 32 characters'),
     CSRF_SECRET: z.string().min(32, 'must be at least 32 characters'),
     COOKIE_DOMAIN: z.string().optional(),
+    // Directory of the built SPA (frontend/dist). In production the API server
+    // serves the static files too, so the app lives on one origin and cookies
+    // stay first-party. Empty string disables SPA hosting (API-only).
+    PUBLIC_DIR: z.string().default(''),
 
     RAZORPAY_KEY_ID: z.string().default(''),
     RAZORPAY_KEY_SECRET: z.string().default(''),
@@ -89,6 +93,43 @@ const schema = z
       if (!value) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: 'is required in production' });
       }
+    }
+
+    // Test-mode Razorpay keys would silently collect nothing in production.
+    if (cfg.RAZORPAY_KEY_ID.startsWith('rzp_test_')) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['RAZORPAY_KEY_ID'],
+        message: 'is a test-mode key — a live rzp_live_ key is required in production',
+      });
+    }
+
+    // Base URLs / CORS must point at the real public host in production.
+    for (const [key, value] of [
+      ['APP_BASE_URL', cfg.APP_BASE_URL],
+      ['API_BASE_URL', cfg.API_BASE_URL],
+    ] as const) {
+      if (/https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(value)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [key],
+          message: 'must point to the public production host, not localhost',
+        });
+      }
+    }
+    if (['http:', 'ws:'].includes(new URL(cfg.APP_BASE_URL).protocol)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['APP_BASE_URL'],
+        message: 'must use https in production',
+      });
+    }
+    if (cfg.CORS_ORIGINS.some((origin) => /https?:\/\/(localhost|127\.0\.0\.1)/.test(origin))) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['CORS_ORIGINS'],
+        message: 'must contain only the public production origins (no localhost)',
+      });
     }
     if (cfg.SMS_PROVIDER === 'console') {
       ctx.addIssue({

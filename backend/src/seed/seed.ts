@@ -589,6 +589,8 @@ export async function seedDatabase(): Promise<void> {
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
     logger.info({ mobile: env.ADMIN_MOBILE.slice(-4) }, 'admin account seeded');
+  } else {
+    logger.warn('ADMIN_MOBILE not set — no SUPER_ADMIN was created. The admin panel will be inaccessible.');
   }
 
   logger.info(

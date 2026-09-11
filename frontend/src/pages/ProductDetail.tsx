@@ -349,7 +349,7 @@ export function ProductDetailPage() {
                     type="button"
                     aria-label="Zyada karein"
                     className="h-10 w-10 rounded-lg text-xl font-bold text-maroon-700 disabled:opacity-40"
-                    disabled={quantity >= 10}
+                    disabled={quantity >= 20}
                     onClick={() => setQuantity((q) => Math.min(10, q + 1))}
                   >
                     +

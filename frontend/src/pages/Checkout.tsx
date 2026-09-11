@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ShieldCheck, Truck, Banknote, CreditCard, MapPin, Check } from 'lucide-react';
+import { ShieldCheck, Truck, Banknote, CreditCard, MapPin, Check, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 import { EmptyState } from '../components/ui';
 import { useCartQuote, useConfig, useCurrentUser, usePincodeCheck } from '../hooks/queries';
@@ -148,7 +148,7 @@ export function CheckoutPage() {
     if (form.city.trim().length < 2) next.city = 'City likhein.';
     if (form.state.trim().length < 2) next.state = 'State likhein.';
     if (!/^\d{6}$/.test(form.pincode)) next.pincode = '6 digit ka pincode likhein.';
-    if (!pincodeCheck.data?.valid || pincodeCheck.data.pincode !== form.pincode) next.pincode = 'Pincode pehle verify karein.';
+    else if (!pincodeCheck.data?.valid || pincodeCheck.data.pincode !== form.pincode) next.pincode = 'Pincode pehle verify karein.';
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -396,6 +396,12 @@ export function CheckoutPage() {
                 subtitle={codAllowed ? 'Saman milne par paisa dein' : 'Aapke country ke liye available nahi'}
                 disabled={!codAllowed}
               />
+              {config?.razorpay.enabled ? (
+                <p className="flex items-start gap-1.5 text-[12px] leading-snug text-ink-muted">
+                  <ShieldCheck size={13} className="mt-0.5 shrink-0 text-leaf" />
+                  Desktop par UPI ke liye Razorpay ek QR code dikhati hai — phone ke kisi bhi UPI app se scan karke pay karein. Mobile par UPI apps direct dikhte hain.
+                </p>
+              ) : null}
             </div>
 
             <label className="label mt-4" htmlFor="order-note">
@@ -484,20 +490,35 @@ export function CheckoutPage() {
                 </dl>
               ) : null}
 
-              <button
-                type="button"
-                onClick={() => void placeOrder()}
-                disabled={placing || !quote || quote.blocking}
-                className="btn-primary btn-lg mt-4 w-full"
-              >
-                {placing
-                  ? 'Ruk jaiye…'
-                  : paymentMethod === 'COD'
-                    ? quote && quote.amounts.codAdvanceMinor > 0
-                      ? `Pay COD advance ${formatMoney(quote.amounts.codAdvanceMinor, currency)}`
-                      : 'COD Order Confirm Karein'
-                    : `Pay ${quote ? formatMoney(quote.amounts.totalMinor, currency) : ''}`}
-              </button>
+              {quote?.blocking ? (
+                <div className="mt-4 flex items-start gap-2 rounded-xl bg-alert/10 p-3 text-[13px] font-medium text-alert">
+                  <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+                  <span className="space-y-1">
+                    <span className="block font-bold">Kuch items order nahi ho sakte.</span>
+                    {quote.lines.flatMap((line) => line.issues).length > 0 ? (
+                      <span className="block">{quote.lines.flatMap((line) => line.issues).join(' • ')}</span>
+                    ) : null}
+                    <Link to="/cart" className="block font-bold underline">
+                      Cart mein theek kar ke wapas aayein
+                    </Link>
+                  </span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void placeOrder()}
+                  disabled={placing || !quote || quote.blocking}
+                  className="btn-primary btn-lg mt-4 w-full"
+                >
+                  {placing
+                    ? 'Ruk jaiye…'
+                    : paymentMethod === 'COD'
+                      ? quote && quote.amounts.codAdvanceMinor > 0
+                        ? `Pay COD advance ${formatMoney(quote.amounts.codAdvanceMinor, currency)}`
+                        : 'COD Order Confirm Karein'
+                      : `Pay ${quote ? formatMoney(quote.amounts.totalMinor, currency) : ''}`}
+                </button>
+              )}
 
               <p className="mt-3 flex items-center justify-center gap-1.5 text-[12px] text-ink-muted">
                 <ShieldCheck size={14} className="text-leaf" />
