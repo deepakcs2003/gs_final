@@ -7,6 +7,7 @@ import { readLimiter, searchLimiter } from '../middleware/rateLimit.js';
 import { resolveGeo } from '../services/geo.js';
 import { getSettings } from '../services/settings.js';
 import { presentProductCard, presentProductDetail } from '../presenters/product.js';
+import { responsiveUrl } from '../services/media/cloudinary.js';
 import { cursorFilter, decodeCursor, encodeCursor, type SortDirection } from '../utils/cursor.js';
 import { notFound } from '../utils/errors.js';
 import { PRODUCT_TYPES } from '../domain/constants.js';
@@ -540,7 +541,7 @@ router.get('/fabrics', readLimiter, validate({ query: fabricQuerySchema }), asyn
       colorHex: f.colorHex,
       colors: (f.colors ?? []).map((c) => ({ name: c.name, hex: c.hex })),
       embroidery: f.embroidery ?? [],
-      image: f.image ?? '',
+      image: responsiveUrl(f.image ?? '', 600),
       inStock: f.inStock,
       priceMinor: geo.currency === 'INR' ? f.priceInr * 100 : Math.round((f.priceInr / fxRate) * 100),
     })),
@@ -564,7 +565,7 @@ router.get('/laces', readLimiter, async (req: Request, res: Response) => {
       colorName: l.colorName ?? '',
       colorHex: l.colorHex ?? '#cccccc',
       colors: (l.colors ?? []).map((c) => ({ name: c.name, hex: c.hex })),
-      image: l.image ?? '',
+      image: responsiveUrl(l.image ?? '', 600),
       inStock: l.inStock,
       priceMinor: geo.currency === 'INR' ? l.priceInr * 100 : Math.round((l.priceInr / fxRate) * 100),
     })),
@@ -587,7 +588,7 @@ router.get('/latkans', readLimiter, async (req: Request, res: Response) => {
       colorName: l.colorName ?? '',
       colorHex: l.colorHex ?? '#cccccc',
       colors: (l.colors ?? []).map((c) => ({ name: c.name, hex: c.hex })),
-      image: l.image ?? '',
+      image: responsiveUrl(l.image ?? '', 600),
       inStock: l.inStock,
       priceMinor: geo.currency === 'INR' ? l.priceInr * 100 : Math.round((l.priceInr / fxRate) * 100),
     })),

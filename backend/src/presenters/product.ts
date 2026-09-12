@@ -1,5 +1,6 @@
 import type { Currency } from '../domain/constants.js';
 import { toMinor } from '../services/pricing.js';
+import { responsiveUrl } from '../services/media/cloudinary.js';
 
 /**
  * Shapes a product document for the storefront.
@@ -84,9 +85,9 @@ export function presentProductCard(product: ProductLike, currency: Currency, fxR
     slug: product.slug,
     name: product.name,
     type: product.type,
-    image: product.images?.[0]?.url ?? '',
+    image: responsiveUrl(product.images?.[0]?.url ?? '', 600),
     imageAlt: product.images?.[0]?.alt ?? product.name,
-    hoverImage: product.images?.[1]?.url ?? '',
+    hoverImage: responsiveUrl(product.images?.[1]?.url ?? '', 600),
     price: priceView(product.mrpInr, product.sellingPriceInr, currency, fxRateInr),
     codInitialPaymentPercent: product.codInitialPaymentPercent ?? 25,
     colors: (product.colors ?? []).map((c) => ({ name: c.name, slug: c.slug, hex: c.hex })),
@@ -128,7 +129,7 @@ export function presentProductDetail(product: ProductLike, currency: Currency, f
     subCategory: product.subCategory ?? null,
     tags: product.tags ?? [],
     images: (product.images ?? []).map((img) => ({
-      url: img.url,
+      url: responsiveUrl(img.url, 900),
       alt: img.alt ?? product.name,
       kind: img.kind ?? 'other',
       width: img.width ?? 0,

@@ -6,6 +6,7 @@ import { Product } from '../models/catalog.js';
 import { Banner, HomepageSection, OfferPopup, Page } from '../models/admin-content.js';
 import { validate } from '../middleware/validate.js';
 import { presentProductCard } from '../presenters/product.js';
+import { responsiveUrl } from '../services/media/cloudinary.js';
 import { analyticsLimiter, readLimiter, writeLimiter } from '../middleware/rateLimit.js';
 import { classifySource, hashIp, resolveGeo } from '../services/geo.js';
 import { getSettings } from '../services/settings.js';
@@ -318,7 +319,7 @@ router.get('/banners', readLimiter, async (_req: Request, res: Response) => {
       id: String(b._id),
       title: b.title,
       subtitle: b.subtitle,
-      image: b.image,
+      image: responsiveUrl(b.image, 1200),
       ctaText: b.ctaText,
       ctaLink: b.ctaLink,
       offerText: b.offerText,

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import clsx from 'clsx';
 import { AlertTriangle, Check, X, SlidersHorizontal } from 'lucide-react';
@@ -7,6 +7,18 @@ import { SmartImage } from '../SmartImage';
 import { useFabrics, useLaces, useLatkans } from '../../hooks/queries';
 import { moneyLabel, type Currency } from '../../lib/format';
 import type { Fabric, Lace, Latkan, ProductCard } from '../../lib/types';
+
+type Lang = 'hi' | 'en';
+
+/** Simple inline translator — hi = the existing Hinglish copy, en = plain English. */
+function tr(lang: Lang, hi: string, en: string): string {
+  return lang === 'hi' ? hi : en;
+}
+
+const LANG_OPTIONS: Array<{ value: Lang; label: string }> = [
+  { value: 'hi', label: 'हिंदी' },
+  { value: 'en', label: 'English' },
+];
 
 /**
  * Fabric + lace + latkan picker (README §14–16).
@@ -53,8 +65,24 @@ const PRICE_BUCKETS = [
 
 export function FabricSheet({ open, onClose, product, currency, onConfirm }: FabricSheetProps) {
   const [showFilters, setShowFilters] = useState(false);
-  const [step, setStep] = useState<0 | 1 | 2>(0);
+  const [stepIndex, setStepIndex] = useState(0);
   const [warning, setWarning] = useState('');
+  const [lang, setLang] = useState<Lang>(() => {
+    try {
+      return localStorage.getItem('gs_lang') === 'en' ? 'en' : 'hi';
+    } catch {
+      return 'hi';
+    }
+  });
+  const changeLang = (next: Lang) => {
+    setLang(next);
+    try {
+      localStorage.setItem('gs_lang', next);
+    } catch {
+      /* private mode — ignore */
+    }
+  };
+  const t = (hi: string, en: string) => tr(lang, hi, en);
   const [colors, setColors] = useState<string[]>([]);
   const [materials, setMaterials] = useState<string[]>([]);
   const [embroidery, setEmbroidery] = useState<string[]>([]);
@@ -99,6 +127,28 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
     [latkans, productLatkanIds],
   );
 
+  /**
+   * Lace/latkan steps are skipped entirely when the admin set that option count
+   * to 0 or nothing is available — the buyer never taps through an empty step.
+   */
+  const productMaxLaceCount = product.maxLaceCount ?? 1;
+  const productMaxLatkanCount = product.maxLatkanCount ?? 1;
+  const laceStepOn = productMaxLaceCount > 0 && availableLaces.length > 0;
+  const latkanStepOn = productMaxLatkanCount > 0 && availableLatkans.length > 0;
+  type StepKind = 'fabric' | 'lace' | 'latkan';
+  const stepOrder = useMemo<StepKind[]>(
+    () => ['fabric' as const, ...(laceStepOn ? ['lace' as const] : []), ...(latkanStepOn ? ['latkan' as const] : [])],
+    [laceStepOn, latkanStepOn],
+  );
+  const step = stepOrder[Math.min(stepIndex, stepOrder.length - 1)] ?? 'fabric';
+  const isLastStep = stepIndex >= stepOrder.length - 1;
+
+  // Clamp so a step removed after data loads (e.g. laces turn empty) can't
+  // strand the buyer on an index that no longer exists.
+  useEffect(() => {
+    if (stepIndex >= stepOrder.length) setStepIndex(stepOrder.length - 1);
+  }, [stepIndex, stepOrder.length]);
+
   const toggle = (list: string[], setList: (next: string[]) => void, value: string) => {
     setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
   };
@@ -109,7 +159,7 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
     } else if (fabric.inStock) {
       const limit = product.maxFabricCount ?? 1;
       if (fabricIds.length >= limit) {
-        setWarning(`Aapne maximum ${limit} fabric select kar diye hain.`);
+        setWarning(t(`Aapne maximum ${limit} fabric select kar diye hain.`, `You can select up to ${limit} fabrics.`));
         return;
       }
       setWarning('');
@@ -159,7 +209,11 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
     } else {
       const limit = kind === 'lace' ? (product.maxLaceCount ?? 1) : (product.maxLatkanCount ?? 1);
       if (list.length >= limit) {
-        setWarning(`Aapne maximum ${limit} ${kind === 'lace' ? 'lace' : 'latkan'} select kar diye hain.`);
+        setWarning(
+          kind === 'lace'
+            ? t(`Aapne maximum ${limit} lace select kar diye hain.`, `You can select up to ${limit} laces.`)
+            : t(`Aapne maximum ${limit} latkan select kar diye hain.`, `You can select up to ${limit} latkans.`),
+        );
         return;
       }
       setWarning('');
@@ -196,7 +250,10 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
     return (
       <div className="mt-2.5 rounded-xl bg-maroon-50/50 p-2.5">
         <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink-muted">
-          Chune hue {kind === 'lace' ? 'laces' : 'latkans'} ke colours — badalne ke liye "Change" dabayen
+          {t(
+            `Chune hue ${kind === 'lace' ? 'laces' : 'latkans'} ke colours — badalne ke liye "Change" dabayen`,
+            `Your chosen ${kind === 'lace' ? 'laces' : 'latkans'} colours — tap "Change" to modify`,
+          )}
         </p>
         <div className="space-y-1.5">
           {chosen.map((item) => {
@@ -227,8 +284,8 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
     <Sheet
       open={open}
       onClose={onClose}
-      title="Fabric Choose Karein"
-      subtitle="Fabric, lace aur latkan alag-alag steps mein select karein"
+      title={t('Fabric Choose Karein', 'Choose Your Fabric')}
+      subtitle={t('Fabric, lace aur latkan alag-alag steps mein select karein', 'Pick fabric, lace and latkans step by step')}
       maxWidth="sm:max-w-2xl"
       footer={
         <div className="flex items-center gap-3">
@@ -238,56 +295,97 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
                 <p className="truncate text-sm font-semibold text-ink">
                   {selectedFabric.colorName} {selectedFabric.name}
                 </p>
-                <p className="hint">+ {moneyLabel(totalMinor, currency)} fabric & lace &amp; latkan</p>
+                <p className="hint">+ {moneyLabel(totalMinor, currency)} fabric &amp; lace &amp; latkan</p>
               </>
             ) : (
-              <p className="hint">Pehle ek fabric select karein</p>
+              <p className="hint">{t('Pehle ek fabric select karein', 'Select a fabric first')}</p>
             )}
           </div>
-          {step > 0 ? (
-            <button type="button" className="btn-outline shrink-0" onClick={() => { setWarning(''); setStep((step - 1) as 0 | 1 | 2); }}>
-              Back
+          {stepIndex > 0 ? (
+            <button
+              type="button"
+              className="btn-outline shrink-0"
+              onClick={() => {
+                setWarning('');
+                setStepIndex(Math.max(0, stepIndex - 1));
+              }}
+            >
+              {t('Back', 'Back')}
             </button>
           ) : null}
           <button
             type="button"
             className="btn-primary btn-lg shrink-0 px-7"
-            disabled={step === 0 && selectedFabrics.length < (product.minFabricCount ?? 1)}
+            disabled={step === 'fabric' && selectedFabrics.length < (product.minFabricCount ?? 1)}
             onClick={() => {
-              if (step === 0) {
-                if (!selectedFabric) return;
-                setWarning('');
-                setStep(1);
-              } else if (step === 1) {
-                setWarning('');
-                setStep(2);
-              } else if (selectedFabric) {
-                onConfirm({ fabrics: selectedFabrics, laces: resolvePicks(laces ?? [], laceColors, laceIds), latkans: resolvePicks(latkans ?? [], latkanColors, latkanIds) });
+              setWarning('');
+              if (!isLastStep) {
+                setStepIndex(stepIndex + 1);
+                return;
               }
+              if (!selectedFabric) return;
+              onConfirm({
+                fabrics: selectedFabrics,
+                laces: resolvePicks(laces ?? [], laceColors, laceIds),
+                latkans: resolvePicks(latkans ?? [], latkanColors, latkanIds),
+              });
             }}
           >
-            {step < 2 ? 'Next' : 'Done'}
+            {isLastStep ? t('Done', 'Done') : t('Next', 'Next')}
           </button>
         </div>
       }
     >
       <div className="sticky top-0 z-10 -mx-5 mb-4 border-b border-maroon-100 bg-white px-5 py-3">
-        <div className="grid grid-cols-3 gap-2">
-          {(['Fabric', 'Laces', 'Latkan'] as const).map((label, index) => (
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-ink-muted">
+            {t('Apna blouse banane ke steps', 'Steps to build your blouse')}
+          </p>
+          <div
+            className="flex items-center gap-1 rounded-lg border border-maroon-100 p-0.5"
+            role="group"
+            aria-label={t('Bhasha chunein', 'Choose language')}
+          >
+            {LANG_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => changeLang(option.value)}
+                className={clsx(
+                  'rounded-md px-2.5 py-1 text-[12px] font-bold transition',
+                  lang === option.value ? 'bg-maroon-700 text-white' : 'text-ink-muted hover:text-ink',
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${stepOrder.length}, minmax(0, 1fr))` }}>
+          {stepOrder.map((label, index) => (
             <button
               key={label}
               type="button"
-              onClick={() => { if (index <= step || (index === 1 && selectedFabric)) { setWarning(''); setStep(index as 0 | 1 | 2); } }}
-              className={clsx('rounded-lg px-2 py-2 text-center text-[12px] font-bold', step === index ? 'bg-maroon-700 text-white' : index < step ? 'bg-leaf/15 text-leaf' : 'bg-maroon-50 text-ink-muted')}
+              onClick={() => {
+                if (index <= stepIndex || (index === 1 && selectedFabric)) {
+                  setWarning('');
+                  setStepIndex(index);
+                }
+              }}
+              className={clsx(
+                'rounded-lg px-2 py-2 text-center text-[12px] font-bold',
+                step === label ? 'bg-maroon-700 text-white' : index < stepIndex ? 'bg-leaf/15 text-leaf' : 'bg-maroon-50 text-ink-muted',
+              )}
             >
-              <span className="mr-1">{index < step ? '✓' : index + 1}</span>{label}
+              <span className="mr-1">{index < stepIndex ? '✓' : index + 1}</span>
+              {label === 'fabric' ? t('Fabric', 'Fabric') : label === 'lace' ? t('Laces', 'Laces') : t('Latkans', 'Latkans')}
             </button>
           ))}
         </div>
         {warning ? <p className="mt-2 flex items-center gap-1.5 text-[12px] font-semibold text-alert"><AlertTriangle size={14} />{warning}</p> : null}
       </div>
       <div className="space-y-5 py-1">
-        {step === 0 ? <>
+        {step === 'fabric' ? <>
         {/* Filters (README §15) */}
         <div>
           <button
@@ -349,7 +447,7 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
           </div>
         ) : fabrics.length === 0 ? (
           <p className="py-10 text-center text-sm text-ink-muted">
-            Is filter mein koi fabric nahi mila. Filter hata kar dekhein.
+            {t('Is filter mein koi fabric nahi mila. Filter hata kar dekhein.', 'No fabric matches this filter. Try removing a filter.')}
           </p>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -396,13 +494,13 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
         </> : null}
 
         {/* Laces */}
-        {step === 1 && availableLaces.length > 0 ? (
+        {step === 'lace' && availableLaces.length > 0 ? (
           <section>
             <h3 className="label">
               Laces ({availableLaces.length}) <span className="font-normal text-ink-muted">— {laceIds.length}/{product.maxLaceCount ?? 1} select (optional)</span>
             </h3>
             <p className="mb-2 mt-0.5 text-[11px] text-ink-muted">
-              Kisi bhi lace par tap karein — uska colour chunne ka option khul jayega.
+              {t('Kisi bhi lace par tap karein — uska colour chunne ka option khul jayega.', 'Tap any lace to pick its colour.')}
             </p>
             <div className="rail">
               {availableLaces.map((lace) => {
@@ -440,13 +538,13 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
         ) : null}
 
         {/* Latkans */}
-        {step === 2 && availableLatkans.length > 0 ? (
+        {step === 'latkan' && availableLatkans.length > 0 ? (
           <section>
             <h3 className="label">
               Latkans ({availableLatkans.length}) <span className="font-normal text-ink-muted">— {latkanIds.length}/{product.maxLatkanCount ?? 1} select (optional)</span>
             </h3>
             <p className="mb-2 mt-0.5 text-[11px] text-ink-muted">
-              Kisi bhi latkan par tap karein — uska colour chunne ka option khul jayega.
+              {t('Kisi bhi latkan par tap karein — uska colour chunne ka option khul jayega.', 'Tap any latkan to pick its colour.')}
             </p>
             <div className="rail">
               {availableLatkans.map((latkan) => {
@@ -491,6 +589,7 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
             <ColorChoicePopup
               item={colorSheetItem}
               kind={colorSheetFor.kind}
+              lang={lang}
               fabricColor={fabricColor}
               current={resolveColor(colorSheetItem, colorSheetMap)}
               map={colorSheetMap}
@@ -512,6 +611,7 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
 type ColorChoicePopupProps = {
   item: Lace | Latkan;
   kind: 'lace' | 'latkan';
+  lang: Lang;
   fabricColor: AccessoryColor | null;
   current: { color: AccessoryColor; label: string };
   map: Record<string, ColorChoice>;
@@ -524,6 +624,7 @@ type ColorChoicePopupProps = {
 function ColorChoicePopup({
   item,
   kind,
+  lang,
   fabricColor,
   current,
   map,
@@ -547,10 +648,12 @@ function ColorChoicePopup({
         <div className="flex items-center justify-between border-b border-maroon-100 px-4 py-3">
           <div className="min-w-0">
             <p className="truncate text-[15px] font-bold text-ink">
-              {item.name} — colour chunein
+              {item.name} — {kind === 'lace' ? tr(lang, 'colour chunein', 'pick a colour') : tr(lang, 'colour chunein', 'pick a colour')}
             </p>
             <p className="text-[11px] text-ink-muted">
-              {kind === 'lace' ? 'Lace' : 'Latkan'} ke available colours neeche hain.
+              {kind === 'lace'
+                ? tr(lang, 'Lace ke available colours neeche hain.', 'Available colours for this lace are below.')
+                : tr(lang, 'Latkan ke available colours neeche hain.', 'Available colours for this latkan are below.')}
             </p>
           </div>
           <button type="button" onClick={onDone} className="btn-ghost shrink-0 p-2" aria-label="Close">
@@ -579,19 +682,25 @@ function ColorChoicePopup({
               </span>
               <span className="flex h-9 w-9 shrink-0 rounded-full border border-ink-light/30" style={{ backgroundColor: fabricColor.colorHex }} />
               <span className="min-w-0">
-                <span className="block text-[13px] font-semibold text-ink">Fabric ke jaisa colour (Recommended)</span>
-                <span className="block truncate text-[12px] text-ink-muted">{fabricColor.colorName} — aapke chune hue fabric ka colour</span>
+                <span className="block text-[13px] font-semibold text-ink">{tr(lang, 'Fabric ke jaisa colour (Recommended)', 'Same colour as fabric (Recommended)')}</span>
+                <span className="block truncate text-[12px] text-ink-muted">
+                  {fabricColor.colorName} — {tr(lang, 'aapke chune hue fabric ka colour', "your chosen fabric's colour")}
+                </span>
               </span>
             </button>
           ) : (
             <p className="rounded-xl bg-maroon-50/60 p-2.5 text-[12px] text-ink-muted">
-              Pehle upar se fabric select karein — tab "Fabric ke jaisa colour" milega. Ab tak item ka default colour hi lagega.
+              {tr(
+                lang,
+                'Pehle upar se fabric select karein — tab "Fabric ke jaisa colour" milega. Ab tak item ka default colour hi lagega.',
+                'Select a fabric first to get the "Same colour as fabric" option. Until then the item\'s default colour is used.',
+              )}
             </p>
           )}
 
           {/* Exact colour options */}
           <div>
-            <p className="mb-2 text-[12px] font-bold uppercase tracking-wide text-ink-muted">Ya exact colour chunein:</p>
+            <p className="mb-2 text-[12px] font-bold uppercase tracking-wide text-ink-muted">{tr(lang, 'Ya exact colour chunein:', 'Or pick an exact colour:')}</p>
             <div className="grid grid-cols-2 gap-2">
               {variants.map((variant) => {
                 const active = !isFabricMode && current.color.colorName === variant.colorName;
@@ -608,7 +717,7 @@ function ColorChoicePopup({
                     <span className="h-6 w-6 shrink-0 rounded-full border border-ink-light/30" style={{ backgroundColor: variant.colorHex }} />
                     <span className="min-w-0">
                       <span className="block truncate text-[12px] font-semibold text-ink">{variant.colorName}</span>
-                      {active ? <span className="text-[10px] font-bold text-maroon-700">Selected</span> : null}
+                      {active ? <span className="text-[10px] font-bold text-maroon-700">{tr(lang, 'Selected', 'Selected')}</span> : null}
                     </span>
                   </button>
                 );
