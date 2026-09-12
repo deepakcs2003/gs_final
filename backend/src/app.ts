@@ -62,7 +62,12 @@ export function createApp(): Express {
         const localDevOrigin = isProd
           ? false
           : /^https?:\/\/(localhost|127\.0\.0\.1):\d{1,5}$/.test(origin ?? '');
-        if (!origin || env.CORS_ORIGINS.includes(origin) || localDevOrigin) {
+        // Compare with trailing slashes/spaces/host-case ignored, and always
+        // include the frontend's own base URL — otherwise an env typo like
+        // "https://gs-final-frontend.vercel.app/" bricks every storefront POST.
+        const normalized = (value: string) => value.trim().replace(/\/+$/, '');
+        const allowed = [env.CORS_ORIGINS, env.APP_BASE_URL].flat();
+        if (!origin || allowed.some((entry) => normalized(entry) === normalized(origin)) || localDevOrigin) {
           callback(null, true);
           return;
         }
