@@ -85,7 +85,12 @@ export function createApp(): Express {
   );
 
   app.get('/health', (_req, res) => {
-    res.json({ ok: true, service: 'guddi-silai-api' });
+    res.status(200).json({
+      status: 'ok',
+      message: 'Guddi Silai API is running successfully',
+      service: 'Guddi Silai Backend',
+      timestamp: new Date().toISOString(),
+    });
   });
 
   /**
