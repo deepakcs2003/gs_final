@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, apiWithRefresh, ApiError } from '../lib/api';
 import type { Currency } from '../lib/format';
@@ -25,7 +26,7 @@ import type {
   Review,
   SiteConfig,
 } from '../lib/types';
-import { toApiLines, useCart } from '../store/cart';
+import { buyModeLines, toApiLines, useCart } from '../store/cart';
 
 /* -------------------------------------------------------------------------- */
 /* Site config + session                                                       */
@@ -397,15 +398,17 @@ export function useSaveMeasurementProfile() {
  */
 export function useCartQuote(couponCode: string) {
   const lines = useCart((state) => state.lines);
+  const buyKeys = useCart((state) => state.buyKeys);
+  const activeLines = useMemo(() => buyModeLines(lines, buyKeys), [lines, buyKeys]);
 
   return useQuery({
-    queryKey: ['cart-quote', lines, couponCode],
+    queryKey: ['cart-quote', activeLines, couponCode],
     queryFn: () =>
       api<CartQuote>('/cart/quote', {
         method: 'POST',
-        body: { lines: toApiLines(lines), ...(couponCode ? { couponCode } : {}) },
+        body: { lines: toApiLines(activeLines), ...(couponCode ? { couponCode } : {}) },
       }),
-    enabled: lines.length > 0,
+    enabled: activeLines.length > 0,
     staleTime: 0,
   });
 }
@@ -417,15 +420,17 @@ export function useCartQuote(couponCode: string) {
  */
 export function useAvailableCoupons() {
   const lines = useCart((state) => state.lines);
+  const buyKeys = useCart((state) => state.buyKeys);
+  const activeLines = useMemo(() => buyModeLines(lines, buyKeys), [lines, buyKeys]);
 
   return useQuery({
-    queryKey: ['cart-coupons-available', lines],
+    queryKey: ['cart-coupons-available', activeLines],
     queryFn: () =>
       api<{ items: AvailableCoupon[]; currency: Currency }>('/cart/coupons/available', {
         method: 'POST',
-        body: { lines: toApiLines(lines) },
+        body: { lines: toApiLines(activeLines) },
       }),
-    enabled: lines.length > 0,
+    enabled: activeLines.length > 0,
     staleTime: 0,
     retry: 1,
   });

@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { User, Mail, Home, Landmark, Building2, Map, Navigation, ShieldCheck, Truck, Banknote, CreditCard, MapPin, Check, AlertTriangle } from 'lucide-react';
+import { User, Mail, Home, Landmark, Building2, Map, Navigation, ShieldCheck, Truck, Banknote, CreditCard, MapPin, Check, AlertTriangle, Tag, X, ShoppingBag, ArrowLeft, QrCode } from 'lucide-react';
 import clsx from 'clsx';
 import { EmptyState } from '../components/ui';
-import { useCartQuote, useConfig, useCurrentUser, usePincodeCheck } from '../hooks/queries';
-import { toApiLines, useCart } from '../store/cart';
+import { useCartQuote, useAvailableCoupons, useConfig, useCurrentUser, usePincodeCheck } from '../hooks/queries';
+import { buyModeLines, toApiLines, useCart } from '../store/cart';
 import { useUi } from '../store/ui';
 import { api, ApiError } from '../lib/api';
 import { formatDate, formatMoney } from '../lib/format';
@@ -53,15 +53,25 @@ function loadRazorpay(): Promise<boolean> {
 export function CheckoutPage() {
   const navigate = useNavigate();
   const lines = useCart((state) => state.lines);
+  const buyKeys = useCart((state) => state.buyKeys);
   const appliedCoupon = useCart((state) => state.appliedCoupon);
+  const setAppliedCoupon = useCart((state) => state.setAppliedCoupon);
   const clearCart = useCart((state) => state.clear);
+  const endBuy = useCart((state) => state.endBuy);
   const toast = useUi((state) => state.toast);
   const openLogin = useUi((state) => state.openLogin);
+
+  // "Buy Now" orders only the chosen line(s) even if other things sit in the
+  // cart; the coupon list below reflects the same selection.
+  const activeLines = useMemo(() => buyModeLines(lines, buyKeys), [lines, buyKeys]);
 
   const { data: config } = useConfig();
   const { data: user } = useCurrentUser();
   const { data: quote } = useCartQuote(appliedCoupon);
+  const { data: available } = useAvailableCoupons();
   const pincodeCheck = usePincodeCheck();
+
+  const [couponInput, setCouponInput] = useState(appliedCoupon);
 
   const [form, setForm] = useState({
     name: '',
@@ -123,7 +133,13 @@ export function CheckoutPage() {
     if (!pincodeCheck.isPending) pincodeCheck.mutate(form.pincode);
   }, [form.pincode, pincodeCheck.data?.pincode, pincodeCheck.isPending, pincodeCheck.mutate]);
 
-  if (lines.length === 0) {
+  // Leaving checkout (browser back, or the back button below) ends a "Buy Now"
+  // session, so the item stays in the cart as an ordinary line.
+  useEffect(() => {
+    return () => endBuy();
+  }, [endBuy]);
+
+  if (activeLines.length === 0) {
     return (
       <EmptyState
         icon={<Truck size={30} />}
@@ -137,6 +153,22 @@ export function CheckoutPage() {
       />
     );
   }
+
+  const applyCoupon = () => {
+    setAppliedCoupon(couponInput);
+  };
+
+  const clearCoupon = () => {
+    setCouponInput('');
+    setAppliedCoupon('');
+  };
+
+  // Back = the product stays safe in the cart; buy mode ends so the whole
+  // cart is visible again on the cart page.
+  const onBack = () => {
+    endBuy();
+    navigate('/cart');
+  };
 
   const set = (key: keyof typeof form, value: string) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -172,7 +204,7 @@ export function CheckoutPage() {
       const order = await api<CreateOrderResponse>('/orders', {
         method: 'POST',
         body: {
-          lines: toApiLines(lines),
+          lines: toApiLines(activeLines),
           contact: { name: form.name.trim(), mobile: form.mobile, ...(form.email ? { email: form.email } : {}) },
           address: {
             line1: form.line1.trim(),
@@ -261,7 +293,38 @@ export function CheckoutPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-3 pt-4 sm:px-5">
-      <h1 className="section-title mb-1">Checkout</h1>
+      <div className="mb-2 flex items-center gap-2.5">
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Wapas jayein"
+          className="btn-outline flex h-9 w-9 shrink-0 items-center justify-center !px-0 lg:hidden"
+        >
+          <ArrowLeft size={17} />
+        </button>
+        <h1 className="section-title mb-0 flex-1">Checkout</h1>
+        <button
+          type="button"
+          onClick={onBack}
+          className="hidden shrink-0 items-center gap-1.5 text-[13px] font-semibold text-maroon-700 hover:underline lg:flex"
+        >
+          <ArrowLeft size={15} />
+          Cart mein wapas
+        </button>
+      </div>
+
+      <nav className="mb-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px] text-ink-muted">
+        <Link to="/ready-to-buy" className="hover:underline">
+          Shopping
+        </Link>
+        <span>›</span>
+        <Link to="/cart" onClick={onBack} className="hover:underline">
+          Cart
+        </Link>
+        <span>›</span>
+        <span className="font-semibold text-ink">Checkout</span>
+      </nav>
+
       {!user ? (
         <p className="hint mb-4">
           Guest ke roop mein order kar sakti hain.{' '}
@@ -397,12 +460,25 @@ export function CheckoutPage() {
                 subtitle={codAllowed ? 'Saman milne par paisa dein' : 'Aapke country ke liye available nahi'}
                 disabled={!codAllowed}
               />
-              {config?.razorpay.enabled ? (
-                <p className="flex items-start gap-1.5 text-[12px] leading-snug text-ink-muted">
-                  <ShieldCheck size={13} className="mt-0.5 shrink-0 text-leaf" />
-                  Desktop par UPI ke liye Razorpay ek QR code dikhati hai — phone ke kisi bhi UPI app se scan karke pay karein. Mobile par UPI apps direct dikhte hain.
+              {config?.razorpay.enabled && paymentMethod === 'RAZORPAY' ? (
+                <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-leaf/20 bg-leaf/5 p-3">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-leaf/10 text-leaf">
+                    <QrCode size={18} />
+                  </span>
+                  <span className="min-w-0 space-y-1">
+                    <span className="block text-[13px] font-bold text-ink">UPI se payment — aise:</span>
+                    <span className="block text-[12.5px] leading-snug text-ink-muted">
+                      Desktop/laptop par Razorpay ek <b className="font-semibold text-ink">QR code</b> dikhayegi —
+                      phone ke kisi bhi UPI app (GPay, PhonePe, Paytm) se scan karke pay karein. Mobile par UPI apps
+                      seedha dikhte hain — bina QR scan kiye direct pay karein.
+                    </span>
+                  </span>
+                </div>
+              ) : (
+                <p className="pt-1 text-[12px] leading-snug text-ink-muted">
+                  UPI, Cards aur Netbanking — sab online payment mein milte hain.
                 </p>
-              ) : null}
+              )}
             </div>
 
             <label className="label mt-4" htmlFor="order-note">
@@ -422,6 +498,97 @@ export function CheckoutPage() {
         {/* Summary */}
         <aside className="mt-4 lg:mt-0">
           <div className="lg:sticky lg:top-[calc(var(--header-h)+16px)]">
+            {buyKeys.length > 0 ? (
+              <p className="mb-3 flex items-start gap-2 rounded-xl bg-marigold-50 px-3 py-2 text-[13px] font-medium text-marigold-800">
+                <ShoppingBag size={15} className="mt-0.5 shrink-0" />
+                Buy Now order: sirf yeh item order hoga — cart mein rakh kar faila hua baaki saman is order mein nahi jayega.
+              </p>
+            ) : null}
+
+            {/* Coupon (README §49) — same behaviour as the cart page */}
+            <div className="card mb-4 p-4">
+              <label htmlFor="checkout-coupon" className="label flex items-center gap-1.5">
+                <Tag size={15} />
+                Coupon code
+              </label>
+              <div className="flex gap-2">
+                <input
+                  id="checkout-coupon"
+                  value={couponInput}
+                  onChange={(event) => setCouponInput(event.target.value.toUpperCase().slice(0, 24))}
+                  placeholder="WELCOME10"
+                  className="field uppercase"
+                />
+                <button type="button" onClick={applyCoupon} className="btn-outline shrink-0 px-4">
+                  Lagayein
+                </button>
+              </div>
+              {quote?.couponError ? <p className="mt-2 text-[13px] font-medium text-alert">{quote.couponError}</p> : null}
+              {quote?.amounts.couponCode ? (
+                <p className="mt-2 flex items-center justify-between gap-2 text-[13px] font-semibold text-leaf">
+                  <span className="flex items-center gap-1.5">
+                    <Check size={15} />
+                    {quote.amounts.couponCode} lag gaya
+                  </span>
+                  <button type="button" onClick={clearCoupon} className="flex items-center gap-1 text-[12px] font-medium text-ink-muted hover:text-alert">
+                    <X size={13} />
+                    Hatao
+                  </button>
+                </p>
+              ) : null}
+            </div>
+
+            {available?.items.length ? (
+              <div className="card mb-4 p-4">
+                <label className="label flex items-center gap-1.5">
+                  <Tag size={15} />
+                  Aapke coupons
+                </label>
+                <p className="mt-0.5 text-xs text-ink-muted">Yeh coupons is order par abhi lag sakte hain.</p>
+                <ul className="mt-3 space-y-2">
+                  {available.items.map((coupon) => {
+                    const applied = quote?.amounts.couponCode === coupon.code;
+                    return (
+                      <li key={coupon.code}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCouponInput(coupon.code);
+                            setAppliedCoupon(coupon.code);
+                          }}
+                          className={`flex w-full items-center gap-2 rounded-xl border p-2.5 text-left transition ${
+                            applied ? 'border-leaf bg-leaf/10' : 'border-maroon-100 bg-white hover:border-maroon-300'
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <p className="font-mono text-sm font-bold tracking-wide text-maroon-700">{coupon.code}</p>
+                            {coupon.description ? <p className="mt-0.5 text-xs text-ink-muted">{coupon.description}</p> : null}
+                            <p className="mt-1 text-[11px] text-ink-light">
+                              {coupon.minOrderInr > 0 ? `Min order ₹${coupon.minOrderInr} · ` : ''}
+                              {coupon.type === 'PERCENT' ? `${coupon.valueInr}% off` : `₹${coupon.valueInr} off`}
+                              {coupon.restrictedToProducts ? ' · in products' : ' · sabhi products'}
+                            </p>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            {coupon.discountMinor > 0 ? (
+                              <p className="text-sm font-bold text-leaf">− {formatMoney(coupon.discountMinor, currency)}</p>
+                            ) : null}
+                            {applied ? (
+                              <p className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-leaf">
+                                <Check size={12} />Applied
+                              </p>
+                            ) : (
+                              <p className="mt-1 text-[11px] font-semibold text-maroon-600">Apply</p>
+                            )}
+                          </div>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ) : null}
+
             <div className="card p-5">
               <SectionHeading icon={<Truck size={17} />} title="Order Summary" />
 

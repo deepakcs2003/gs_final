@@ -30,6 +30,7 @@ interface ProductCardProps {
 function ProductCardViewInner({ product, currency, eager }: ProductCardProps) {
   const navigate = useNavigate();
   const addToCart = useCart((state) => state.add);
+  const startBuy = useCart((state) => state.startBuy);
   const toggleWishlist = useWishlist((state) => state.toggle);
   const wishlisted = useWishlist((state) => state.ids.includes(product.id));
   const toast = useUi((state) => state.toast);
@@ -174,9 +175,10 @@ function ProductCardViewInner({ product, currency, eager }: ProductCardProps) {
           product={product}
           actionLabel={picker === 'buy' ? 'Buy Now' : 'Cart mein daalein'}
           onConfirm={({ colorSlug, size, quantity, detail }) => {
-            addToCart({ product: detail, colorSlug, size, quantity });
+            const key = addToCart({ product: detail, colorSlug, size, quantity });
             setPicker(null);
             if (picker === 'buy') {
+              startBuy(key);
               navigate('/checkout');
             } else {
               toast('Cart mein daal diya 🛒', 'success');
@@ -211,7 +213,7 @@ function ProductCardViewInner({ product, currency, eager }: ProductCardProps) {
             });
             setFabricOpen(false);
             // Fabric chosen → measurement is the next obvious step (README §17).
-            navigate(`/measurement/${encodeURIComponent(key)}`);
+            navigate(`/measurement/${encodeURIComponent(key)}`, { state: { buyNow: true } });
           }}
         />
       ) : null}

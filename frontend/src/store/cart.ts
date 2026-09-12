@@ -33,12 +33,17 @@ interface AddLineInput {
 interface CartState {
   lines: CartLine[];
   appliedCoupon: string;
+  /** When a customer picks "Buy Now", only these line keys are quoted/ordered.
+   *  Empty = the whole cart is the active order. */
+  buyKeys: string[];
   add: (input: AddLineInput) => string;
   remove: (key: string) => void;
   setQuantity: (key: string, quantity: number) => void;
   setMeasurement: (key: string, measurement: MeasurementData) => void;
   setNote: (key: string, note: string) => void;
   setAppliedCoupon: (coupon: string) => void;
+  startBuy: (key: string) => void;
+  endBuy: () => void;
   clear: () => void;
   count: () => number;
   find: (key: string) => CartLine | undefined;
@@ -74,13 +79,20 @@ function effectiveType(input: AddLineInput): ProductType {
   return hasCustomChoices(input) ? 'CUSTOMIZE' : 'READY_MADE';
 }
 
-function migrateCart(state: unknown): { lines: CartLine[]; appliedCoupon: string } {
+function migrateCart(state: unknown): { lines: CartLine[]; appliedCoupon: string; buyKeys: string[] } {
   const lines = (state as { lines?: CartLine[] })?.lines;
   const appliedCoupon = (state as { appliedCoupon?: unknown })?.appliedCoupon;
-  if (!Array.isArray(lines)) return { lines: [], appliedCoupon: typeof appliedCoupon === 'string' ? appliedCoupon : '' };
+  const buyKeys = (state as { buyKeys?: unknown })?.buyKeys;
+  if (!Array.isArray(lines))
+    return {
+      lines: [],
+      appliedCoupon: typeof appliedCoupon === 'string' ? appliedCoupon : '',
+      buyKeys: Array.isArray(buyKeys) ? buyKeys.filter((k): k is string => typeof k === 'string') : [],
+    };
 
   return {
     appliedCoupon: typeof appliedCoupon === 'string' ? appliedCoupon : '',
+    buyKeys: Array.isArray(buyKeys) ? buyKeys.filter((k): k is string => typeof k === 'string') : [],
     lines: lines.map((line) =>
       line.key.length <= 64
         ? line
@@ -94,6 +106,7 @@ export const useCart = create<CartState>()(
     (set, get) => ({
       lines: [],
       appliedCoupon: '',
+      buyKeys: [],
 
       add(input) {
         const key = makeKey(input);
@@ -102,6 +115,7 @@ export const useCart = create<CartState>()(
 
         if (existing) {
           set({
+            buyKeys: [],
             lines: get().lines.map((line) =>
               line.key === key ? { ...line, quantity: Math.min(line.quantity + quantity, 20) } : line,
             ),
@@ -134,7 +148,7 @@ export const useCart = create<CartState>()(
               ...(input.latkanName ? { latkanName: input.latkanName } : {}),
             },
           };
-          set({ lines: [...get().lines, line] });
+          set({ buyKeys: [], lines: [...get().lines, line] });
         }
 
         track('CART_ADD', { productId: input.product.id, value: quantity });
@@ -165,8 +179,16 @@ export const useCart = create<CartState>()(
         set({ appliedCoupon: coupon.trim().toUpperCase().slice(0, 24) });
       },
 
+      startBuy(key) {
+        set({ buyKeys: [key] });
+      },
+
+      endBuy() {
+        set({ buyKeys: [] });
+      },
+
       clear() {
-        set({ lines: [], appliedCoupon: '' });
+        set({ lines: [], appliedCoupon: '', buyKeys: [] });
       },
 
       count() {
@@ -182,7 +204,7 @@ export const useCart = create<CartState>()(
       version: 3,
       migrate: (state) => migrateCart(state),
       storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({ lines: state.lines, appliedCoupon: state.appliedCoupon }),
+      partialize: (state) => ({ lines: state.lines, appliedCoupon: state.appliedCoupon, buyKeys: state.buyKeys }),
     },
   ),
 );
@@ -216,4 +238,13 @@ export function toApiLines(lines: CartLine[]) {
       : {}),
     ...(line.note ? { note: line.note } : {}),
   }));
+}
+
+/**
+ * What actually gets quoted/ordered right now: the whole cart normally, or only
+ * the "Buy Now" lines while a single-product buy is in progress.
+ */
+export function buyModeLines(lines: CartLine[], buyKeys: string[]): CartLine[] {
+  if (buyKeys.length === 0) return lines;
+  return lines.filter((line) => buyKeys.includes(line.key));
 }

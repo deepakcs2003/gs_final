@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ShoppingCart, Trash2, AlertTriangle, Ruler, Tag, ArrowRight, Check } from 'lucide-react';
 import clsx from 'clsx';
@@ -26,8 +26,15 @@ export function CartPage() {
   const setAppliedCoupon = useCart((state) => state.setAppliedCoupon);
   const remove = useCart((state) => state.remove);
   const setQuantity = useCart((state) => state.setQuantity);
+  const endBuy = useCart((state) => state.endBuy);
   const toast = useUi((state) => state.toast);
   const { data: config } = useConfig();
+
+  // Stepping out of a "Buy Now" order to fix the cart here means the whole
+  // cart is the active order again.
+  useEffect(() => {
+    endBuy();
+  }, [endBuy]);
 
   const [couponInput, setCouponInput] = useState(appliedCoupon);
 

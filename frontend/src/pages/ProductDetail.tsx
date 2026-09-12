@@ -35,6 +35,7 @@ export function ProductDetailPage() {
   const { data: reviews } = useReviews(product?.id);
 
   const addToCart = useCart((state) => state.add);
+  const startBuy = useCart((state) => state.startBuy);
   const toggleWishlist = useWishlist((state) => state.toggle);
   const wishlisted = useWishlist((state) => (product ? state.ids.includes(product.id) : false));
   const pushRecent = useRecentlyViewed((state) => state.push);
@@ -141,9 +142,10 @@ export function ProductDetailPage() {
 
   const addReadyMade = (thenCheckout: boolean) => {
     if (size === null) return;
-    addToCart({ product, colorSlug: activeColor, size, quantity });
+    const key = addToCart({ product, colorSlug: activeColor, size, quantity });
     if (thenCheckout) {
       track('BUY_NOW', { productId: product.id });
+      startBuy(key);
       navigate('/checkout');
     } else {
       toast('Cart mein daal diya 🛒', 'success');
@@ -544,7 +546,7 @@ export function ProductDetailPage() {
                 measurement: null,
               });
               setFabricOpen(false);
-              navigate(`/measurement/${encodeURIComponent(key)}`);
+              navigate(`/measurement/${encodeURIComponent(key)}`, { state: { buyNow: true } });
             }}
         />
       ) : null}
