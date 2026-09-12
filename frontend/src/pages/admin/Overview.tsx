@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { api, ApiError } from '../../lib/api';
 import { Badge, BtnGhost, Empty, Modal, inr } from './shared';
 import { AlertTriangle, Users, Package, ClipboardList, TrendingUp, ShoppingCart, Heart, MessageCircle, CreditCard, ExternalLink, Eye } from 'lucide-react';
+import { cloudinarySrc } from '../../lib/image';
 
 interface DashboardData {
   cards: {
@@ -149,7 +150,7 @@ function orderTone(status: string) {
 function Thumb({ src, alt }: { src?: string; alt?: string }) {
   return (
     <span className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-xl bg-maroon-50 text-maroon-300">
-      {src ? <img src={src} alt={alt ?? ''} className="h-full w-full object-cover" /> : <Package size={18} />}
+      {src ? <img src={cloudinarySrc(src, 128)} alt={alt ?? ''} className="h-full w-full object-cover" /> : <Package size={18} />}
     </span>
   );
 }
@@ -340,7 +341,7 @@ function CustomersDrill({ data }: { data: Record<string, unknown> }) {
               className="rounded-xl border border-ink-light/10 p-3 text-left transition hover:border-maroon-200 hover:bg-maroon-50/40">
               <div className="flex items-center gap-3">
                 <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-maroon-100 font-bold text-maroon-700">
-                  {c.avatarUrl ? <img src={c.avatarUrl} alt="" className="h-full w-full rounded-full object-cover" /> : (c.name || 'G').charAt(0).toUpperCase()}
+                  {c.avatarUrl ? <img src={cloudinarySrc(c.avatarUrl, 96)} alt="" className="h-full w-full rounded-full object-cover" /> : (c.name || 'G').charAt(0).toUpperCase()}
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">{c.name || 'Guest'}</p>

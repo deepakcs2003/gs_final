@@ -5,6 +5,7 @@ import { BtnGhost, BtnPrimary, Empty, Field, ImagePicker, Modal, Select, TextInp
 import { Check, ChevronDown, Pencil, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import type { AdminProduct } from './Products';
+import { cloudinarySrc } from '../../lib/image';
 
 interface Banner {
   _id: string; title: string; subtitle: string; image: string; ctaText: string; ctaLink: string;
@@ -161,7 +162,7 @@ function BannersPanel({ onChanged }: { onChanged: () => void }) {
         {items.length === 0 ? <div className="col-span-full"><Empty message="Koi banner nahi. Flat 20% OFF wala banner banao." /></div> :
           items.map((banner) => (
             <article className="overflow-hidden rounded-xl border border-maroon-100" key={banner._id}>
-              {banner.image ? <div className="h-32 overflow-hidden bg-maroon-50"><img src={banner.image} alt={banner.title} className="h-full w-full object-cover" /></div> : <div className="flex h-32 items-center justify-center bg-maroon-50 text-xs font-bold text-maroon-500">No image</div>}
+              {banner.image ? <div className="h-32 overflow-hidden bg-maroon-50"><img src={cloudinarySrc(banner.image, 900)} alt={banner.title} className="h-full w-full object-cover" /></div> : <div className="flex h-32 items-center justify-center bg-maroon-50 text-xs font-bold text-maroon-500">No image</div>}
               <div className="p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
@@ -390,7 +391,7 @@ function ProductPicker({ products, value, onChange }: { products: AdminProduct[]
             matches.map((product) => (
               <button type="button" key={product._id} onClick={() => { onChange(product._id); setOpen(false); setQ(''); }}
                 className={clsx('flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm hover:bg-maroon-50', value === product._id && 'bg-maroon-50')}>
-                {product.images[0] ? <img src={product.images[0].url} alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover" /> : <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-maroon-50 text-[9px] font-bold text-maroon-700">{product.designId}</span>}
+                {product.images[0] ? <img src={cloudinarySrc(product.images[0].url, 96)} alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover" /> : <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-maroon-50 text-[9px] font-bold text-maroon-700">{product.designId}</span>}
                 <span className="min-w-0 flex-1 truncate font-semibold text-ink">{product.name}</span>
                 <span className="shrink-0 text-[9px] font-bold uppercase text-ink-muted">{product.designId} · {product.type}</span>
                 {value === product._id ? <Check size={14} className="shrink-0 text-maroon-600" /> : null}

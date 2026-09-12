@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, ApiError } from '../../lib/api';
 import { Badge, BtnGhost, BtnPrimary, Checkbox, ColorPaletteSelect, Empty, Field, ImagePicker, Modal, PaletteColor, Select, StringListEditor, TextArea, TextInput, Toolbar, Toggle, inr } from './shared';
 import { Copy, Pencil, Trash2, Check, X, Sparkles } from 'lucide-react';
+import { cloudinarySrc } from '../../lib/image';
 
 interface Category { _id: string; name: string; nameHi: string; slug: string; types: string[]; image: string; order: number; isActive: boolean; productCount?: number }
 interface Fabric { _id: string; name: string; slug: string; material: string; colorName: string; colorSlug: string; colorHex: string; colors: Array<{ name: string; hex: string }>; embroidery: string[]; priceInr: number; image: string; inStock: boolean; stockMeters: number; isActive: boolean; order: number }
@@ -186,7 +187,7 @@ function CategoryList({ items, onEdit, onToggle, onDelete, onDuplicate, busy }: 
         <tbody>{items.length === 0 ? <tr><td className="p-6 text-center text-ink-muted" colSpan={6}>Koi category nahi hai.</td></tr> : items.map((item) => (
           <tr className="border-t border-maroon-100" key={item._id}>
             <td className="p-4"><div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-maroon-50">
-              {item.image ? <img src={item.image} alt="" className="h-10 w-10 rounded-xl object-cover" /> : <span className="text-xs font-bold text-maroon-700">CAT</span>}
+              {item.image ? <img src={cloudinarySrc(item.image, 160)} alt="" className="h-10 w-10 rounded-xl object-cover" /> : <span className="text-xs font-bold text-maroon-700">CAT</span>}
             </div><div><strong>{item.name}</strong>{item.nameHi ? <div className="text-xs text-ink-muted">{item.nameHi}</div> : null}</div></div></td>
             <td className="p-4 text-ink-muted">{item.slug}</td>
             <td className="p-4"><div className="flex flex-wrap gap-1">{item.types.map((t) => <span key={t} className="rounded-full bg-maroon-50 px-2 py-0.5 text-[10px] font-bold">{t.replace('_', ' ')}</span>)}</div></td>

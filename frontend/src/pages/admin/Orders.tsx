@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from '../../lib/api';
 import { Badge, BtnGhost, BtnOutline, BtnPrimary, Field, ImageLightbox, Modal, TextInput, Toolbar, inr } from './shared';
 import { Eye, X, Check, Truck, Wallet, LinkIcon, Image as ImageIcon, Scissors, RefreshCw, UserRound } from 'lucide-react';
+import { cloudinarySrc } from '../../lib/image';
 
 const statuses = ['AWAITING_REVIEW', 'PLACED', 'CONFIRMED', 'PROCESSING', 'STITCHING', 'QUALITY_CHECK', 'PACKED', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'RETURNED', 'FAILED'];
 
@@ -415,7 +416,7 @@ function OrderDetailModal({ order, onClose, busy, onStatus, onUpdated, onListRef
                   <div className="flex gap-3 rounded-lg border border-maroon-50 p-3" key={i}>
                     <button type="button" onClick={() => { if (item.image) setPreview(item.image); }} title={item.image ? 'Image preview' : 'No image'}
                       className={`h-20 w-16 shrink-0 ${item.image ? 'cursor-zoom-in bg-maroon-50' : 'cursor-default bg-ink-light/10'} grid place-items-center overflow-hidden rounded-lg text-ink-light`}>
-                      {item.image ? <img src={item.image} alt={item.name} loading="lazy" className="h-full w-full object-cover" /> : <ImageIcon size={18} />}
+                      {item.image ? <img src={cloudinarySrc(item.image, 128)} alt={item.name} loading="lazy" className="h-full w-full object-cover" /> : <ImageIcon size={18} />}
                     </button>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">

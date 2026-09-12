@@ -131,7 +131,7 @@ export function OfferPopupHost() {
       <div className="w-full max-w-sm overflow-hidden rounded-xl2 bg-white shadow-lift" onClick={(e) => e.stopPropagation()}>
         <div className="relative aspect-[16/9] overflow-hidden bg-maroon-50">
           {popup.product.image ? (
-            <SmartImage src={popup.product.image} alt={popup.product.name} className="absolute inset-0 h-full w-full object-cover" />
+            <SmartImage src={popup.product.image} alt={popup.product.name} className="absolute inset-0 h-full w-full object-cover" sizes="384px" />
           ) : (
             <span className="absolute inset-0 grid place-items-center bg-maroon-100 text-[13px] font-bold text-maroon-700">
               {popup.product.designId}

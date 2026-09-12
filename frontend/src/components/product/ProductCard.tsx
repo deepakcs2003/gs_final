@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Heart, ShoppingCart, Scissors, Eye } from 'lucide-react';
 import clsx from 'clsx';
@@ -27,7 +27,7 @@ interface ProductCardProps {
   eager?: boolean;
 }
 
-export function ProductCardView({ product, currency, eager }: ProductCardProps) {
+function ProductCardViewInner({ product, currency, eager }: ProductCardProps) {
   const navigate = useNavigate();
   const addToCart = useCart((state) => state.add);
   const toggleWishlist = useWishlist((state) => state.toggle);
@@ -218,3 +218,9 @@ export function ProductCardView({ product, currency, eager }: ProductCardProps) 
     </article>
   );
 }
+
+// Cards are pure with respect to (product, currency, eager); memoising skips the
+// whole variant-picker/fabric-sheet subtree when a grid re-renders and passes
+// the same props — the common case while paginating feeds.
+export const ProductCardView = memo(ProductCardViewInner);
+ProductCardView.displayName = 'ProductCardView';

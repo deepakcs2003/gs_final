@@ -164,7 +164,7 @@ export function ZoomableImage({ src, alt, aspectRatio = 3 / 4, onZoom }: Zoomabl
             transition: dragStart.current || gestureStart.current ? 'none' : 'transform 180ms ease-out',
           }}
         >
-          <SmartImage src={src} alt={alt} className="object-contain" eager />
+          <SmartImage src={src} alt={alt} className="object-contain" eager sizes="(min-width: 1024px) 50vw, 100vw" />
         </div>
       </div>
 

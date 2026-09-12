@@ -118,7 +118,7 @@ export function SearchOverlay() {
                   className="flex items-center gap-3 rounded-xl2 bg-white p-2.5 shadow-card transition hover:shadow-lift"
                 >
                   <span className="h-20 w-16 shrink-0 overflow-hidden rounded-lg bg-maroon-50">
-                    <SmartImage src={product.image} alt={product.imageAlt} />
+                    <SmartImage src={product.image} alt={product.imageAlt} sizes="64px" />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[14px] font-semibold text-ink">{product.name}</span>

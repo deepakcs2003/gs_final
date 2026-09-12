@@ -5,6 +5,7 @@ import { Coupon } from '../models/commerce.js';
 import { getSettings } from './settings.js';
 import { currencyForCountry, isCodAllowed } from './geo.js';
 import { isMeasurementReady } from './measurements.js';
+import { responsiveUrl } from './media/cloudinary.js';
 import type { Currency, ProductType } from '../domain/constants.js';
 
 /**
@@ -251,7 +252,7 @@ export async function quoteCart(inputLines: CartLineInput[], ctx: QuoteContext):
             fabricName = fabricName ? `${fabricName}, ${fabric.name}` : fabric.name;
             fabricMaterial = fabricMaterial ? `${fabricMaterial}, ${fabric.material}` : fabric.material;
             fabricColorName = fabricColorName ? `${fabricColorName}, ${fabric.colorName}` : fabric.colorName;
-            fabricDetails.push({ name: fabric.name, material: fabric.material, colorName: fabric.colorName, image: fabric.image ?? '' });
+            fabricDetails.push({ name: fabric.name, material: fabric.material, colorName: fabric.colorName, image: responsiveUrl(fabric.image ?? '', 200) });
           }
         }
       }
@@ -270,7 +271,7 @@ export async function quoteCart(inputLines: CartLineInput[], ctx: QuoteContext):
         const color = laceColorBy.get(String(lace._id));
         const selectedColor = color || lace.colorName;
         laceNames.push(selectedColor !== lace.colorName ? `${lace.name} (${selectedColor})` : lace.name);
-        laceDetails.push({ name: lace.name, colorName: selectedColor, image: lace.image ?? '' });
+        laceDetails.push({ name: lace.name, colorName: selectedColor, image: responsiveUrl(lace.image ?? '', 200) });
         chosenLaceIds.push(String(lace._id));
       }
 
@@ -289,7 +290,7 @@ export async function quoteCart(inputLines: CartLineInput[], ctx: QuoteContext):
         const color = latkanColorBy.get(String(latkan._id));
         const selectedColor = color || latkan.colorName;
         latkanNames.push(selectedColor !== latkan.colorName ? `${latkan.name} (${selectedColor})` : latkan.name);
-        latkanDetails.push({ name: latkan.name, colorName: selectedColor, image: latkan.image ?? '' });
+        latkanDetails.push({ name: latkan.name, colorName: selectedColor, image: responsiveUrl(latkan.image ?? '', 200) });
         chosenLatkanIds.push(String(latkan._id));
       }
 
@@ -316,7 +317,7 @@ export async function quoteCart(inputLines: CartLineInput[], ctx: QuoteContext):
       designId: product.designId,
       name: product.name,
       slug: product.slug,
-      image: product.images?.[0]?.url ?? '',
+      image: responsiveUrl(product.images?.[0]?.url ?? '', 400),
       quantity,
       colorName,
       colorSlug,

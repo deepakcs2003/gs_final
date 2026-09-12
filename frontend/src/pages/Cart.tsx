@@ -320,7 +320,7 @@ function CartRow({
     <article className={clsx('card overflow-hidden', hasIssues && 'ring-1 ring-alert/40')}>
       <div className="flex gap-3 p-3">
         <Link to={`/blouse/${line.slug}`} className="h-28 w-24 shrink-0 overflow-hidden rounded-lg bg-maroon-50">
-          <SmartImage src={line.image} alt={line.name} className="object-contain" />
+          <SmartImage src={line.image} alt={line.name} className="object-contain" sizes="96px" />
         </Link>
 
         <div className="min-w-0 flex-1">
@@ -444,7 +444,7 @@ function MaterialDetails({ line }: { line: QuotedLine }) {
       {materials.map((item, index) => (
         <div key={`${item.type}-${item.name}-${index}`} className="flex min-w-[145px] items-center gap-2 rounded-lg border border-maroon-100 bg-white px-1.5 py-1.5">
           <div className="h-10 w-10 shrink-0 overflow-hidden rounded-md bg-maroon-50">
-            <SmartImage src={item.image} alt={item.name} className="object-contain" />
+            <SmartImage src={item.image} alt={item.name} className="object-contain" sizes="40px" />
           </div>
           <div className="min-w-0">
             <p className="text-[10px] font-bold uppercase text-maroon-700">{item.type}</p>

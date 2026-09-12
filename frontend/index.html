@@ -22,6 +22,10 @@
       href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&family=Noto+Serif:wght@600;700&display=swap"
       rel="stylesheet"
     />
+    <!-- All product/banner/fabric photos live on Cloudinary; connect early so
+         the first image bucket doesn't pay a TLS round-trip. -->
+    <link rel="preconnect" href="https://res.cloudinary.com" crossorigin />
+    <link rel="dns-prefetch" href="https://res.cloudinary.com" />
   </head>
   <body>
     <div id="root"></div>

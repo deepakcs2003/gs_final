@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from '../../lib/api';
 import { Badge, BtnGhost, BtnOutline, BtnPrimary, Checkbox, ColorPaletteSelect, Field, ImagePicker, Modal, PaletteColor, Select, StringListEditor, TextArea, TextInput, Toolbar, Toggle, inr, slugify } from './shared';
 import { Archive, Copy, Plus, Pencil, X, Check, Sparkles } from 'lucide-react';
+import { cloudinarySrc } from '../../lib/image';
 
 export interface AdminCategory { _id: string; name: string; slug: string }
 export interface AdminProduct {
@@ -377,7 +378,7 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
           <article key={product._id} className={`rounded-xl border p-4 ${product.isActive ? 'border-maroon-100 bg-white' : 'border-dashed border-ink-light/40 bg-ink-light/5 opacity-60'}`}>
             <div className="flex items-start gap-3">
               {product.images?.[0]?.url ? (
-                <img src={product.images[0].url} alt={product.name} loading="lazy" className="h-16 w-16 shrink-0 rounded-lg border border-maroon-100 object-cover" />
+                <img src={cloudinarySrc(product.images[0].url, 160)} alt={product.name} loading="lazy" className="h-16 w-16 shrink-0 rounded-lg border border-maroon-100 object-cover" />
               ) : (
                 <div className="grid h-16 w-16 shrink-0 place-items-center rounded-lg border border-dashed border-ink-light/40 bg-maroon-50/40 text-xs font-semibold text-ink-light">No img</div>
               )}

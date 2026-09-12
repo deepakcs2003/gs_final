@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, ApiError } from '../../lib/api';
 import { Badge, BtnGhost, BtnPrimary, Empty, Toolbar } from './shared';
 import { Check, X, Star } from 'lucide-react';
+import { cloudinarySrc } from '../../lib/image';
 
 interface Review {
   _id: string; name: string; rating: number; text: string; photos: string[];
@@ -58,7 +59,7 @@ export function ReviewsModule() {
               </div>
               {review.text ? <p className="mt-3 text-sm text-ink-muted">{review.text}</p> : null}
               {review.photos?.length ? (
-                <div className="mt-3 flex gap-2">{review.photos.map((p, i) => <img key={i} src={p} alt="review" className="h-16 w-16 rounded-lg object-cover" />)}</div>
+                <div className="mt-3 flex gap-2">{review.photos.map((p, i) => <img key={i} src={cloudinarySrc(p, 160)} alt="review" loading="lazy" className="h-16 w-16 rounded-lg object-cover" />)}</div>
               ) : null}
               {review.status === 'PENDING' ? (
                 <div className="mt-3 flex gap-2">

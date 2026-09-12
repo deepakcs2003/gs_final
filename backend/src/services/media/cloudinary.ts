@@ -31,6 +31,11 @@ const SIGNATURES: Array<{ mime: string; ext: string; test: (buf: Buffer) => bool
     ext: 'webp',
     test: (b) => b.length > 12 && b.subarray(0, 4).toString('ascii') === 'RIFF' && b.subarray(8, 12).toString('ascii') === 'WEBP',
   },
+  {
+    mime: 'image/gif',
+    ext: 'gif',
+    test: (b) => b.length > 6 && (b.toString('ascii', 0, 6) === 'GIF87a' || b.toString('ascii', 0, 6) === 'GIF89a'),
+  },
 ];
 
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
@@ -44,7 +49,7 @@ export function assertSafeImage(buffer: Buffer): { mime: string; ext: string } {
   if (buffer.length > MAX_UPLOAD_BYTES) throw badRequest('Image 5MB se choti honi chahiye.');
 
   const match = SIGNATURES.find((sig) => sig.test(buffer));
-  if (!match) throw badRequest('Sirf JPG, PNG ya WebP image upload karein.');
+  if (!match) throw badRequest('Sirf JPG, PNG, WebP ya GIF image upload karein.');
 
   return { mime: match.mime, ext: match.ext };
 }
@@ -57,7 +62,7 @@ export interface UploadedImage {
 }
 
 export async function uploadImage(buffer: Buffer, folder: string): Promise<UploadedImage> {
-  assertSafeImage(buffer);
+  const { ext } = assertSafeImage(buffer);
   if (!integrations.cloudinary) {
     throw badRequest('Image upload abhi configure nahi hai.');
   }
@@ -77,7 +82,10 @@ export async function uploadImage(buffer: Buffer, folder: string): Promise<Uploa
         overwrite: false,
         // Strip metadata (including GPS coordinates from phone photos).
         image_metadata: false,
-        transformation: [{ quality: 'auto:good', fetch_format: 'auto' }],
+        // Animated GIFs must keep their frames — a lossy `quality:auto` pass
+        // would flatten them into stills. Washed images already get the
+        // CDN-side `f_auto,q_auto` treatment on delivery (responsiveUrl).
+        transformation: ext === 'gif' ? [] : [{ quality: 'auto:good', fetch_format: 'auto' }],
       },
       (error, uploaded) => {
         if (error || !uploaded) reject(error ?? new Error('upload failed'));

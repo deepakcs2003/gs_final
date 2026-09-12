@@ -466,7 +466,7 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
                   )}
                 >
                   <div className="relative aspect-[4/3] w-full overflow-hidden">
-                    <SmartImage src={fabric.image} alt={`${fabric.colorName} ${fabric.name}`} />
+                    <SmartImage src={fabric.image} alt={`${fabric.colorName} ${fabric.name}`} sizes="190px" />
                     {isSelected ? (
                       <span className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-maroon-600 text-white shadow-lift">
                         <Check size={16} strokeWidth={3} />
@@ -518,7 +518,7 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
                     )}
                   >
                     <div className="relative aspect-[4/3]">
-                      <SmartImage src={lace.image} alt={lace.name} />
+                      <SmartImage src={lace.image} alt={lace.name} sizes="80px" />
                       {isSelected ? (
                         <span className="absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-maroon-600 text-white">
                           <Check size={12} strokeWidth={3} />
@@ -562,7 +562,7 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
                     )}
                   >
                     <div className="relative aspect-[4/3]">
-                      <SmartImage src={latkan.image} alt={latkan.name} />
+                      <SmartImage src={latkan.image} alt={latkan.name} sizes="80px" />
                       {isSelected ? (
                         <span className="absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-maroon-600 text-white">
                           <Check size={12} strokeWidth={3} />

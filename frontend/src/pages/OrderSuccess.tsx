@@ -218,7 +218,7 @@ export function OrderSuccessPage() {
           {order.items.map((item, index) => (
             <li key={`${item.designId}-${index}`} className="flex gap-3">
               <Link to={`/blouse/${item.slug}`} className="h-20 w-16 shrink-0 overflow-hidden rounded-lg bg-maroon-50">
-                <SmartImage src={item.image} alt={item.name} className="object-contain" />
+                <SmartImage src={item.image} alt={item.name} className="object-contain" sizes="64px" />
               </Link>
               <div className="min-w-0 flex-1">
                 <p className="line-clamp-2 text-[14px] font-semibold text-ink">{item.name}</p>
@@ -330,7 +330,7 @@ function OrderMaterialDetails({ item }: { item: OrderDetail['items'][number] }) 
     <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
       {materials.map((material, index) => (
         <div key={`${material.type}-${material.name}-${index}`} className="flex min-w-[132px] items-center gap-1.5 rounded-md border border-maroon-100 bg-maroon-50/40 p-1">
-          <div className="h-8 w-8 shrink-0 overflow-hidden rounded bg-white"><SmartImage src={material.image} alt={material.name} className="object-contain" /></div>
+          <div className="h-8 w-8 shrink-0 overflow-hidden rounded bg-white"><SmartImage src={material.image} alt={material.name} className="object-contain" sizes="32px" /></div>
           <div className="min-w-0"><p className="text-[9px] font-bold uppercase text-maroon-700">{material.type}</p><p className="truncate text-[10px] font-semibold">{material.name}</p><p className="truncate text-[9px] text-ink-muted">{material.detail}</p></div>
         </div>
       ))}

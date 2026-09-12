@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import clsx from 'clsx';
+import { responsiveSrcSet } from '../lib/image';
 
 /**
  * Renders a product image, or a branded placeholder when there is no photo yet.
@@ -117,6 +118,7 @@ interface SmartImageProps {
 export function SmartImage({ src, alt, className, rounded, eager, sizes }: SmartImageProps) {
   const [failed, setFailed] = useState(false);
   const art = parseArt(src);
+  const srcSet = useMemo(() => responsiveSrcSet(src), [src]);
 
   if (art || !src || failed) {
     const fallback = art ?? { palette: PALETTES[0]!, label: '', kind: 'front' };
@@ -126,6 +128,7 @@ export function SmartImage({ src, alt, className, rounded, eager, sizes }: Smart
   return (
     <img
       src={src}
+      srcSet={srcSet || undefined}
       alt={alt}
       sizes={sizes}
       className={clsx('h-full w-full object-cover', rounded, className)}

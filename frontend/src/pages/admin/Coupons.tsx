@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, ApiError } from '../../lib/api';
 import { Badge, BtnGhost, BtnPrimary, Empty, Field, inr, Modal, Select, TextArea, TextInput, Toolbar, Toggle } from './shared';
 import { Check, Pencil, Trash2 } from 'lucide-react';
+import { cloudinarySrc } from '../../lib/image';
 import type { AdminProduct } from './Products';
 
 interface Coupon {
@@ -198,7 +199,7 @@ export function CouponsModule() {
                 <button type="button" key={p._id} onClick={() => toggleProduct(p._id)}
                   className={`flex w-full items-center gap-3 rounded-xl border p-2.5 text-left transition ${selected ? 'border-leaf bg-leaf/10' : 'border-maroon-100 bg-white hover:border-maroon-300'}`}>
                   {p.images?.[0]?.url ? (
-                    <img src={p.images[0].url} alt={p.name} loading="lazy" className="h-12 w-12 shrink-0 rounded-lg border border-maroon-100 object-cover" />
+                    <img src={cloudinarySrc(p.images[0].url, 96)} alt={p.name} loading="lazy" className="h-12 w-12 shrink-0 rounded-lg border border-maroon-100 object-cover" />
                   ) : (
                     <div className="grid h-12 w-12 shrink-0 place-items-center rounded-lg border border-dashed border-ink-light/40 bg-maroon-50/40 text-[10px] font-semibold text-ink-light">No img</div>
                   )}

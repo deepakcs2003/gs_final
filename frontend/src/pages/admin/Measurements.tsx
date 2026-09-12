@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '../../lib/api';
-import { BtnGhost, BtnPrimary, Checkbox, Empty, Field, Modal, TextArea, TextInput, Toolbar, Toggle } from './shared';
+import { BtnGhost, BtnPrimary, Checkbox, Empty, Field, ImagePicker, Modal, TextArea, TextInput, Toolbar, Toggle } from './shared';
 import { Pencil, Trash2, Check, X } from 'lucide-react';
 
 interface MeasurementField {
@@ -95,8 +95,12 @@ export function MeasurementsModule() {
             <Field label="Label"><TextInput required value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} /></Field>
             <Field label="Hindi helper (Hinglish)" hint="e.g. Chaati ka sabse chauda part"><TextInput value={form.labelHi} onChange={(e) => setForm({ ...form, labelHi: e.target.value })} /></Field>
             <Field label="Instruction" className="sm:col-span-2"><TextArea value={form.instruction} onChange={(e) => setForm({ ...form, instruction: e.target.value })} /></Field>
-            <Field label="Measure GIF URL"><TextInput value={form.gifUrl} onChange={(e) => setForm({ ...form, gifUrl: e.target.value })} /></Field>
-            <Field label="Measure image URL"><TextInput value={form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })} /></Field>
+            <Field label="Measure GIF (animated guide)" className="sm:col-span-2" hint="GIF upload karein ya URL paste karein — customer ko apne aap GIF dikhega.">
+              <ImagePicker value={form.gifUrl ? [form.gifUrl] : []} max={1} accept="image/gif" hint="Sirf GIF files uploading ke liye. URL paste karke koi bhi GIF add kar sakte hain." onChange={(urls) => setForm({ ...form, gifUrl: urls[0] ?? '' })} />
+            </Field>
+            <Field label="Measure image (still reference)" className="sm:col-span-2" hint="JPG/PNG/WebP upload karein ya URL paste karein. GIF nahi hai to ye dikhta hai.">
+              <ImagePicker value={form.imageUrl ? [form.imageUrl] : []} max={1} onChange={(urls) => setForm({ ...form, imageUrl: urls[0] ?? '' })} />
+            </Field>
             <Field label="Minimum (inches)"><TextInput type="number" min={1} max={120} value={form.minInch} onChange={(e) => setForm({ ...form, minInch: Number(e.target.value) })} /></Field>
             <Field label="Maximum (inches)"><TextInput type="number" min={1} max={120} value={form.maxInch} onChange={(e) => setForm({ ...form, maxInch: Number(e.target.value) })} /></Field>
             <div className="sm:col-span-2 flex gap-6">

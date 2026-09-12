@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, Plus, Search, Check, Star, RefreshCw, Upload, ChevronDown } from 'lucide-react';
 import clsx from 'clsx';
 import { ApiError, uploadImages } from '../../lib/api';
+import { cloudinarySrc } from '../../lib/image';
 
 /** Admin-scoped money formatter (INR, whole rupees). */
 export function inr(minor: number) {
@@ -390,9 +391,11 @@ interface ImagePickerProps {
   onChange: (urls: string[]) => void;
   max?: number;
   hint?: string;
+  /** File types the picker offers in the file dialog. */
+  accept?: string;
 }
 
-export function ImagePicker({ value, onChange, max = 10, hint }: ImagePickerProps) {
+export function ImagePicker({ value, onChange, max = 10, hint, accept = 'image/jpeg,image/png,image/webp' }: ImagePickerProps) {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
@@ -414,7 +417,8 @@ export function ImagePicker({ value, onChange, max = 10, hint }: ImagePickerProp
     setMsg('');
     try {
       const uploaded = await uploadImages(Array.from(files));
-      onChange([...value, ...uploaded.map((u) => u.url).filter((url) => !value.includes(url))]);
+      const added = uploaded.map((u) => u.url).filter((url) => !value.includes(url));
+      onChange([...value, ...added].slice(0, max));
     } catch (err) {
       setMsg(err instanceof ApiError ? err.message : 'Upload fail hua.');
     } finally {
@@ -437,13 +441,15 @@ export function ImagePicker({ value, onChange, max = 10, hint }: ImagePickerProp
         {value.map((url, index) => (
           <div key={url} className="group relative h-20 w-20 overflow-hidden rounded-xl border border-ink-light/30 bg-maroon-50">
             <button type="button" onClick={() => setPreview(url)} title="Image preview" className="h-full w-full">
-              <img src={url} alt="" loading="lazy" className="h-full w-full object-cover" />
+              <img src={cloudinarySrc(url, 128)} alt="" loading="lazy" className="h-full w-full object-cover" />
             </button>
-            {index === 0 ? <span className="absolute left-1 top-1 rounded bg-maroon-600 px-1 text-[9px] font-bold text-white">MAIN</span> : null}
+            {max !== 1 && index === 0 ? <span className="absolute left-1 top-1 rounded bg-maroon-600 px-1 text-[9px] font-bold text-white">MAIN</span> : null}
             <div className="absolute inset-x-0 bottom-0 hidden justify-between bg-ink/60 p-0.5 group-hover:flex">
-              <button type="button" onClick={() => makeMain(index)} title="Main image banayein" className="grid h-6 w-6 place-items-center text-white hover:bg-ink/40">
-                <Star size={12} />
-              </button>
+              {max !== 1 ? (
+                <button type="button" onClick={() => makeMain(index)} title="Main image banayein" className="grid h-6 w-6 place-items-center text-white hover:bg-ink/40">
+                  <Star size={12} />
+                </button>
+              ) : null}
               <button type="button" onClick={() => onChange(value.filter((_, j) => j !== index))} title="Remove image" className="grid h-6 w-6 place-items-center text-white hover:bg-alert">
                 <X size={12} />
               </button>
@@ -456,7 +462,7 @@ export function ImagePicker({ value, onChange, max = 10, hint }: ImagePickerProp
             {busy ? <RefreshCw size={18} className="animate-spin" /> : <Upload size={18} />}
           </button>
         )}
-        <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden"
+        <input ref={fileRef} type="file" accept={accept} multiple className="hidden"
           onChange={(e) => void pickFiles(e.target.files)} />
       </div>
       <div className="mt-2 flex gap-2">

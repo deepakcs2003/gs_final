@@ -238,7 +238,7 @@ export function MeasurementPage() {
             <div key={field.key} className="card overflow-hidden">
               <div className="flex gap-3 p-3.5">
                 <div className="h-20 w-16 shrink-0 overflow-hidden rounded-lg bg-maroon-50">
-                  <SmartImage src={field.gifUrl || field.imageUrl} alt={`${field.label} kaise measure karein`} />
+                  <SmartImage src={field.gifUrl || field.imageUrl} alt={`${field.label} kaise measure karein`} sizes="240px" />
                 </div>
 
                 <div className="min-w-0 flex-1">
