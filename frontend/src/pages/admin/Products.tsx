@@ -247,6 +247,12 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
       // `seo` is editable; the rest are server-managed and would trip the
       // backend's strict schema (they come back from GET with the doc).
       const { _id, stats, createdAt, updatedAt, createdBy, ...values } = form;
+      // Mongoose lean docs also carry rating/publishedAt/__v — drop them so the
+      // backend's `.strict()` schemas never see an unknown key on PATCH.
+      const clean = values as Record<string, unknown>;
+      delete clean.rating;
+      delete clean.publishedAt;
+      delete clean.__v;
       const body = {
         ...values,
         ...(values.type === 'CUSTOMIZE' || values.type === 'BOTH' ? { fabricOptions: [], laceOptions: [], latkanOptions: [] } : {}),
@@ -293,9 +299,11 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
     setNewEditor(true); setQwenMsg(null); setLastGen({});
   };
   const openEdit = (product: AdminProduct) => {
+    const subCat = product.subCategory as { _id?: string } | string | null | undefined;
     setForm({
       ...product,
       category: typeof product.category === 'object' ? product.category._id : product.category,
+      subCategory: typeof subCat === 'object' && subCat ? subCat._id ?? null : (typeof subCat === 'string' ? subCat : null),
       images: (product.images ?? []).map((img) => ({ ...img })),
       colors: (product.colors ?? []).map((c) => ({ ...c })),
       variants: (product.variants ?? []).map((v) => ({ ...v })),
