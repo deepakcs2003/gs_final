@@ -10,7 +10,7 @@ export default defineConfig({
     // first-party — exactly as they will be in production behind one domain.
     proxy: {
       '/api': {
-        target: 'http://localhost:4000',
+        target: 'https://guddisilai-backend.onrender.com',
         changeOrigin: false,
       },
     },
