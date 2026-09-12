@@ -2,9 +2,14 @@ import { createApp } from './app.js';
 import { connectDb, disconnectDb } from './config/db.js';
 import { env, integrations } from './config/env.js';
 import { logger } from './utils/logger.js';
+import { startWaWorker } from './services/whatsapp/queue.js';
 
 async function main(): Promise<void> {
   await connectDb();
+
+  // WhatsApp outbox worker: drains queued messages every few seconds so HTTP
+  // requests never block on Meta (order flow pays 0 cost if WhatsApp is down).
+  const waWorker = startWaWorker();
 
   const app = createApp();
   const server = app.listen(env.PORT, () => {
@@ -24,6 +29,7 @@ async function main(): Promise<void> {
 
   const shutdown = (signal: string) => {
     logger.info({ signal }, 'shutting down');
+    clearInterval(waWorker);
     server.close(async () => {
       await disconnectDb();
       process.exit(0);

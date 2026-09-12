@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ShieldCheck, Truck, Banknote, CreditCard, MapPin, Check, AlertTriangle } from 'lucide-react';
+import { User, Mail, Home, Landmark, Building2, Map, Navigation, ShieldCheck, Truck, Banknote, CreditCard, MapPin, Check, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 import { EmptyState } from '../components/ui';
 import { useCartQuote, useConfig, useCurrentUser, usePincodeCheck } from '../hooks/queries';
@@ -268,84 +268,77 @@ export function CheckoutPage() {
       <div className="lg:grid lg:grid-cols-[1fr_340px] lg:gap-6">
         <div className="space-y-4">
           {/* Contact */}
-          <section className="card p-4">
-            <h2 className="mb-3 font-display text-base font-bold">Aapki Details</h2>
-            <div className="space-y-3">
-              <Field label="Pura naam" error={errors.name} required>
-                <input value={form.name} onChange={(e) => set('name', e.target.value)} className="field" maxLength={80} />
+          <section className="card p-5">
+            <SectionHeading icon={<User size={17} />} title="Aapki Details" />
+            <div className="space-y-4">
+              <Field label="Full name" error={errors.name} required>
+                <IconInput icon={<User size={16} strokeWidth={1.8} />} value={form.name} onChange={(e) => set('name', e.target.value)} invalid={Boolean(errors.name)} maxLength={80} placeholder="Apna pura naam likhein" />
               </Field>
               <Field label="Mobile number" error={errors.mobile} required hint="Delivery ke liye zaroori hai">
                 <div className="flex gap-2">
-                  <span className="grid h-12 shrink-0 place-items-center rounded-xl border border-ink-light/30 bg-maroon-50 px-3 text-[15px] font-semibold">
-                    +91
-                  </span>
+                  <span className="grid h-[48px] shrink-0 place-items-center rounded-xl border border-ink-light/30 bg-maroon-50 px-3.5 text-[15px] font-semibold text-maroon-700">+91</span>
                   <input
                     value={form.mobile}
                     onChange={(e) => set('mobile', e.target.value.replace(/\D/g, '').slice(0, 10))}
                     inputMode="numeric"
-                    className="field"
+                    placeholder="10 digit number"
+                    className={inputClass(Boolean(errors.mobile))}
                   />
                 </div>
               </Field>
               <Field label="Email" error={errors.email} hint="Optional — order updates ke liye">
-                <input
-                  value={form.email}
-                  onChange={(e) => set('email', e.target.value)}
-                  type="email"
-                  className="field"
-                  maxLength={160}
-                />
+                <IconInput icon={<Mail size={16} strokeWidth={1.8} />} type="email" value={form.email} onChange={(e) => set('email', e.target.value)} invalid={Boolean(errors.email)} maxLength={160} placeholder="name@example.com" />
               </Field>
             </div>
           </section>
 
           {/* Address */}
-          <section className="card p-4">
-            <h2 className="mb-3 flex items-center gap-2 font-display text-base font-bold">
-              <MapPin size={17} />
-              Delivery Address
-            </h2>
-            <div className="space-y-3">
+          <section className="card p-5">
+            <SectionHeading icon={<MapPin size={17} />} title="Delivery Address" note="Address yahan bheja jayega" />
+            <div className="space-y-4">
               <Field label="House / Street" error={errors.line1} required>
-                <input value={form.line1} onChange={(e) => set('line1', e.target.value)} className="field" maxLength={160} />
+                <IconInput icon={<Home size={16} strokeWidth={1.8} />} value={form.line1} onChange={(e) => set('line1', e.target.value)} invalid={Boolean(errors.line1)} maxLength={160} placeholder="House no., street, building" />
               </Field>
               <Field label="Area / Landmark">
-                <input value={form.line2} onChange={(e) => set('line2', e.target.value)} className="field" maxLength={160} />
+                <IconInput icon={<Landmark size={16} strokeWidth={1.8} />} value={form.line2} onChange={(e) => set('line2', e.target.value)} maxLength={160} placeholder="Area, landmark, kisi jaane-mane marke ke paas" />
               </Field>
 
               <div className="grid grid-cols-2 gap-3">
                 <Field label="City" error={errors.city} required>
-                  <input value={form.city} onChange={(e) => set('city', e.target.value)} className="field" maxLength={60} />
+                  <IconInput icon={<Building2 size={16} strokeWidth={1.8} />} value={form.city} onChange={(e) => set('city', e.target.value)} invalid={Boolean(errors.city)} maxLength={60} placeholder="City" />
                 </Field>
                 <Field label="State" error={errors.state} required>
-                  <input value={form.state} onChange={(e) => set('state', e.target.value)} className="field" maxLength={60} />
+                  <IconInput icon={<Map size={16} strokeWidth={1.8} />} value={form.state} onChange={(e) => set('state', e.target.value)} invalid={Boolean(errors.state)} maxLength={60} placeholder="State" />
                 </Field>
               </div>
 
               {/* Pincode check (README §72) */}
               <Field label="Pincode" error={errors.pincode} required>
                 <div className="flex gap-2">
-                  <input
+                  <IconInput
+                    icon={<Navigation size={16} strokeWidth={1.8} />}
+                    wrapClassName="flex-1 min-w-0"
                     value={form.pincode}
-                      onChange={(e) => {
-                        pincodeCheck.reset();
-                        setForm((current) => ({
-                          ...current,
-                          pincode: e.target.value.replace(/\D/g, '').slice(0, 6),
-                          city: '',
-                          state: '',
-                          line2: '',
-                        }));
-                        setErrors((current) => {
-                          const next = { ...current };
-                          delete next.pincode;
-                          delete next.city;
-                          delete next.state;
-                          return next;
-                        });
-                      }}
+                    onChange={(e) => {
+                      pincodeCheck.reset();
+                      setForm((current) => ({
+                        ...current,
+                        pincode: e.target.value.replace(/\D/g, '').slice(0, 6),
+                        city: '',
+                        state: '',
+                        line2: '',
+                      }));
+                      setErrors((current) => {
+                        const next = { ...current };
+                        delete next.pincode;
+                        delete next.city;
+                        delete next.state;
+                        return next;
+                      });
+                    }}
                     inputMode="numeric"
-                    className="field"
+                    invalid={Boolean(errors.pincode)}
+                    placeholder="6 digit pincode"
                   />
                   <button
                     type="button"
@@ -377,8 +370,8 @@ export function CheckoutPage() {
           </section>
 
           {/* Payment */}
-          <section className="card p-4">
-            <h2 className="mb-3 font-display text-base font-bold">Payment</h2>
+          <section className="card p-5">
+            <SectionHeading icon={<CreditCard size={17} />} title="Payment Method" />
             <div className="space-y-2.5">
               <PaymentOption
                 selected={paymentMethod === 'RAZORPAY'}
@@ -421,8 +414,8 @@ export function CheckoutPage() {
         {/* Summary */}
         <aside className="mt-4 lg:mt-0">
           <div className="lg:sticky lg:top-[calc(var(--header-h)+16px)]">
-            <div className="card p-4">
-              <h2 className="mb-3 font-display text-base font-bold">Order Summary</h2>
+            <div className="card p-5">
+              <SectionHeading icon={<Truck size={17} />} title="Order Summary" />
 
               <ul className="mb-3 space-y-2 border-b border-maroon-100 pb-3">
                 {quote?.lines.map((line) => (
@@ -557,12 +550,44 @@ function Field({
 }) {
   return (
     <div>
-      <span className="label">
+      <span className="mb-2 block text-sm font-semibold text-ink">
         {label}
         {required ? <span className="text-alert"> *</span> : null}
       </span>
       {children}
-      {error ? <p className="mt-1 text-[13px] font-medium text-alert">{error}</p> : hint ? <p className="hint mt-1">{hint}</p> : null}
+      {error ? <p className="mt-1.5 flex items-start gap-1 text-[13px] font-medium text-alert"><AlertTriangle size={14} className="mt-0.5 shrink-0" />{error}</p> : hint ? <p className="mt-1.5 text-[13px] leading-snug text-ink-muted">{hint}</p> : null}
+    </div>
+  );
+}
+
+/** Shared input style — light-gray rounded box; red border + tint when invalid. */
+function inputClass(invalid?: boolean): string {
+  return [
+    'min-h-[48px] w-full rounded-xl border bg-white text-[16px] text-ink transition',
+    'placeholder:text-ink-light focus:outline-none',
+    invalid
+      ? 'border-alert bg-alert/5 focus:border-alert focus:ring-2 focus:ring-alert/20'
+      : 'border-ink-light/30 focus:border-maroon-500 focus:ring-2 focus:ring-maroon-200',
+  ].join(' ');
+}
+
+/** Rounded input with a simple outline icon on the left, matching the reference. */
+function IconInput({ icon, invalid, className, wrapClassName, ...props }: { icon: React.ReactNode; invalid?: boolean; className?: string; wrapClassName?: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <div className={clsx('relative', wrapClassName ?? 'w-full')}>
+      <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-light">{icon}</span>
+      <input {...props} className={clsx(inputClass(invalid), 'pl-10', className)} />
+    </div>
+  );
+}
+
+/** Bold card-style section heading with a tinted icon box. */
+function SectionHeading({ icon, title, note }: { icon: React.ReactNode; title: string; note?: string }) {
+  return (
+    <div className="mb-4 flex items-center gap-2.5">
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-maroon-50 text-maroon-600">{icon}</span>
+      <h2 className="font-display text-[17px] font-bold text-ink">{title}</h2>
+      {note ? <span className="ml-auto text-[12px] font-semibold text-ink-muted">{note}</span> : null}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api, ApiError } from '../../lib/api';
 import { Badge, BtnGhost, Empty, Modal, inr } from './shared';
 import { AlertTriangle, Users, Package, ClipboardList, TrendingUp, ShoppingCart, Heart, MessageCircle, CreditCard, ExternalLink, Eye } from 'lucide-react';
@@ -211,24 +211,39 @@ function DrillModal({ drill, range, onClose }: {
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState('');
-  const rq = rangeQuery(range);
+  const activeCtrl = useRef<AbortController | null>(null);
+  /** Stable query string — changes only when the selected range really changes. */
+  const rq = useMemo(() => rangeQuery(range), [range]);
+
+  const load = useCallback(async () => {
+    activeCtrl.current?.abort();
+    const controller = new AbortController();
+    activeCtrl.current = controller;
+    setBusy(true);
+    setError('');
+    setData(null);
+    try {
+      const result = await api<Record<string, unknown>>(drillPath(drill, rq), { quiet: true, signal: controller.signal });
+      if (!controller.signal.aborted) setData(result);
+    } catch (err) {
+      if (!controller.signal.aborted) setError(err instanceof ApiError ? err.message : 'Data load nahi hua.');
+    } finally {
+      if (!controller.signal.aborted) setBusy(false);
+    }
+  }, [drill, rq]);
 
   useEffect(() => {
-    let active = true;
-    setBusy(true); setError(''); setData(null);
-    api<Record<string, unknown>>(drillPath(drill, rq))
-      .then((d) => { if (active) setData(d); })
-      .catch((e) => { if (active) setError(e instanceof ApiError ? e.message : 'Data load nahi hua.'); })
-      .finally(() => { if (active) setBusy(false); });
-    return () => { active = false; };
-    // drill object identity changes on every open
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drill, rq]);
+    void load();
+    return () => activeCtrl.current?.abort();
+  }, [load]);
 
   return (
     <Modal open onClose={onClose} title={drill.title} subtitle={drill.subtitle} maxWidth={drill.maxWidth ?? 'sm:max-w-3xl'}>
       {busy ? <div className="py-6"><Empty message="Data aa raha hai..." /></div>
-        : error ? <div className="rounded-xl border border-alert/30 bg-alert/10 p-4 text-sm font-semibold text-alert">{error}</div>
+        : error ? <div className="flex items-center justify-between gap-3 rounded-xl border border-alert/30 bg-alert/10 p-4 text-sm font-semibold text-alert">
+            <span>{error}</span>
+            <BtnGhost onClick={() => void load()}>Dobara try karein</BtnGhost>
+          </div>
         : data ? <DrillBody drill={drill} data={data} />
         : null}
     </Modal>

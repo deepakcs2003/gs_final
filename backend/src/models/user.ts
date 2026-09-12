@@ -58,6 +58,16 @@ const userSchema = new Schema(
     isBlocked: { type: Boolean, default: false },
     lastLoginAt: { type: Date, default: null },
     lastSeenPath: { type: String, default: '', maxlength: 300 },
+
+    /** WhatsApp communication preferences (README §WhatsApp). Marketing opt-in
+     *  defaults OFF so a blast can never reach someone who did not ask for it. */
+    whatsappOptIn: { type: Boolean, default: true },
+    whatsappOptInAt: { type: Date, default: null },
+    whatsappOptOutAt: { type: Date, default: null },
+    whatsappTransactionalOptIn: { type: Boolean, default: true },
+    whatsappMarketingOptIn: { type: Boolean, default: false },
+    /** When the marketing cooldown clock last started for this customer. */
+    lastMarketingAt: { type: Date, default: null },
   },
   { timestamps: true },
 );

@@ -1,5 +1,5 @@
 import { useState, useEffect, type ComponentType } from 'react';
-import { Activity, BarChart3, ChevronRight, ClipboardList, CreditCard, DatabaseBackup, FolderTree, GalleryHorizontalEnd, Gauge, Globe2, Image, LayoutDashboard, LifeBuoy, Package, RefreshCw, Scissors, Settings, ShieldCheck, SlidersHorizontal, Star, Store, Truck, Users, Wallet } from 'lucide-react';
+import { Activity, BarChart3, ChevronRight, ClipboardList, CreditCard, DatabaseBackup, FolderTree, GalleryHorizontalEnd, Gauge, Globe2, Image, LayoutDashboard, LifeBuoy, MessageCircle, Package, RefreshCw, Scissors, Settings, ShieldCheck, SlidersHorizontal, Star, Store, Truck, Users, Wallet } from 'lucide-react';
 import { useCurrentUser } from '../hooks/queries';
 import { OverviewModule } from './admin/Overview';
 import { ProductsModule } from './admin/Products';
@@ -22,6 +22,7 @@ import { ContentModule } from './admin/Content';
 import { AdminUsersModule } from './admin/AdminUsers';
 import { SettingsModule } from './admin/Settings';
 import { ActivityModule } from './admin/Activity';
+import { CommunicationsModule } from './admin/Communications';
 import { BackupModule } from './admin/Backup';
 
 const nav = {
@@ -38,6 +39,7 @@ const nav = {
   homepage: { label: 'Homepage sections', icon: GalleryHorizontalEnd },
   banners: { label: 'Banners', icon: Image },
   analytics: { label: 'Analytics', icon: BarChart3 },
+  communications: { label: 'Communications', icon: MessageCircle },
   notifications: { label: 'WhatsApp enquiries', icon: LifeBuoy },
   seo: { label: 'SEO manager', icon: Globe2 },
   shipping: { label: 'Shipping & delivery', icon: Truck },
@@ -52,14 +54,14 @@ const nav = {
 const navOrder = [
   'overview', 'orders', 'tailors', 'customers', 'inventory', 'measurements', 'reviews',
   'products', 'catalog', 'coupons', 'homepage', 'banners',
-  'analytics', 'notifications', 'seo',
+  'analytics', 'communications', 'notifications', 'seo',
   'shipping', 'payments', 'content', 'admin-users', 'settings', 'activity', 'backup',
 ] as const;
 
 const navGroups: Array<{ label: string; items: Array<keyof typeof nav> }> = [
   { label: 'Command centre', items: ['overview', 'orders', 'tailors', 'customers', 'inventory', 'measurements', 'reviews'] },
   { label: 'Store & catalogue', items: ['products', 'catalog', 'coupons', 'homepage', 'banners'] },
-  { label: 'Growth', items: ['analytics', 'notifications', 'seo'] },
+  { label: 'Growth', items: ['analytics', 'communications', 'notifications', 'seo'] },
   { label: 'Governance', items: ['shipping', 'payments', 'content', 'admin-users', 'settings', 'activity', 'backup'] },
 ];
 
@@ -77,6 +79,7 @@ const modules: Record<string, ComponentType<Record<string, unknown>>> = {
   homepage: HomepageModule,
   banners: BannersModule,
   analytics: AnalyticsModule,
+  communications: CommunicationsModule,
   notifications: EnquiriesModule,
   seo: SeoModule,
   shipping: ShippingModule,

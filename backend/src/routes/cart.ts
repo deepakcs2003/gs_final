@@ -5,7 +5,7 @@ import { Product } from '../models/catalog.js';
 import { validate } from '../middleware/validate.js';
 import { requireAuth } from '../middleware/auth.js';
 import { readLimiter, writeLimiter } from '../middleware/rateLimit.js';
-import { quoteCart } from '../services/pricing.js';
+import { listEligibleCoupons, quoteCart } from '../services/pricing.js';
 import { resolveGeo } from '../services/geo.js';
 import { getSettings } from '../services/settings.js';
 import { presentProductCard } from '../presenters/product.js';
@@ -57,6 +57,38 @@ router.post('/quote', writeLimiter, validate({ body: quoteSchema }), async (req:
 
   res.json({ ...quote, deliveryEstimate });
 });
+
+/* -------------------------------------------------------------------------- */
+/* POST /api/cart/coupons/available — coupons this cart qualifies for          */
+/* -------------------------------------------------------------------------- */
+
+const couponsSchema = z.object({ lines: cartLinesSchema }).strict();
+
+/**
+ * The cart page calls this (alongside /quote) so the customer sees every
+ * active coupon their current cart already qualifies for, and their estimated
+ * discount. Eligibility mirrors `applyCoupon` exactly.
+ */
+router.post(
+  '/coupons/available',
+  writeLimiter,
+  validate({ body: couponsSchema }),
+  async (req: Request, res: Response) => {
+    const { lines } = (req as Request & { validated: { body: z.infer<typeof couponsSchema> } }).validated.body;
+    const geo = resolveGeo(req);
+
+    // A coupon can only cover lines the shop can actually price, so reuse the
+    // authoritative quote (no coupon applied) instead of trusting the client.
+    const quote = await quoteCart(
+      lines.map((line) => ({ ...line, laceIds: line.laceIds ?? [], latkanIds: line.latkanIds ?? [] })),
+      { country: geo.country, couponCode: '', strict: false },
+    );
+
+    const items = await listEligibleCoupons(quote.lines, quote.amounts.subtotalMinor, quote.currency, quote.fxRateInr);
+
+    res.json({ items, currency: quote.currency });
+  },
+);
 
 /* -------------------------------------------------------------------------- */
 /* Server-side cart for signed-in customers (README §26–27)                    */

@@ -3,6 +3,7 @@ import { env, integrations, shiprocketMock } from '../../config/env.js';
 import { logger } from '../../utils/logger.js';
 import { AppError } from '../../utils/errors.js';
 import type { Order } from '../../models/commerce.js';
+import { notifyOrderEvent } from '../whatsapp/notify.js';
 
 /**
  * Shiprocket integration (README §12, §72; user spec STEP 1-15).
@@ -589,6 +590,7 @@ export async function applyTrackingToOrder(
     if (order.status !== 'DELIVERED') {
       order.statusHistory.push({ status: 'DELIVERED', at: new Date(), note });
       order.status = 'DELIVERED';
+      void notifyOrderEvent(order, 'ORDER_DELIVERED');
     }
   } else if ((track.inTransit || track.outForDelivery || track.status === SHIPROCKET_SHIPPING_STATUSES.SHIPPED) &&
     (order.status === 'PACKED' || order.status === 'SHIPPED')) {
@@ -596,6 +598,10 @@ export async function applyTrackingToOrder(
     if (order.status === 'PACKED') {
       order.statusHistory.push({ status: 'SHIPPED', at: new Date(), note });
       order.status = 'SHIPPED';
+      void notifyOrderEvent(order, 'ORDER_SHIPPED');
+    }
+    if (track.outForDelivery && order.status === 'SHIPPED') {
+      void notifyOrderEvent(order, 'ORDER_OUT_FOR_DELIVERY');
     }
   }
   await order.save();

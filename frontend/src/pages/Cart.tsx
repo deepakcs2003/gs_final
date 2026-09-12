@@ -4,7 +4,7 @@ import { ShoppingCart, Trash2, AlertTriangle, Ruler, Tag, ArrowRight, Check } fr
 import clsx from 'clsx';
 import { SmartImage } from '../components/SmartImage';
 import { EmptyState } from '../components/ui';
-import { useCartQuote, useConfig } from '../hooks/queries';
+import { useCartQuote, useAvailableCoupons, useConfig } from '../hooks/queries';
 import { useCart } from '../store/cart';
 import { useUi } from '../store/ui';
 import { formatDate, formatMoney } from '../lib/format';
@@ -33,6 +33,7 @@ export function CartPage() {
 
   const { data: quote, isFetching, isError: quoteFailed, error: quoteError, refetch: retryQuote } = useCartQuote(appliedCoupon);
   const currency = quote?.currency ?? config?.currency ?? 'INR';
+  const { data: available } = useAvailableCoupons();
 
   if (lines.length === 0) {
     return (
@@ -55,6 +56,11 @@ export function CartPage() {
 
   const applyCoupon = () => {
     setAppliedCoupon(couponInput);
+  };
+
+  const tapCoupon = (code: string) => {
+    setCouponInput(code);
+    setAppliedCoupon(code);
   };
 
   const onCheckout = () => {
@@ -147,6 +153,54 @@ export function CartPage() {
                 </p>
               ) : null}
             </div>
+
+            {available?.items.length ? (
+              <div className="card mb-4 p-4">
+                <label className="label flex items-center gap-1.5">
+                  <Tag size={15} />
+                  Your coupons
+                </label>
+                <p className="mt-0.5 text-xs text-ink-muted">Yeh coupons aapke cart par abhi lag sakte hain.</p>
+                <ul className="mt-3 space-y-2">
+                  {available.items.map((coupon) => {
+                    const applied = quote?.amounts.couponCode === coupon.code;
+                    return (
+                      <li key={coupon.code}>
+                        <button
+                          type="button"
+                          onClick={() => tapCoupon(coupon.code)}
+                          className={`flex w-full items-start justify-between gap-3 rounded-xl border p-3 text-left transition ${
+                            applied ? 'border-leaf bg-leaf/10' : 'border-maroon-100 bg-white hover:border-maroon-300'
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <p className="font-mono text-sm font-bold tracking-wide text-maroon-700">{coupon.code}</p>
+                            {coupon.description ? <p className="mt-0.5 text-xs text-ink-muted">{coupon.description}</p> : null}
+                            <p className="mt-1 text-[11px] text-ink-light">
+                              {coupon.minOrderInr > 0 ? `Min order ₹${coupon.minOrderInr} · ` : ''}
+                              {coupon.type === 'PERCENT' ? `${coupon.valueInr}% off` : `₹${coupon.valueInr} off`}
+                              {coupon.restrictedToProducts ? ' · in products' : ' · sabhi products'}
+                            </p>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            {coupon.discountMinor > 0 ? (
+                              <p className="text-sm font-bold text-leaf">− {formatMoney(coupon.discountMinor, currency)}</p>
+                            ) : null}
+                            {applied ? (
+                              <p className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-leaf">
+                                <Check size={12} />Applied
+                              </p>
+                            ) : (
+                              <p className="mt-1 text-[11px] font-semibold text-maroon-600">Apply</p>
+                            )}
+                          </div>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ) : null}
 
             <div className="card p-4">
               <h2 className="mb-3 font-display text-base font-bold">Order Summary</h2>

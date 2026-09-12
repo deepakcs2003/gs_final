@@ -9,9 +9,9 @@ import { validate } from '../middleware/validate.js';
 import { requireAuth } from '../middleware/auth.js';
 import { otpSendLimiter, otpVerifyLimiter, refreshLimiter, authWriteLimiter, writeLimiter } from '../middleware/rateLimit.js';
 import { clearAuthCookies, cookieNames, hashRefreshToken, issueSession, revokeRefreshToken } from '../services/tokens.js';
-import { getSmsProvider, maskMobile } from '../services/sms/index.js';
+import { getOtpProvider, maskMobile } from '../services/otp.js';
 import { hashIp } from '../services/geo.js';
-import { env, integrations, isDev } from '../config/env.js';
+import { env, googleAdminEmails, integrations, isDev } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { badRequest, serviceUnavailable, unauthorized } from '../utils/errors.js';
 import type { AdminRole } from '../domain/constants.js';
@@ -20,6 +20,10 @@ const router = Router();
 
 const OTP_TTL_MS = 5 * 60 * 1000;
 const OTP_MAX_ATTEMPTS = 5;
+// Button-spam guard: a fresh, still-valid code is NOT re-sent (and no new code
+// is issued) for this long — WhatsApp messages cost money and two live codes
+// would only confuse the user.
+const OTP_RESEND_COOLDOWN_MS = 45 * 1000;
 const BCRYPT_COST = 12;
 
 /**
@@ -45,6 +49,21 @@ const sendOtpSchema = z.object({ mobile: mobileSchema }).strict();
 router.post('/otp/send', otpSendLimiter, validate({ body: sendOtpSchema }), async (req: Request, res: Response) => {
   const { mobile } = (req as Request & { validated: { body: { mobile: string } } }).validated.body;
 
+  // If a valid code was issued moments ago, silently keep it — re-sending would
+  // burn a WhatsApp message for nothing. The client shows the cooldown flag.
+  const recent = await OtpToken.findOne({ mobile, consumedAt: null, expiresAt: { $gt: new Date() } }).sort({
+    createdAt: -1,
+  });
+  if (recent && Date.now() - new Date(recent.createdAt).getTime() < OTP_RESEND_COOLDOWN_MS) {
+    res.json({
+      ok: true,
+      cooldown: true,
+      message: `OTP ${maskMobile(mobile)} par abhi-abhi bheja gaya hai. Kuch seconds ruk kar dobara try karein.`,
+      expiresInSeconds: Math.max(Math.floor((recent.expiresAt.getTime() - Date.now()) / 1000), 1),
+    });
+    return;
+  }
+
   // 6 digits from a CSPRNG. Math.random() would be predictable from a few
   // observed codes and is never acceptable for a credential.
   const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
@@ -62,7 +81,7 @@ router.post('/otp/send', otpSendLimiter, validate({ body: sendOtpSchema }), asyn
   });
 
   try {
-    await getSmsProvider().sendOtp(mobile, code);
+    await getOtpProvider().sendOtp(mobile, code);
   } catch (err) {
     logger.error({ err: (err as Error).message, mobile: maskMobile(mobile) }, 'otp delivery failed');
     throw serviceUnavailable('OTP bhejne mein problem aayi. Thodi der baad try karein.');
@@ -182,19 +201,44 @@ router.post('/google', authWriteLimiter, validate({ body: googleSchema }), async
     throw unauthorized('Google account verify nahi hua.');
   }
 
-  const user = await User.findOneAndUpdate(
-    { googleId: payload.sub },
-    {
-      $setOnInsert: { googleId: payload.sub, email: payload.email.toLowerCase() },
-      $set: {
-        emailVerified: true,
-        ...(payload.name ? { name: payload.name.slice(0, 80) } : {}),
-        ...(payload.picture ? { avatarUrl: payload.picture } : {}),
-      },
-    },
-    { new: true, upsert: true },
-  );
+  const email = payload.email.toLowerCase();
+  const profilePatch: Record<string, unknown> = {
+    emailVerified: true,
+    ...(payload.name ? { name: payload.name.slice(0, 80) } : {}),
+    ...(payload.picture ? { avatarUrl: payload.picture } : {}),
+  };
 
+  // Link order: an account already carrying this googleId wins; otherwise a
+  // user who first signed up via mobile/OTP with the same email gets linked
+  // instead of silently creating a duplicate (email is unique in the schema).
+  let user = await User.findOne({ googleId: payload.sub }).select('+adminRoles');
+  if (!user) {
+    user = await User.findOne({ email }).select('+adminRoles');
+    if (user) {
+      await User.updateOne({ _id: user._id }, { $set: { googleId: payload.sub, ...profilePatch } });
+    } else {
+      try {
+        user = await User.findOneAndUpdate(
+          { googleId: payload.sub },
+          { $setOnInsert: { googleId: payload.sub, email }, $set: profilePatch },
+          { new: true, upsert: true, select: '+adminRoles' },
+        );
+      } catch (err) {
+        if (!isDuplicateKeyError(err)) throw err;
+        user = await User.findOne({ googleId: payload.sub }).select('+adminRoles');
+        if (!user) throw err;
+      }
+    }
+  }
+
+  // Configured admin emails (GOOGLE_ADMIN_EMAILS) are promoted on the first
+  // Google sign-in — no manual admin-creation step needed for the store owner.
+  if (user && googleAdminEmails.includes(email) && !(user.adminRoles ?? []).includes('SUPER_ADMIN')) {
+    await User.updateOne({ _id: user._id }, { $addToSet: { adminRoles: 'SUPER_ADMIN' } });
+    user.adminRoles = [...(user.adminRoles ?? []), 'SUPER_ADMIN'];
+  }
+
+  if (!user) throw unauthorized('Google login nahi ho paya.');
   if (user.isBlocked) throw unauthorized('Yeh account block hai. Support se baat karein.');
 
   await issueSession(res, String(user._id), (user.adminRoles ?? []) as AdminRole[], req.get('user-agent') ?? '');
@@ -280,18 +324,45 @@ const updateMeSchema = z
     name: z.string().trim().max(80).optional(),
     lastSeenPath: z.string().trim().max(300).optional(),
     addresses: z.array(addressSchema).max(10).optional(),
+    whatsappOptIn: z.boolean().optional(),
+    whatsappTransactionalOptIn: z.boolean().optional(),
+    whatsappMarketingOptIn: z.boolean().optional(),
   })
   .strict();
 
 router.patch('/me', requireAuth, writeLimiter, validate({ body: updateMeSchema }), async (req: Request, res: Response) => {
   const body = (req as Request & { validated: { body: z.infer<typeof updateMeSchema> } }).validated.body;
 
-  // Only these three paths are assignable. Roles, mobile and refresh tokens are
+  // Only these paths are assignable. Roles, mobile and refresh tokens are
   // absent from the schema, so a crafted body cannot reach them.
   const update: Record<string, unknown> = {};
   if (body.name !== undefined) update.name = body.name;
   if (body.lastSeenPath !== undefined) update.lastSeenPath = body.lastSeenPath;
   if (body.addresses !== undefined) update.addresses = body.addresses;
+  // Whole-channel opt-out: a single switch that also silences marketing.
+  if (body.whatsappOptIn !== undefined) {
+    update.whatsappOptIn = body.whatsappOptIn;
+    if (body.whatsappOptIn) {
+      update.whatsappOptInAt = new Date();
+      update.whatsappOptOutAt = null;
+    } else {
+      update.whatsappOptOutAt = new Date();
+      update.whatsappOptInAt = null;
+      update.whatsappMarketingOptIn = false;
+    }
+  }
+  if (body.whatsappTransactionalOptIn !== undefined) update.whatsappTransactionalOptIn = body.whatsappTransactionalOptIn;
+  if (body.whatsappMarketingOptIn !== undefined) {
+    update.whatsappMarketingOptIn = body.whatsappMarketingOptIn;
+    if (body.whatsappMarketingOptIn === true) {
+      // Opting into marketing implies consent on the whole channel.
+      update.whatsappOptIn = true;
+      update.whatsappOptInAt = new Date();
+      update.whatsappOptOutAt = null;
+    } else {
+      update.whatsappOptOutAt = new Date();
+    }
+  }
 
   const user = await User.findByIdAndUpdate(req.auth!.userId, { $set: update }, { new: true }).lean();
   if (!user) throw unauthorized();
@@ -310,6 +381,9 @@ interface UserLike {
   adminRoles?: string[] | null;
   addresses?: unknown[] | null;
   lastSeenPath?: string | null;
+  whatsappOptIn?: boolean | null;
+  whatsappTransactionalOptIn?: boolean | null;
+  whatsappMarketingOptIn?: boolean | null;
 }
 
 /** Never returns password hashes, refresh tokens or internal flags. */
@@ -323,6 +397,9 @@ function publicUser(user: UserLike) {
     isAdmin: (user.adminRoles ?? []).length > 0,
     addresses: user.addresses ?? [],
     lastSeenPath: user.lastSeenPath ?? '',
+    whatsappOptIn: user.whatsappOptIn ?? true,
+    whatsappTransactionalOptIn: user.whatsappTransactionalOptIn ?? true,
+    whatsappMarketingOptIn: user.whatsappMarketingOptIn ?? false,
   };
 }
 
@@ -330,10 +407,10 @@ function isDuplicateKeyError(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: number }).code === 11000;
 }
 
-/** Dev-only helper so the login flow can be exercised without an SMS gateway. */
+/** Dev-only helper so the login flow can be exercised without a gateway. */
 if (isDev) {
   router.get('/dev/hint', (_req: Request, res: Response) => {
-    res.json({ hint: 'SMS_PROVIDER=console — the OTP is printed in the API server log.' });
+    res.json({ hint: 'WhatsApp se OTP nahi configure hai — message log mein [whatsapp-console] printed hota hai.' });
   });
 }
 

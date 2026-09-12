@@ -1,12 +1,15 @@
-import { getSmsProvider, maskMobile } from './sms/index.js';
+import { Order } from '../models/commerce.js';
 import { logger } from '../utils/logger.js';
+import { notifyOrderEvent } from './whatsapp/notify.js';
+import { maskMobile } from './otp.js';
 
 /**
- * Best-effort customer notifications for order lifecycle events.
+ * Customer notifications for order lifecycle events.
  *
- * Delivery is fire-and-forget: a failed SMS must never roll back a successful
- * refund or cancellation. Callers record the outcome (order.cancellation
- * notification fields) and move on.
+ * Delivery is fire-and-forget and ASYNC: the WhatsApp queue (never this HTTP
+ * request) delivers the message, so a failed WhatsApp API cannot roll back a
+ * successful refund or cancellation. Callers record the outcome and move on.
+ * SMS/MSG91 are gone — every customer message is an approved WhatsApp template.
  */
 
 export interface NotificationOutcome {
@@ -15,13 +18,10 @@ export interface NotificationOutcome {
   provider: string;
 }
 
-function inrLabel(minor: number): string {
-  return `Rs${(minor / 100).toLocaleString('en-IN')}`;
-}
-
 /**
- * Sends a cancellation / refund sms to the order's mobile. `refundText` is
- * empty when no refund applies (e.g. a pending/unpaid order).
+ * Enqueues the cancellation/refund WhatsApp message for an order. `refundText`
+ * is accepted for backwards compatibility with the admin route but the exact
+ * refund amount is recomputed from the order itself.
  */
 export async function notifyOrderCancellation(input: {
   mobile: string;
@@ -29,22 +29,38 @@ export async function notifyOrderCancellation(input: {
   reason: string;
   refundText: string;
 }): Promise<NotificationOutcome> {
-  const message = [
-    `Guddi Silai: aapka order ${input.orderNumber} cancel ho gaya hai.`,
-    input.reason ? `Reason: ${input.reason}` : '',
-    input.refundText ? `Paisa ${input.refundText} wapas kiya ja raha hai.` : 'Koi payment pending nahi thi.',
-    'Sawaal ke liye hamari customer care se sampark karein.',
-  ].filter(Boolean).join(' ');
-
-  const provider = getSmsProvider();
-  try {
-    await provider.sendMessage(input.mobile, message);
-    return { ok: true, message: `SMS bheja: ${message.slice(0, 120)}`, provider: provider.name };
-  } catch (err) {
-    const reason = (err as Error).message?.slice(0, 200) ?? 'unknown';
-    logger.warn({ err: (err as Error).message, mobile: maskMobile(input.mobile), orderNumber: input.orderNumber }, 'cancellation sms failed');
-    return { ok: false, message: `SMS fail: ${reason}`, provider: provider.name };
+  const order = await Order.findOne({ orderNumber: input.orderNumber }).exec();
+  if (!order) {
+    logger.warn({ orderNumber: input.orderNumber }, 'cancellation notify: order not found');
+    return { ok: false, message: 'Order nahi mila — notification skip.', provider: 'whatsapp' };
   }
+
+  const paymentStatus = order.payment?.status;
+  const refundMinor =
+    paymentStatus === 'PAID'
+      ? order.amounts?.totalMinor ?? 0
+      : paymentStatus === 'COD_ADVANCE_PAID'
+        ? order.amounts?.codAdvanceMinor ?? 0
+        : 0;
+
+  const outcome = await notifyOrderEvent(order, 'ORDER_CANCELLED', { refundMinor });
+
+  if (outcome.ok) {
+    return {
+      ok: true,
+      message: 'WhatsApp cancellation message queue mein daal diya gaya hai.',
+      provider: 'whatsapp',
+    };
+  }
+  logger.warn(
+    { orderNumber: input.orderNumber, reason: outcome.reason },
+    'cancellation whatsapp notify skipped',
+  );
+  return {
+    ok: false,
+    message: `WhatsApp skip: ${outcome.reason ?? 'unknown'}`,
+    provider: 'whatsapp',
+  };
 }
 
 export { maskMobile };

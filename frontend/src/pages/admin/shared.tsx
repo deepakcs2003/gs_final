@@ -171,8 +171,8 @@ const statusTones: Record<string, string> = {
   REFUNDED: 'bg-blue-100 text-blue-700',
 };
 
-export function Badge({ label }: { label: string }) {
-  return <span className={clsx('rounded-full px-2 py-1 text-[11px] font-bold whitespace-nowrap', statusTones[label] ?? 'bg-maroon-50 text-maroon-700')}>{label.replace(/_/g, ' ')}</span>;
+export function Badge({ label, tone }: { label: string; tone?: string }) {
+  return <span className={clsx('rounded-full px-2 py-1 text-[11px] font-bold whitespace-nowrap', tone ?? statusTones[label] ?? 'bg-maroon-50 text-maroon-700')}>{label.replace(/_/g, ' ')}</span>;
 }
 
 /* -------------------------------------------------------------------------- */

@@ -13,11 +13,11 @@ if (!imageUrl) {
   process.exit(1);
 }
 
-console.log('model:', env.QWEN_MODEL || 'qwen/qwen3.8-27b (default)');
-console.log('base url:', env.GROQ_BASE_URL);
-console.log('qwen configured:', integrations.qwen);
+console.log('provider:', env.GEMINI_API_KEY ? 'Gemini (free tier)' : env.GROQ_API_KEY ? 'Groq' : '(none set)');
+console.log('model:', env.GEMINI_API_KEY ? env.GEMINI_MODEL : env.QWEN_MODEL || 'qwen/qwen3.8-27b (default)');
+console.log('AI configured:', integrations.qwen);
 
-if (integrations.qwen) {
+if (integrations.qwen && !env.GEMINI_API_KEY) {
   try {
     const response = await fetch(`${env.GROQ_BASE_URL}/models`, {
       headers: { Authorization: `Bearer ${env.GROQ_API_KEY}` },

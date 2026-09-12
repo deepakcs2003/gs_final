@@ -19,6 +19,8 @@ import measurementsRouter from './routes/measurements.js';
 import ordersRouter from './routes/orders.js';
 import paymentsRouter from './routes/payments.js';
 import webhooksRouter from './routes/webhooks.js';
+import waWebhookRouter from './routes/waWebhook.js';
+import whatsappRouter from './routes/whatsapp.js';
 import miscRouter from './routes/misc.js';
 import adminRouter from './routes/admin.js';
 
@@ -102,6 +104,18 @@ export function createApp(): Express {
   app.use('/api/webhooks', express.raw({ type: '*/*', limit: '512kb' }));
   app.use('/api/webhooks', webhooksRouter);
 
+  /**
+   * WhatsApp delivery-status webhook gets the same raw-bytes treatment: the
+   * X-Hub-Signature-256 HMAC is computed over the exact request body, so the
+   * JSON parser must not touch it first. No cookies, no CSRF — Meta signs.
+   * Canonical URL: /api/whatsapp/webhook (older /api/webhooks/whatsapp still
+   * works — both hit the same handler).
+   */
+  app.use('/api/whatsapp/webhook', express.raw({ type: '*/*', limit: '512kb' }));
+  app.use('/api/whatsapp/webhook', waWebhookRouter);
+  app.use('/api/webhooks/whatsapp', express.raw({ type: '*/*', limit: '512kb' }));
+  app.use('/api/webhooks/whatsapp', waWebhookRouter);
+
   // 256kb is generous for a cart or an order and small enough that a flood of
   // large bodies cannot exhaust memory.
   app.use(express.json({ limit: '256kb' }));
@@ -116,6 +130,7 @@ export function createApp(): Express {
 
   app.use('/api/auth', authRouter);
   app.use('/api/admin', adminRouter);
+  app.use('/api/whatsapp', whatsappRouter);
   app.use('/api/cart', cartRouter);
   app.use('/api/measurements', measurementsRouter);
   app.use('/api/orders', ordersRouter);

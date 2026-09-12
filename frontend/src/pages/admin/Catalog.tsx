@@ -390,7 +390,7 @@ function QwenPicker({ endpoint, imageUrl, apply, hint }: { endpoint: string; ima
       setLastGen(res.suggestion);
       setMsg({ ok: true, text: 'Details ready — Save se pehle review karein.' });
     } catch (err) {
-      setMsg({ ok: false, text: err instanceof ApiError ? err.message : 'Qwen se generate nahi ho paya.' });
+      setMsg({ ok: false, text: err instanceof ApiError ? err.message : 'AI se generate nahi ho paya.' });
     } finally {
       setBusy(false);
     }
@@ -399,7 +399,7 @@ function QwenPicker({ endpoint, imageUrl, apply, hint }: { endpoint: string; ima
   return (
     <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-maroon-200 bg-maroon-50/40 p-3">
       <BtnPrimary type="button" onClick={() => void run()} disabled={busy || !imageUrl}>
-        <Sparkles size={16} />{busy ? 'Analyzing image...' : 'Generate with Qwen'}
+        <Sparkles size={16} />{busy ? 'Analyzing image...' : 'AI se analyse karein'}
       </BtnPrimary>
       {msg ? <span className={`text-xs font-semibold ${msg.ok ? 'text-leaf' : 'text-alert'}`}>{msg.text}</span> : null}
       {hint ? <span className="text-xs text-ink-muted">{hint}</span> : null}
@@ -445,7 +445,7 @@ function FabricForm({ form, setForm, palette }: { form: Record<string, unknown>;
           if (patch.name && isEmptyValue(form.slug)) patch.slug = slugifyField(patch.name as string);
           set(patch);
         }}
-        hint="Sirf khali (ya last Qwen) fields auto-fill honge." />
+        hint="Sirf khali (ya last AI) fields auto-fill honge." />
     </Field>
     <FormField label="Embroidery options"><StringListEditor values={form.embroidery as string[]} onChange={(embroidery) => set({ embroidery })} placeholder="Add embroidery..." /></FormField>
     <FormField label="Display order"><TextInput type="number" min={0} value={form.order as number} onChange={(e) => set({ order: Number(e.target.value) })} /></FormField>
@@ -483,7 +483,7 @@ function LaceForm({ form, setForm, palette }: { form: Record<string, unknown>; s
           if (patch.name && isEmptyValue(form.slug)) patch.slug = slugifyField(patch.name as string);
           set(patch);
         }}
-        hint="Sirf khali (ya last Qwen) fields auto-fill honge." />
+        hint="Sirf khali (ya last AI) fields auto-fill honge." />
     </Field>
     <FormField label="Display order"><TextInput type="number" min={0} value={form.order as number} onChange={(e) => set({ order: Number(e.target.value) })} /></FormField>
     <FormField label="Stock status"><Toggle label="In stock" checked={Boolean(form.inStock)} onChange={(inStock) => set({ inStock })} /></FormField>
@@ -520,7 +520,7 @@ function LatkanForm({ form, setForm, palette }: { form: Record<string, unknown>;
           if (patch.name && isEmptyValue(form.slug)) patch.slug = slugifyField(patch.name as string);
           set(patch);
         }}
-        hint="Sirf khali (ya last Qwen) fields auto-fill honge." />
+        hint="Sirf khali (ya last AI) fields auto-fill honge." />
     </Field>
     <FormField label="Display order"><TextInput type="number" min={0} value={form.order as number} onChange={(e) => set({ order: Number(e.target.value) })} /></FormField>
     <FormField label="Stock status"><Toggle label="In stock" checked={Boolean(form.inStock)} onChange={(inStock) => set({ inStock })} /></FormField>

@@ -49,10 +49,26 @@ const schema = z
     CLOUDINARY_API_SECRET: z.string().default(''),
     CLOUDINARY_UPLOAD_FOLDER: z.string().default('guddi-silai'),
 
-    SMS_PROVIDER: z.enum(['console', 'msg91']).default('console'),
-    MSG91_AUTH_KEY: z.string().default(''),
-    MSG91_SENDER_ID: z.string().default('GUDDIS'),
-    MSG91_OTP_TEMPLATE_ID: z.string().default(''),
+    // WhatsApp Business Cloud API — direct Meta integration (no third-party
+    // BSP). OTPs, order notifications and campaigns are delivered here.
+    //
+    // Credentials are MODE-SCOPED: test and production each carry their own
+    // phone number id / business account id / access token, and the active one
+    // is selected by WHATSAPP_MODE (default "test"). There is deliberately NO
+    // fallback from production credentials to test credentials.
+    WHATSAPP_ENABLED: z.string().default('true'),
+    WHATSAPP_MODE: z.enum(['test', 'production']).default('test'),
+    WHATSAPP_TEST_PHONE_NUMBER_ID: z.string().default(''),
+    WHATSAPP_TEST_BUSINESS_ACCOUNT_ID: z.string().default(''),
+    WHATSAPP_TEST_ACCESS_TOKEN: z.string().default(''),
+    WHATSAPP_PRODUCTION_PHONE_NUMBER_ID: z.string().default(''),
+    WHATSAPP_PRODUCTION_BUSINESS_ACCOUNT_ID: z.string().default(''),
+    WHATSAPP_PRODUCTION_ACCESS_TOKEN: z.string().default(''),
+    WHATSAPP_VERIFY_TOKEN: z.string().default(''),
+    WHATSAPP_APP_SECRET: z.string().default(''),
+    // Comma-separated Meta "test" numbers allowed while WHATSAPP_MODE=test.
+    WHATSAPP_TEST_NUMBERS: z.string().default(''),
+    WHATSAPP_API_VERSION: z.string().default('v25.0'),
 
     SHIPROCKET_EMAIL: z.string().default(''),
     SHIPROCKET_PASSWORD: z.string().default(''),
@@ -63,6 +79,9 @@ const schema = z
     SHIPROCKET_MOCK: z.string().default(''),
 
     GOOGLE_CLIENT_ID: z.string().default(''),
+    // Comma-separated Google emails that become SUPER_ADMIN automatically when
+    // they sign in with Google. e.g. "guddi7709894512@gmail.com"
+    GOOGLE_ADMIN_EMAILS: z.string().default(''),
 
     // Groq API key — used only server-side for the admin "Generate with Qwen"
     // product helper. Never exposed to the browser.
@@ -72,6 +91,16 @@ const schema = z
     QWEN_MODEL: z.string().default(''),
     // Official Groq OpenAI-compatible base URL (the default is fine).
     GROQ_BASE_URL: z.string().url().default('https://api.groq.com/openai/v1'),
+
+    // Google Gemini free tier — the PRIMARY vision provider for the admin
+    // "Generate with Qwen" helper (free, cloud-hosted, no server RAM needed).
+    // Give GEMINI_API_KEY from https://aistudio.google.com/apikey. If it's set,
+    // Gemini is used; otherwise the backend falls back to Groq.
+    GEMINI_API_KEY: z.string().default(''),
+    // Free-tier model. gemini-2.5-flash = best quality; gemini-2.5-flash-lite
+    // has much higher free daily limits. Both see up to 8 images per request.
+    GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
+    GEMINI_BASE_URL: z.string().url().default('https://generativelanguage.googleapis.com/v1beta'),
 
     WHATSAPP_NUMBER: z.string().regex(/^\d{10,15}$/, 'digits only, with country code').default('919999999999'),
     CALL_NUMBER: z.string().regex(/^\d{10,15}$/, 'digits only, with country code').default('919999999999'),
@@ -131,12 +160,50 @@ const schema = z
         message: 'must contain only the public production origins (no localhost)',
       });
     }
-    if (cfg.SMS_PROVIDER === 'console') {
+    // WhatsApp is the single OTP + notification channel. Production must
+    // actually be configured, and must be talking to live numbers (no test
+    // mode — otherwise real customers could never receive an OTP or an order
+    // update). That is the deliberate TEST → PRODUCTION switch.
+    if (!cfg.WHATSAPP_ENABLED || cfg.WHATSAPP_ENABLED.toLowerCase() === 'false') {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['SMS_PROVIDER'],
-        message: 'cannot be "console" in production — OTPs would never be delivered',
+        path: ['WHATSAPP_ENABLED'],
+        message: 'WhatsApp is the OTP + notification channel and must be enabled in production',
       });
+    }
+    if (cfg.WHATSAPP_MODE !== 'production') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['WHATSAPP_MODE'],
+        message: 'must be "production" in production — test mode only messages Meta test numbers',
+      });
+    }
+    // Production mode NEVER falls back to test credentials. If production
+    // credentials are missing, name the exact variables so the operator knows
+    // what to fill in.
+    if (cfg.WHATSAPP_MODE === 'production') {
+      const productionRequired: Array<[string, string]> = [
+        ['WHATSAPP_PRODUCTION_PHONE_NUMBER_ID', cfg.WHATSAPP_PRODUCTION_PHONE_NUMBER_ID],
+        ['WHATSAPP_PRODUCTION_BUSINESS_ACCOUNT_ID', cfg.WHATSAPP_PRODUCTION_BUSINESS_ACCOUNT_ID],
+        ['WHATSAPP_PRODUCTION_ACCESS_TOKEN', cfg.WHATSAPP_PRODUCTION_ACCESS_TOKEN],
+      ];
+      for (const [key, value] of productionRequired) {
+        if (!value) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: 'is required while WHATSAPP_MODE=production — test credentials are never used as a fallback',
+          });
+        }
+      }
+      // Webhook delivery status requires the app secret to verify signatures.
+      if (!cfg.WHATSAPP_APP_SECRET) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['WHATSAPP_APP_SECRET'],
+          message: 'is required in production — the webhook X-Hub-Signature-256 cannot be verified without it',
+        });
+      }
     }
     if (cfg.JWT_SECRET === cfg.CSRF_SECRET) {
       ctx.addIssue({
@@ -175,6 +242,73 @@ export const isDev = env.NODE_ENV === 'development';
 export const shiprocketMock: boolean =
   env.SHIPROCKET_MOCK === 'true' || (env.SHIPROCKET_MOCK !== 'false' && env.NODE_ENV !== 'production');
 
+/* -------------------------------------------------------------------------- */
+/* WhatsApp credential selection (single source of truth)                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The ACTIVE WhatsApp configuration. WHATSAPP_MODE decides which credential
+ * set is used — test or production. There is NO fallback: production mode with
+ * missing production credentials is a boot failure (see superRefine above),
+ * never a silent swap to test numbers.
+ */
+export interface WhatsAppConfig {
+  mode: 'test' | 'production';
+  enabled: boolean;
+  /** Active phone number ID — the TEST or PRODUCTION one, never both. */
+  phoneNumberId: string;
+  /** Active business account ID for the selected mode. */
+  businessAccountId: string;
+  /** Active access token for the selected mode. */
+  accessToken: string;
+  /** Our own secret echoed back on webhook GET verification. */
+  verifyToken: string;
+  /** Meta app secret — HMAC key for webhook POST signature checks. */
+  appSecret: string;
+  /** Graph API version, e.g. "v25.0". */
+  apiVersion: string;
+  /** Numbers reachable while mode = test (empty = rely on Meta's allow-list). */
+  testNumbers: string[];
+  /** True when the active mode has enough credentials to call the API. */
+  configured: boolean;
+}
+
+const waMode = env.WHATSAPP_MODE;
+const activeCredentials =
+  waMode === 'production'
+    ? {
+        phoneNumberId: env.WHATSAPP_PRODUCTION_PHONE_NUMBER_ID,
+        businessAccountId: env.WHATSAPP_PRODUCTION_BUSINESS_ACCOUNT_ID,
+        accessToken: env.WHATSAPP_PRODUCTION_ACCESS_TOKEN,
+      }
+    : {
+        phoneNumberId: env.WHATSAPP_TEST_PHONE_NUMBER_ID,
+        businessAccountId: env.WHATSAPP_TEST_BUSINESS_ACCOUNT_ID,
+        accessToken: env.WHATSAPP_TEST_ACCESS_TOKEN,
+      };
+const waEnabled = env.WHATSAPP_ENABLED.trim().toLowerCase() !== 'false';
+
+/** Active WhatsApp configuration — the only object the client/services read. */
+export const whatsapp: WhatsAppConfig = {
+  mode: waMode,
+  enabled: waEnabled,
+  phoneNumberId: activeCredentials.phoneNumberId,
+  businessAccountId: activeCredentials.businessAccountId,
+  accessToken: activeCredentials.accessToken,
+  verifyToken: env.WHATSAPP_VERIFY_TOKEN,
+  appSecret: env.WHATSAPP_APP_SECRET,
+  apiVersion: env.WHATSAPP_API_VERSION,
+  testNumbers: env.WHATSAPP_TEST_NUMBERS.split(',')
+    .map((n) => n.trim())
+    .filter(Boolean),
+  configured: Boolean(activeCredentials.phoneNumberId && activeCredentials.accessToken),
+};
+
+/** Google emails that get SUPER_ADMIN on sign-in (lowercased, comma-separated). */
+export const googleAdminEmails: string[] = env.GOOGLE_ADMIN_EMAILS.split(',')
+  .map((e) => e.trim().toLowerCase())
+  .filter(Boolean);
+
 /** True when the integration has enough configuration to be usable. */
 export const integrations = {
   razorpay: Boolean(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET),
@@ -182,6 +316,6 @@ export const integrations = {
   cloudinary: Boolean(env.CLOUDINARY_CLOUD_NAME && env.CLOUDINARY_API_KEY && env.CLOUDINARY_API_SECRET),
   shiprocket: Boolean(env.SHIPROCKET_EMAIL && env.SHIPROCKET_PASSWORD),
   google: Boolean(env.GOOGLE_CLIENT_ID),
-  qwen: Boolean(env.GROQ_API_KEY),
-  msg91: Boolean(env.MSG91_AUTH_KEY && env.MSG91_OTP_TEMPLATE_ID),
+  qwen: Boolean(env.GROQ_API_KEY || env.GEMINI_API_KEY),
+  whatsapp: whatsapp.enabled && whatsapp.configured,
 } as const;

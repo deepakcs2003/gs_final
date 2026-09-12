@@ -285,6 +285,16 @@ export interface QuotedLine {
   stockLeft: number | null;
 }
 
+export interface AvailableCoupon {
+  code: string;
+  description: string;
+  type: 'PERCENT' | 'FIXED';
+  valueInr: number;
+  minOrderInr: number;
+  discountMinor: number;
+  restrictedToProducts: boolean;
+}
+
 export interface CartQuote {
   currency: Currency;
   fxRateInr: number;

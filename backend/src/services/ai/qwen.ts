@@ -1,27 +1,62 @@
 import { z } from 'zod';
-import { env, integrations } from '../../config/env.js';
+import { env } from '../../config/env.js';
 import { logger } from '../../utils/logger.js';
 import { serviceUnavailable } from '../../utils/errors.js';
 
 /**
  * "Generate with Qwen" — auto-fills the EXISTING admin Add-Product fields
- * from the selected product image(s). Qwen-VL is served through the Groq API
- * (hosted inference), keeping the existing admin workflow unchanged.
+ * from the selected product image(s). A multimodal LLM analyses the photo set,
+ * keeping the existing admin workflow unchanged.
  *
  * Responsibility is deliberately narrow:
  *  - only fields that can be read off a photograph are returned;
  *  - business numbers (price, stock, sizes, SKU, designId…) are NEVER guessed;
  *  - the API key lives here, on the backend, and never reaches the browser.
  *
- * Integration: official Groq API "OpenAI-compatible" chat completions endpoint
- * (https://console.groq.com/docs). Defaults to the official
- * https://api.groq.com/openai/v1 base and can be overridden with GROQ_BASE_URL.
- * The vision model defaults to qwen/qwen3.8-27b and can be overridden with
- * QWEN_MODEL.
+ * Integration is provider-agnostic, picked once per request:
+ *  - PRIMARY: Google Gemini free tier (`GEMINI_API_KEY`). Cloud-hosted, free,
+ *    no server RAM required, strong Indian-ethnic-wear vision, up to 8 images
+ *    per request. Model set with `GEMINI_MODEL` (gemini-2.5-flash default;
+ *    gemini-2.5-flash-lite for ~100x higher free daily limits).
+ *  - FALLBACK: Groq (`GROQ_API_KEY`) serving qwen/qwen3.8-27b, OpenAI-compatible.
+ * Gemini wins when its key is present; otherwise Groq is used if set.
  */
 
 const QWEN_MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const QWEN_TIMEOUT_MS = 30_000;
+
+/** Pauses for the given milliseconds — lets a per-minute rate limit clear. */
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+interface ProviderHttpError extends Error {
+  /** HTTP-like status classified by the provider adapter. */
+  status?: number;
+  /**
+   * true  → per-minute rate limit, worth a short backoff and retry;
+   * false → daily quota / exhausted resources, retrying would just waste time.
+   */
+  retryable?: boolean;
+}
+
+/** 429 retries with backoff. Daily-quota 429s (retryable=false) are never retried. */
+const RATE_LIMIT_BACKOFF_MS = [1_500, 3_000, 6_000];
+
+async function chatWithRetry(model: string, prompt: string, assets: ImageAsset[], provider: AiProvider): Promise<ChatResult> {
+  let lastError: ProviderHttpError | undefined;
+  for (let i = 0; i < RATE_LIMIT_BACKOFF_MS.length; i += 1) {
+    try {
+      return await chatFor(model, prompt, assets, provider);
+    } catch (err) {
+      const httpErr = err as ProviderHttpError;
+      lastError = httpErr;
+      const status = qwenErrorStatus(err);
+      if (status !== 429 || httpErr.retryable === false) throw err;
+      if (i < RATE_LIMIT_BACKOFF_MS.length - 1) await sleep(RATE_LIMIT_BACKOFF_MS[i] ?? 1_500);
+    }
+  }
+  if (lastError) throw lastError;
+  throw new Error('rate limit retries exhausted');
+}
 
 /**
  * The model sometimes returns money as a string ("₹1,499", "1499") — normalise
@@ -56,7 +91,9 @@ export const qwenSuggestionSchema = z
       .array(
         z.object({
           name: z.string().trim().min(1).max(40),
-          hex: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+          // Tolerated loosely on purpose — qwen often returns hex without "#";
+          // normalizeHex() canonicalises to #rrggbb or drops the colour later.
+          hex: z.string().max(20),
         }),
       )
       // Loosely capped for model tolerance; the frontend applies only index 0 —
@@ -101,7 +138,8 @@ STRICT RULES — you have no business data, so NEVER invent it:
 const colorSpecSchema = z.object({ name: z.string().trim().min(1).max(40), hex: z.string() });
 
 /** Accepts #abc / #aabbcc / aabbcc and normalises to #rrggbb lowercase. */
-function normalizeHex(raw: string): string | null {
+function normalizeHex(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
   const cleaned = raw.trim().replace(/^#/, '').toLowerCase();
   if (!/^[0-9a-f]{3,6}$/.test(cleaned)) return null;
   if (cleaned.length === 3) return `#${cleaned.split('').map((c) => c + c).join('')}`;
@@ -174,8 +212,82 @@ Look at the attached LATKAN photograph. Latkans are decorative danglers/tassels 
 
 STRICT RULES — keep only visible, factual observations. No invented specs, no promotional fluff, no markdown, no code fences — pure JSON.`;
 
-/** Validate/fetch the remote image (still public — Qwen-VL reads it via URL). */
-async function fetchImageBytes(imageUrl: string): Promise<{ mimeType: string }> {
+/**
+ * Turns model output into schema-tolerable shape. Small vision models (especially
+ * qwen via Groq) routinely return `tags`/`embroidery`/`keywords` as a single
+ * comma string, hex without "#", oversized text, or numbers where text is
+ * expected — each of those used to fail schema validation with a generic
+ * "sahi format mein nahi tha". This repairs the common cases before validation.
+ */
+const TEXT_LIMITS: Record<string, number> = {
+  name: 80,
+  description: 2000,
+  careInstructions: 600,
+  material: 40,
+  colorName: 40,
+};
+
+function toCleanStringArray(value: unknown, max: number): string[] {
+  const raw = Array.isArray(value)
+    ? value
+    : typeof value === 'string' && value.trim()
+      ? [value]
+      : [];
+  return raw
+    .map((v) => (typeof v === 'string' ? v : v && typeof v !== 'object' ? String(v) : ''))
+    .map((s) => s.trim().slice(0, 60))
+    .filter((s) => s.length > 0)
+    .slice(0, max);
+}
+
+function repairSuggestion(parsed: unknown): Record<string, unknown> {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+  const out: Record<string, unknown> = { ...(parsed as Record<string, unknown>) };
+
+  for (const [key, limit] of Object.entries(TEXT_LIMITS)) {
+    const v = out[key];
+    if (typeof v === 'string') {
+      const s = v.trim();
+      out[key] = s.length > limit ? s.slice(0, limit) : s;
+    } else if (typeof v === 'number' || typeof v === 'boolean') {
+      out[key] = String(v);
+    }
+  }
+
+  if (typeof out.tags !== 'undefined') out.tags = toCleanStringArray(out.tags, 10);
+  if (typeof out.embroidery !== 'undefined') out.embroidery = toCleanStringArray(out.embroidery, 8);
+  if (typeof out.categoryNames !== 'undefined') out.categoryNames = toCleanStringArray(out.categoryNames, 5);
+
+  if (typeof out.colors !== 'undefined' && out.colors !== null) {
+    const rawColors = Array.isArray(out.colors) ? out.colors : [out.colors];
+    out.colors = rawColors
+      .map((c): { name: string; hex: string } | null => {
+        if (!c || typeof c !== 'object') return null;
+        const color = c as Record<string, unknown>;
+        const name = typeof color.name === 'string' ? color.name.trim() : String(color.name ?? '').trim();
+        const hex = typeof color.hex === 'string' ? color.hex.trim() : String(color.hex ?? '').trim();
+        return name ? { name: name.slice(0, 40), hex: hex.slice(0, 20) } : null;
+      })
+      .filter((c): c is { name: string; hex: string } => Boolean(c))
+      .slice(0, 3);
+  }
+
+  if (out.seo && typeof out.seo === 'object' && !Array.isArray(out.seo)) {
+    const seo = out.seo as Record<string, unknown>;
+    const title = typeof seo.title === 'string' ? seo.title.trim() : String(seo.title ?? '').trim();
+    const description = typeof seo.description === 'string' ? seo.description.trim() : String(seo.description ?? '').trim();
+    out.seo = {
+      title: title ? title.slice(0, 70) : null,
+      description: description ? description.slice(0, 180) : null,
+      keywords: typeof seo.keywords === 'undefined' ? undefined : toCleanStringArray(seo.keywords, 10),
+    };
+  }
+
+  return out;
+}
+
+/** Validate/fetch a remote image; Gemini consumes it as base64 inline data. */
+async function fetchImageBytes(imageUrl: string): Promise<{ mimeType: string; b64: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), QWEN_TIMEOUT_MS);
   try {
@@ -184,22 +296,30 @@ async function fetchImageBytes(imageUrl: string): Promise<{ mimeType: string }> 
     const contentType = response.headers.get('content-type') ?? 'image/jpeg';
     if (!contentType.startsWith('image/')) throw new Error(`not an image: ${contentType}`);
 
-    const blob = await response.blob();
-    if (blob.size === 0 || blob.size > QWEN_MAX_IMAGE_BYTES) {
-      throw new Error(`image size ${blob.size} out of range`);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length === 0 || bytes.length > QWEN_MAX_IMAGE_BYTES) {
+      throw new Error(`image size ${bytes.length} out of range`);
     }
 
-    return { mimeType: (contentType.split(';')[0] ?? '').trim() || 'image/jpeg' };
+    return {
+      mimeType: (contentType.split(';')[0] ?? '').trim() || 'image/jpeg',
+      b64: bytes.toString('base64'),
+    };
   } finally {
     clearTimeout(timer);
   }
 }
 
+interface ImageAsset {
+  url: string;
+  mimeType: string;
+  b64: string;
+}
+
 /** Probe every image URL up front so a bad URL fails fast with one friendly error. */
-async function fetchImageUrls(imageUrls: string[]): Promise<string[]> {
+async function fetchImageAssets(imageUrls: string[]): Promise<ImageAsset[]> {
   const urls = [...imageUrls].slice(0, 8);
-  await Promise.all(urls.map((url) => fetchImageBytes(url)));
-  return urls;
+  return Promise.all(urls.map(async (url) => ({ url, ...(await fetchImageBytes(url)) })));
 }
 
 /** Home-grown JSON extraction — models sometimes wrap the object in fences/text. */
@@ -236,7 +356,7 @@ interface ChatResult {
  * Cloudinary). Non-2xx responses throw an Error carrying the HTTP status so the
  * caller can classify quota/model/key/5xx and retry where it helps.
  */
-async function qwenChat(model: string, prompt: string, imageUrls: string[]): Promise<ChatResult> {
+async function qwenChat(model: string, prompt: string, assets: ImageAsset[]): Promise<ChatResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), QWEN_TIMEOUT_MS);
   try {
@@ -252,8 +372,7 @@ async function qwenChat(model: string, prompt: string, imageUrls: string[]): Pro
           {
             role: 'user',
             content: [
-              { type: 'image_url', image_url: { url: imageUrls[0] } },
-              ...imageUrls.slice(1).map((url) => ({ type: 'image_url', image_url: { url } })),
+              ...assets.map((asset) => ({ type: 'image_url', image_url: { url: asset.url } })),
               { type: 'text', text: prompt },
             ],
           },
@@ -272,8 +391,11 @@ async function qwenChat(model: string, prompt: string, imageUrls: string[]): Pro
       } catch {
         /* non-JSON error body — fall through */
       }
-      const error = new Error(detail || `qwen chat completions failed: HTTP ${response.status}`) as Error & { status?: number };
+      const error = new Error(detail || `qwen chat completions failed: HTTP ${response.status}`) as ProviderHttpError;
       error.status = response.status;
+      // Groq 429s are day- and minute-rate limits together; assume per-minute,
+      // which means a short backoff can clear them (quota flag still recorded).
+      error.retryable = response.status === 429;
       if (detail) logger.warn({ model, status: response.status, detail }, 'qwen: chat completions rejected');
       throw error;
     }
@@ -298,41 +420,181 @@ async function qwenChat(model: string, prompt: string, imageUrls: string[]): Pro
   }
 }
 
-/** Rethrows a Qwen failure as a user-safe AppError, after logging the detail. */
-function throwMappedQwenError(err: unknown, status: number | undefined, model: string): never {
-  const cause = err instanceof Error && err.cause ? String((err.cause as Error).message ?? err.cause) : '';
-  logger.warn(
-    {
-      model,
-      err: { name: err instanceof Error ? err.name : 'Error', message: err instanceof Error ? err.message : String(err), status },
-      cause,
-    },
-    'qwen: chat completions failed',
-  );
-  if (status === 429) {
-    throw serviceUnavailable('Groq quota/rate limit aa gayi — thodi der baad try karein.');
+/**
+ * One call to Google's Gemini generateContent endpoint (free tier). Images go
+ * as base64 `inline_data` parts — the bytes are fetched by the backend, so the
+ * model never needs direct URL access. RPC-style status names are mapped to an
+ * HTTP-like status on the thrown Error so the shared classifier can handle both
+ * providers identically.
+ */
+async function geminiChat(model: string, prompt: string, assets: ImageAsset[]): Promise<ChatResult> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), QWEN_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${env.GEMINI_BASE_URL}/models/${model}:generateContent`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': env.GEMINI_API_KEY,
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              ...assets.map((asset) => ({ inline_data: { mime_type: asset.mimeType, data: asset.b64 } })),
+              { text: prompt },
+            ],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.4,
+          maxOutputTokens: 4096,
+          responseMimeType: 'application/json',
+        },
+      }),
+      signal: controller.signal,
+    });
+
+    const data = (await response.json().catch(() => ({}))) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>;
+      error?: { code?: number; status?: string; message?: string };
+    };
+
+    if (!response.ok || data.error) {
+      const statusName = data.error?.status ?? '';
+      const googleStatusToHttp: Record<string, number> = {
+        RESOURCE_EXHAUSTED: 429,
+        QUOTA_EXCEEDED: 429,
+        RATE_LIMIT_EXCEEDED: 429,
+        PERMISSION_DENIED: 403,
+        UNAUTHENTICATED: 403,
+        API_KEY_INVALID: 403,
+        NOT_FOUND: 404,
+        INVALID_ARGUMENT: 400,
+        INTERNAL: 500,
+        UNAVAILABLE: 503,
+        DEADLINE_EXCEEDED: 504,
+      };
+      const status = googleStatusToHttp[statusName] ?? data.error?.code ?? response.status ?? 500;
+
+      const detail = data.error?.message ?? '';
+      const error = new Error(detail || `gemini generateContent failed: HTTP ${response.status}`) as ProviderHttpError;
+      error.status = status;
+      // RATE_LIMIT_EXCEEDED = per-minute (retryable with backoff);
+      // RESOURCE_EXHAUSTED / QUOTA_EXCEEDED = daily quota — don't wait, fall over.
+      error.retryable = statusName === 'RATE_LIMIT_EXCEEDED';
+      if (detail) logger.warn({ model, status, detail }, 'gemini: generateContent rejected');
+      throw error;
+    }
+
+    const candidate = data.candidates?.[0];
+    const text = (candidate?.content?.parts ?? []).map((part) => part.text ?? '').join('');
+    return { text, finishReason: candidate?.finishReason };
+  } finally {
+    clearTimeout(timer);
   }
-  if (status === 404) {
-    throw serviceUnavailable('Qwen model available nahi hai — Groq console mein model enable karein (qwen/qwen3.8-27b) ya QWEN_MODEL set karein.');
-  }
-  if (status === 401 || status === 403) {
-    throw serviceUnavailable('Groq API key sahi nahi hai — GROQ_API_KEY check karein.');
-  }
-  if (status === 400) {
-    throw serviceUnavailable('Groq request sahi nahi thi ya image accessible nahi — image URL check karein aur dobara try karein.');
-  }
-  if (status !== undefined && status >= 500) {
-    throw serviceUnavailable('Groq server par problem aa gayi — thodi der baad try karein.');
-  }
-  // No HTTP status at all → connection/network failure, blocking, timeout.
-  throw serviceUnavailable('Qwen se connect nahi ho paya — internet/network check karein aur dobara try karein.');
+}
+
+interface AiProvider {
+  kind: 'gemini' | 'groq';
+  name: string;
+  models: string[];
 }
 
 /**
- * Shared Qwen core: fetches the images, loops over model candidates (a 404 on
- * one model falls back to the next, so a key with partial model access still
- * works), parses the JSON and validates it against the caller's schema.
- * All failures become user-safe AppErrors; internal details stay in logs.
+ * Provider order for every request: Gemini (free tier) first, then Groq. When
+ * one provider hit its rate limit / quota, has a bad key or a transient
+ * error, the NEXT provider takes over automatically — a request only fails
+ * when every configured provider has failed.
+ */
+function buildProviders(): AiProvider[] {
+  const list: AiProvider[] = [];
+  if (env.GEMINI_API_KEY) {
+    list.push({ kind: 'gemini', name: 'Gemini (free tier)', models: [env.GEMINI_MODEL.trim() || 'gemini-2.5-flash'] });
+  }
+  if (env.GROQ_API_KEY) {
+    list.push({ kind: 'groq', name: 'Groq', models: candidates });
+  }
+  return list;
+}
+
+/** Routes one vision call through the right provider's transport. */
+function chatFor(model: string, prompt: string, assets: ImageAsset[], provider: AiProvider): Promise<ChatResult> {
+  return provider.kind === 'gemini' ? geminiChat(model, prompt, assets) : qwenChat(model, prompt, assets);
+}
+
+/** Which classes of failure happened — the final user message is built from these per provider. */
+interface FailureFlags {
+  /** Daily quota genuinely exhausted (Gemini RESOURCE_EXHAUSTED). */
+  quota: boolean;
+  /** Per-minute / transient rate limit that survived the internal backoff retries. */
+  rateLimit: boolean;
+  auth: boolean;
+  notFound: boolean;
+  bad: boolean;
+  server: boolean;
+  network: boolean;
+}
+
+function trackFailure(flags: FailureFlags, status: number | undefined, retryable?: boolean): void {
+  if (status === 429) {
+    // retryable === false → daily quota/resources gone; retryable|undefined → per-minute rate limit.
+    if (retryable === false) flags.quota = true;
+    else flags.rateLimit = true;
+  } else if (status === 401 || status === 403) flags.auth = true;
+  else if (status === 404) flags.notFound = true;
+  else if (status === 400) flags.bad = true;
+  else if (status !== undefined && status >= 500) flags.server = true;
+  else flags.network = true;
+}
+
+function describeFlags(f: FailureFlags | undefined): string {
+  if (!f) return 'fail';
+  const bits: string[] = [];
+  if (f.quota) bits.push('daily quota khatam');
+  if (f.rateLimit) bits.push('rate limit (abhi busy)');
+  if (f.auth) bits.push('API key sahi nahi');
+  if (f.notFound) bits.push('model mila nahi');
+  if (f.server) bits.push('server problem');
+  if (f.network) bits.push('network');
+  if (f.bad) bits.push('request galat');
+  return bits.length ? bits.join(', ') : 'fail';
+}
+
+/** User-safe message when no provider could produce a usable answer — truthfully scoped per provider. */
+function finalStatusMessage(providerNames: ReadonlySet<string>, byProvider: ReadonlyMap<string, FailureFlags>): string {
+  const names = [...providerNames];
+
+  const allQuota = names.length > 0 && names.every((name) => byProvider.get(name)?.quota);
+  if (allQuota) {
+    if (names.length === 1) {
+      return names[0] === 'Gemini (free tier)'
+        ? 'Gemini free tier ki daily quota khatam — aaj ke liye AI use nahi hoga. Kal phir chali jayegi.'
+        : 'Groq ki daily quota khatam — kal phir try karein.';
+    }
+    return `Dono AI services (${names.join(' + ')}) ki daily quota khatam — aaj ke liye AI use nahi hoga. Kal phir chali jayegi.`;
+  }
+
+  const allLimits = names.length > 0 && names.every((name) => {
+    const f = byProvider.get(name);
+    return !f || f.quota || f.rateLimit;
+  });
+  if (allLimits) {
+    return 'AI services abhi busy hain (rate limit) — 1-2 minute baad dobara try karein.';
+  }
+
+  const details = names.map((name) => `${name}: ${describeFlags(byProvider.get(name))}`);
+  return `AI ka jawab nahi aaya. ${details.join(' | ')} — dobara try karein.`;
+}
+
+/**
+ * Shared core: fetches the images once, then asks EACH configured vision
+ * provider (Gemini first, then Groq) for JSON and validates it against the
+ * caller's schema. Provider failover is automatic — a rate limit, bad key or
+ * transient error on one provider immediately falls over to the next, so a
+ * second key only gets used when the first needs a break. All failures become
+ * user-safe AppErrors; internal details stay in logs.
  */
 async function generateStructured<T extends Record<string, unknown>>(args: {
   imageUrls: string[];
@@ -340,116 +602,122 @@ async function generateStructured<T extends Record<string, unknown>>(args: {
   schema: z.ZodType<T>;
   nodeName: string;
 }): Promise<T> {
-  if (!integrations.qwen) {
-    throw serviceUnavailable('Qwen abhi set nahi hai — GROQ_API_KEY backend .env mein daalein.');
+  const providers = buildProviders();
+  if (providers.length === 0) {
+    throw serviceUnavailable('AI abhi set nahi hai — GEMINI_API_KEY ya GROQ_API_KEY backend .env mein daalein.');
   }
 
-  let imageUrls: string[];
+  let assets: ImageAsset[];
   try {
-    imageUrls = await fetchImageUrls(args.imageUrls);
+    assets = await fetchImageAssets(args.imageUrls);
   } catch (err) {
-    logger.warn({ err: (err as Error).message }, 'qwen: image could not be fetched');
+    logger.warn({ err: (err as Error).message }, 'ai: image could not be fetched');
     throw serviceUnavailable('Image download nahi hua — URL check karein ya image dobara upload karein.');
   }
-  if (imageUrls.length === 0) {
+  if (assets.length === 0) {
     throw serviceUnavailable('Image download nahi hua — URL check karein ya image dobara upload karein.');
   }
 
-  // Syntax/schema slips and transient 5xx are tolerable: the model gets more
-  // rolls of the dice (more attempts, then the next candidate model) before we
-  // surface a user-safe error. Authoritative failures (bad key, quota, 4xx)
-  // are still surfaced immediately — retrying those only wastes API calls.
-  let responseText = '';
-  let lastFailure: { kind: 'model' | 'parse' | 'schema' | 'status' | 'blocked'; status?: number; reason?: string; preview?: string } | null = null;
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    responseText = '';
-    for (const model of candidates) {
-      try {
-        const result = await qwenChat(model, args.prompt, imageUrls);
-        const finishReason = result.finishReason;
-        // Content filtering returns no text at all — the same model will block
-        // again, so don't burn the remaining attempt roll on it. Surface a
-        // readable reason instead of the misleading "model unavailable" text.
-        if (!result.text.trim() && finishReason && !['stop', 'length'].includes(finishReason)) {
-          lastFailure = { kind: 'blocked', reason: String(finishReason) };
-          responseText = '';
-          break;
-        }
-        if (finishReason === 'length' && result.text.trim()) {
-          logger.warn({ model, node: args.nodeName }, 'qwen: response cut at max_tokens');
-        }
-        responseText = result.text;
-        break;
-      } catch (err) {
-        const status = qwenErrorStatus(err);
-        // 404 = model not accessible with this key — try the next candidate.
-        // 5xx / no status = transient server or network trouble — also try the
-        // next candidate before giving up.
-        if (status === 404 || status === undefined || status >= 500) {
-          lastFailure = { kind: 'status', status };
-          logger.warn({ model, node: args.nodeName, status, err: (err as Error).message }, 'qwen: candidate failed');
-          continue;
-        }
-        // Authoritative (bad key / quota / bad request) — surface it directly.
-        throwMappedQwenError(err, status, model);
-      }
+  const flagsByProvider = new Map<string, FailureFlags>();
+  const requestFailureFlags = (name: string): FailureFlags => {
+    let f = flagsByProvider.get(name);
+    if (!f) {
+      f = { quota: false, rateLimit: false, auth: false, notFound: false, bad: false, server: false, network: false };
+      flagsByProvider.set(name, f);
     }
+    return f;
+  };
+  const attemptedProviders = new Set<string>();
+  let lastFailure: { kind: 'model' | 'parse' | 'schema' | 'status' | 'blocked'; status?: number; reason?: string; preview?: string; provider?: string } | null = null;
 
-    if (responseText && responseText.trim()) {
+  // Several dice rolls per provider, then the next provider, then another
+  // whole attempt — but only when a response came back that just didn't parse.
+  // If a provider hard-fails (quota/key/server), moving on to the next
+  // provider IS the retry.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    let producedText = false;
+    for (const provider of providers) {
+      attemptedProviders.add(provider.name);
+
+      let text = '';
+      let blocked: string | null = null;
+      for (const model of provider.models) {
+        try {
+          const result = await chatWithRetry(model, args.prompt, assets, provider);
+          const finishReason = result.finishReason?.toLowerCase();
+          // Content filtering returns no text at all — the same provider will
+          // block again, so surface it instead of burning more attempts.
+          if (!result.text.trim() && finishReason && !['stop', 'length', 'max_tokens'].includes(finishReason)) {
+            blocked = result.finishReason ?? 'blocked';
+            break;
+          }
+          if (finishReason === 'length' || finishReason === 'max_tokens') {
+            logger.warn({ model, node: args.nodeName }, 'ai: response cut at max_tokens');
+          }
+          text = result.text;
+          break;
+        } catch (err) {
+          const status = qwenErrorStatus(err);
+          const httpErr = err as ProviderHttpError;
+          trackFailure(requestFailureFlags(provider.name), status, httpErr.retryable);
+          lastFailure = { kind: 'status', status, provider: provider.name, reason: err instanceof Error ? err.message : String(err) };
+          logger.warn(
+            { model, provider: provider.name, node: args.nodeName, status, err: err instanceof Error ? err.message : String(err) },
+            'ai: provider call failed',
+          );
+          // Next model, then next provider.
+        }
+      }
+
+      if (blocked) {
+        lastFailure = { kind: 'blocked', reason: blocked, provider: provider.name };
+        break;
+      }
+      if (!text) continue;
+
+      producedText = true;
       let parsed: unknown;
       try {
-        parsed = JSON.parse(extractJson(responseText));
+        parsed = JSON.parse(extractJson(text));
       } catch (err) {
-        const preview = responseText.length > 800 ? `${responseText.slice(0, 800)}…` : responseText;
-        lastFailure = { kind: 'parse', preview };
-        logger.warn({ node: args.nodeName, err: (err as Error).message, preview }, 'qwen: response was not valid JSON');
+        const preview = text.length > 800 ? `${text.slice(0, 800)}…` : text;
+        lastFailure = { kind: 'parse', preview, provider: provider.name };
+        logger.warn({ node: args.nodeName, provider: provider.name, err: (err as Error).message, preview }, 'ai: response was not valid JSON');
         continue;
       }
 
-      const validation = args.schema.safeParse(parsed);
+      const validation = args.schema.safeParse(repairSuggestion(parsed));
       if (validation.success) return validation.data;
-      const preview = responseText.length > 800 ? `${responseText.slice(0, 800)}…` : responseText;
-      lastFailure = { kind: 'schema', preview };
+      const preview = text.length > 800 ? `${text.slice(0, 800)}…` : text;
+      lastFailure = { kind: 'schema', preview, provider: provider.name };
       logger.warn(
-        { node: args.nodeName, issues: validation.error.issues, preview },
-        'qwen: response failed schema validation',
+        { node: args.nodeName, provider: provider.name, issues: validation.error.issues, preview },
+        'ai: response failed schema validation',
       );
-      continue;
+      // Text came back but didn't validate — try the next provider.
     }
 
-    if (!responseText) {
-      lastFailure = { kind: 'model', preview: '' };
-      break;
-    }
-    logger.warn({ node: args.nodeName }, 'qwen: empty response');
-    lastFailure = { kind: 'model', preview: '' };
+    // Harmless-parse failures get another attempt roll; everything else stops
+    // looping because retrying only wastes quota.
+    if (lastFailure && !['parse', 'schema'].includes(lastFailure.kind)) break;
+    if (!producedText && lastFailure?.kind === 'status') break;
   }
 
   if (lastFailure?.kind === 'blocked') {
     throw serviceUnavailable(
-      'Qwen (Groq) ne image se details nahi nikaali (content filter). Alag angle/photo try karein.',
+      `${lastFailure.provider ?? 'AI'} ne image se details nahi nikaali (content filter). Alag angle/photo try karein.`,
     );
   }
-  if (lastFailure?.kind === 'status') {
-    if (lastFailure.status !== undefined && lastFailure.status >= 500) {
-      throw serviceUnavailable('Groq server par problem aa gayi — thodi der baad try karein.');
-    }
-    throw serviceUnavailable('Qwen se connect nahi ho paya — internet/network check karein aur dobara try karein.');
-  }
-  if (lastFailure?.kind === 'model') {
-    if (!responseText) {
-      throw serviceUnavailable('Qwen model available nahi hai — Groq console mein model enable karein (qwen/qwen3.8-27b) ya QWEN_MODEL set karein.');
-    }
-    throw serviceUnavailable('Qwen ka jawab khaali tha — dobara try karein.');
-  }
   if (lastFailure?.kind === 'parse') {
-    throw serviceUnavailable('Qwen response samajh nahi aaya — dobara try karein.');
+    throw serviceUnavailable(`${lastFailure.provider ?? 'AI'} ka response samajh nahi aaya — dobara try karein.`);
   }
   if (lastFailure?.kind === 'schema') {
-    throw serviceUnavailable('Qwen response sahi format mein nahi tha — dobara try karein.');
+    throw serviceUnavailable(`${lastFailure.provider ?? 'AI'} ka response sahi format mein nahi tha — dobara try karein.`);
   }
-  throw serviceUnavailable('Qwen ka jawab sahi nahi aaya — dobara try karein.');
+  if (lastFailure?.kind === 'status') {
+    throw serviceUnavailable(finalStatusMessage(attemptedProviders, flagsByProvider));
+  }
+  throw serviceUnavailable(`${[...attemptedProviders].join(' + ') || 'AI'} ka jawab sahi nahi aaya — dobara try karein.`);
 }
 
 /** Explicit QWEN_MODEL wins; otherwise the configured Qwen-VL served by Groq. */

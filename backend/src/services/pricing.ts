@@ -451,6 +451,77 @@ async function applyCoupon(
   return { discountMinor, couponCode: code, couponError: '' };
 }
 
+export interface EligibleCoupon {
+  code: string;
+  description: string;
+  type: 'PERCENT' | 'FIXED';
+  /** Whole rupees, before currency conversion — shown as-is in the UI. */
+  valueInr: number;
+  minOrderInr: number;
+  /** Estimated discount on this cart, in the order's minor unit. */
+  discountMinor: number;
+  /** False = applies to the whole cart (all products). */
+  restrictedToProducts: boolean;
+}
+
+/**
+ * All coupons a cart qualifies for right now, each with its estimated discount.
+ * Exactly the same checks as `applyCoupon`, but in a list instead of for one
+ * code — the cart page shows these so a customer knows what they're missing.
+ */
+export async function listEligibleCoupons(
+  lines: QuotedLine[],
+  subtotalMinor: number,
+  currency: Currency,
+  fxRateInr: number,
+): Promise<EligibleCoupon[]> {
+  const now = new Date();
+  const coupons = await Coupon.find({ isActive: true }).lean();
+
+  const eligible: EligibleCoupon[] = [];
+
+  for (const coupon of coupons) {
+    if (coupon.startsAt && coupon.startsAt > now) continue;
+    if (coupon.expiresAt && coupon.expiresAt < now) continue;
+    if (coupon.usageLimit > 0 && coupon.usedCount >= coupon.usageLimit) continue;
+
+    const restricted = (coupon.products?.length ?? 0) > 0;
+    const eligibleMinor = restricted
+      ? lines
+          .filter((l) => coupon.products.some((id) => String(id) === l.productId))
+          .reduce((sum, l) => sum + l.lineTotalMinor, 0)
+      : subtotalMinor;
+
+    if (eligibleMinor === 0) continue;
+
+    const minOrderMinor = toMinor(coupon.minOrderInr ?? 0, currency, fxRateInr);
+    if (subtotalMinor < minOrderMinor) continue;
+
+    let discountMinor =
+      coupon.type === 'PERCENT'
+        ? Math.floor((eligibleMinor * Math.min(coupon.value, 100)) / 100)
+        : toMinor(coupon.value, currency, fxRateInr);
+
+    const capMinor = toMinor(coupon.maxDiscountInr ?? 0, currency, fxRateInr);
+    if (capMinor > 0) discountMinor = Math.min(discountMinor, capMinor);
+    discountMinor = Math.min(discountMinor, eligibleMinor);
+
+    if (discountMinor <= 0) continue;
+
+    eligible.push({
+      code: coupon.code,
+      description: coupon.description ?? '',
+      type: coupon.type,
+      valueInr: coupon.value,
+      minOrderInr: coupon.minOrderInr ?? 0,
+      discountMinor,
+      restrictedToProducts: restricted,
+    });
+  }
+
+  return eligible.sort((a, b) => b.discountMinor - a.discountMinor);
+}
+
 function emptyLine(line: CartLineInput, quantity: number, issues: string[]): QuotedLine {
   return {
     key: line.key,

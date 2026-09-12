@@ -31,6 +31,7 @@ const emptyProduct = (category = ''): AdminProduct => ({
 });
 
 /** What the backend's Qwen helper is allowed to fill — a subset of AdminProduct. */
+/** What the backend's Qwen helper is allowed to fill — a subset of AdminProduct. */
 interface QwenSuggestion {
   name: string | null;
   description: string | null;
@@ -44,12 +45,19 @@ interface QwenSuggestion {
   categoryIds?: string[];
 }
 
+/** Coupon codes this product can be mapped to (from the Coupons & offers tab). */
+interface AdminCoupon {
+  _id: string; code: string; description: string; products: string[]; isActive: boolean;
+}
+
 export function ProductsModule({ initialProductId }: { initialProductId?: string } = {}) {
   const [items, setItems] = useState<AdminProduct[]>([]);
   const [categories, setCategories] = useState<AdminCategory[]>([]);
   const [palette, setPalette] = useState<PaletteColor[]>([]);
+  const [coupons, setCoupons] = useState<AdminCoupon[]>([]);
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState('ALL');
   const [form, setForm] = useState<AdminProduct | null>(null);
   const [newEditor, setNewEditor] = useState(false);
   const [busy, setBusy] = useState('');
@@ -63,14 +71,16 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
   const load = async () => {
     setError('');
     try {
-      const [productData, categoryData, colorData] = await Promise.all([
+      const [productData, categoryData, colorData, couponData] = await Promise.all([
         api<{ items: AdminProduct[] }>('/admin/products?includeArchived=true'),
         api<{ items: AdminCategory[] }>('/admin/categories'),
         api<{ items: PaletteColor[] }>('/admin/colors'),
+        api<{ items: AdminCoupon[] }>('/admin/coupons'),
       ]);
       setItems(productData.items);
       setCategories(categoryData.items);
       setPalette(colorData.items);
+      setCoupons(couponData.items);
     } catch (err) { setError(err instanceof ApiError ? err.message : 'Products load nahi hue.'); }
   };
   useEffect(() => { void load(); }, []);
@@ -176,16 +186,49 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
       });
       setQwenMsg({ type: 'ok', text: 'Product details generated successfully.' });
     } catch (err) {
-      setQwenMsg({ type: 'err', text: err instanceof ApiError ? err.message : 'Qwen generate nahi kar paya.' });
+      setQwenMsg({ type: 'err', text: err instanceof ApiError ? err.message : 'AI generate nahi kar paya.' });
     } finally {
       setQwenBusy(false);
     }
   };
 
+  /** Total sellable units — a product is Out of stock at 0, Low at ≤ 5. */
+  const totalStock = (item: AdminProduct) => (item.variants ?? []).reduce((sum, v) => sum + (v.stock ?? 0), 0);
+
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = { ALL: items.length };
+    for (const item of items) {
+      counts[item.isActive ? 'LIVE' : 'ARCHIVED'] = (counts[item.isActive ? 'LIVE' : 'ARCHIVED'] ?? 0) + 1;
+      if (item.type === 'READY_MADE') {
+        const stock = totalStock(item);
+        if (stock <= 0) counts.OUT_OF_STOCK = (counts.OUT_OF_STOCK ?? 0) + 1;
+        else if (stock <= 5) counts.LOW_STOCK = (counts.LOW_STOCK ?? 0) + 1;
+      }
+      if (item.comingSoon) counts.COMING_SOON = (counts.COMING_SOON ?? 0) + 1;
+    }
+    return counts;
+  }, [items]);
+
+  /** Status chips — admin ko Live/Archived/Out of stock sab ek nazar mein dikhta hai. */
+  const STATUS_CHIPS: Array<{ id: string; label: string }> = [
+    { id: 'ALL', label: 'All' },
+    { id: 'LIVE', label: 'Live' },
+    { id: 'ARCHIVED', label: 'Archived' },
+    { id: 'OUT_OF_STOCK', label: 'Out of stock' },
+    { id: 'LOW_STOCK', label: 'Low stock' },
+    { id: 'COMING_SOON', label: 'Coming soon' },
+  ];
+
   const filtered = useMemo(() => items.filter((item) =>
     (typeFilter === 'ALL' || item.type === typeFilter) &&
+    (statusFilter === 'ALL'
+      || (statusFilter === 'LIVE' && item.isActive)
+      || (statusFilter === 'ARCHIVED' && !item.isActive)
+      || (statusFilter === 'OUT_OF_STOCK' && item.type === 'READY_MADE' && totalStock(item) <= 0)
+      || (statusFilter === 'LOW_STOCK' && item.type === 'READY_MADE' && totalStock(item) > 0 && totalStock(item) <= 5)
+      || (statusFilter === 'COMING_SOON' && item.comingSoon)) &&
     `${item.designId} ${item.name} ${item.slug}`.toLowerCase().includes(query.toLowerCase()),
-  ), [items, query, typeFilter]);
+  ), [items, query, typeFilter, statusFilter]);
 
   const run = async (key: string, action: () => Promise<void>) => {
     setBusy(key);
@@ -270,6 +313,40 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
     setForm({ ...form, variants: [...form.variants, { colorSlug: color, size, stock: 0, sku: '' }] });
   };
 
+  /**
+   * Keeps the size × colour stock matrix in sync with the selected colours and
+   * sizes: every colour × size combination gets a variant row (new combos start
+   * at stock 10, existing ones keep their stock/SKU). Removed colours/sizes drop
+   * their rows. Only meaningful for READY_MADE — other types hold no inventory.
+   */
+  const withInventory = (current: AdminProduct, colors: AdminProduct['colors'], sizes: number[]): AdminProduct => {
+    if (current.type !== 'READY_MADE') return { ...current, colors, sizes, variants: [] };
+    const existing = new Map<string, AdminProduct['variants'][number]>();
+    for (const v of current.variants) {
+      if (colors.some((c) => c.slug === v.colorSlug) && sizes.includes(v.size)) existing.set(`${v.colorSlug}|${v.size}`, v);
+    }
+    const variants: AdminProduct['variants'] = [];
+    for (const color of colors) {
+      for (const size of sizes) {
+        const prior = existing.get(`${color.slug}|${size}`);
+        variants.push(prior ?? { colorSlug: color.slug, size, stock: 10, sku: '' });
+      }
+    }
+    return { ...current, colors, sizes, variants };
+  };
+
+  /** Maps/unmaps this product to/from a coupon by toggling the coupon's product list. */
+  const toggleCouponForProduct = (coupon: AdminCoupon) => {
+    if (!form?._id) return;
+    const has = coupon.products.includes(form._id);
+    const products = has ? coupon.products.filter((id) => id !== form._id) : [...coupon.products, form._id];
+    void setBusy(`cpn-${coupon._id}`);
+    void api(`/admin/coupons/${coupon._id}`, { method: 'PATCH', body: { products } })
+      .then(() => setCoupons((cs) => cs.map((c) => (c._id === coupon._id ? { ...c, products } : c))))
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Coupon update nahi hua.'))
+      .finally(() => setBusy(''));
+  };
+
   return (
     <section className="card overflow-hidden">
       <Toolbar title="Product catalogue" count={filtered.length} searchPlaceholder="Search design, name or slug"
@@ -278,6 +355,12 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
         {['ALL', 'READY_MADE', 'CUSTOMIZE', 'SHOWCASE'].map((type) => (
           <button key={type} onClick={() => setTypeFilter(type)}
             className={`chip whitespace-nowrap ${typeFilter === type ? 'chip-active' : ''}`}>{type.replace('_', ' ')}</button>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-2 border-b border-maroon-100 bg-maroon-50/30 px-5 py-2">
+        {STATUS_CHIPS.map((chip) => (
+          <button key={chip.id} onClick={() => setStatusFilter(chip.id)} title={chip.id === 'OUT_OF_STOCK' ? 'Ready-made products jinki koi stock nahi bachi' : undefined}
+            className={`chip whitespace-nowrap ${statusFilter === chip.id ? 'chip-active' : ''}`}>{chip.label} ({statusCounts[chip.id] ?? 0})</button>
         ))}
       </div>
       {error ? <div className="m-4 rounded-xl border border-alert/30 bg-alert/10 p-4 text-sm font-semibold text-alert">{error}</div> : null}
@@ -303,6 +386,12 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
                 <Badge label={product.type.replace('_', ' ')} />
                 {product.isActive ? <Badge label="Live" /> : <Badge label="Archived" />}
                 {product.comingSoon ? <Badge label="Coming soon" /> : null}
+                {product.type === 'READY_MADE' ? (() => {
+                  const stock = totalStock(product);
+                  if (stock <= 0) return <Badge label="Out of stock" tone="bg-alert/10 text-alert" />;
+                  if (stock <= 5) return <Badge label={`Low stock · ${stock}`} tone="bg-marigold-100 text-ink" />;
+                  return <Badge label={`${stock} units`} />;
+                })() : null}
               </div>
             </div>
             {product.type === 'SHOWCASE' && product.sellingPriceInr <= 0
@@ -334,7 +423,8 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
             <Field label="Type"><Select value={form.type} onChange={(e) => {
               const type = e.target.value as AdminProduct['type'];
               // Switching to CUSTOMIZE with no fabrics chosen defaults to "all fabrics".
-              setForm({ ...form, type, fabricOptions: type === 'CUSTOMIZE' ? [] : form.fabricOptions });
+              const next = { ...form, type, fabricOptions: type === 'CUSTOMIZE' ? [] : form.fabricOptions };
+              setForm(type === 'READY_MADE' ? withInventory(next, next.colors, next.sizes) : { ...next, variants: [] });
             }}>
               <option value="READY_MADE">Ready to Buy</option><option value="CUSTOMIZE">Customize</option><option value="SHOWCASE">Showcase / Upcoming</option>
             </Select></Field>
@@ -358,7 +448,7 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
                 <h4 className="text-sm font-bold text-maroon-700">Colors</h4>
                 <Field label="Product colors" hint="Admin → Catalog → Colour se banaaye gaye palette se select karein. Multiple colours choose kar sakte hain — warranty/size se sirf pehla colour blouse ki dominant colour maana jaata hai.">
                   <ColorPaletteSelect palette={palette} value={form.colors}
-                    onChange={(colors) => setForm({ ...form, colors: colors.map((c) => ({ ...c, slug: slugify(c.name) })) })} />
+                    onChange={(colors) => setForm(withInventory(form, colors.map((c) => ({ ...c, slug: slugify(c.name) })), form.sizes))} />
                 </Field>
               </div>
             ) : null}
@@ -370,17 +460,18 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
                   <div className="mt-3 flex flex-wrap gap-2">
                     {form.sizes.map((size, i) => (
                       <span key={i} className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1.5 text-sm font-semibold">{size}
-                        <button type="button" onClick={() => setForm({ ...form, sizes: form.sizes.filter((_, j) => j !== i), variants: form.variants.filter((v) => v.size !== size) })}><X size={12} /></button>
+                        <button type="button" onClick={() => setForm(withInventory(form, form.colors, form.sizes.filter((_, j) => j !== i)))}><X size={12} /></button>
                       </span>
                     ))}
                     <input type="number" min={18} max={60} placeholder="Add size" className="field min-h-[38px] w-28 px-3 py-1.5 text-sm" onKeyDown={(e) => {
-                      if (e.key === 'Enter' && (e.target as HTMLInputElement).value) { const size = Number((e.target as HTMLInputElement).value); e.preventDefault(); if (!form.sizes.includes(size)) setForm({ ...form, sizes: [...form.sizes, size].sort((a, b) => a - b) }); (e.target as HTMLInputElement).value = ''; }
+                      if (e.key === 'Enter' && (e.target as HTMLInputElement).value) { const size = Number((e.target as HTMLInputElement).value); e.preventDefault(); if (!form.sizes.includes(size)) setForm(withInventory(form, form.colors, [...form.sizes, size].sort((a, b) => a - b))); (e.target as HTMLInputElement).value = ''; }
                     }} />
                   </div>
                 </div>
 
                 <div className="sm:col-span-2 rounded-xl border border-maroon-100 bg-maroon-50/30 p-4">
                   <h4 className="text-sm font-bold text-maroon-700">Inventory (size × color stock)</h4>
+                  <p className="mt-1 text-xs font-semibold text-ink-muted">Har colour × size combination ka row khud ban jaata hai — naye combination ka stock 10 hota hai. Yahan stock/sku update karein.</p>
                   <div className="mt-3 space-y-2">
                     {form.variants.map((variant, i) => (
                       <div className="flex items-center gap-2" key={i}>
@@ -438,7 +529,7 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
                 onChange={(urls) => setForm({ ...form, images: urls.map((url) => ({ url, alt: form.name, kind: form.images.find((img) => img.url === url)?.kind ?? 'other' })) })} />
               <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-maroon-200 bg-maroon-50/40 p-3">
                 <BtnPrimary type="button" onClick={() => void generateWithQwen()} disabled={qwenBusy || !form.images[0]?.url}>
-                  <Sparkles size={16} />{qwenBusy ? 'Analyzing image...' : '✨ Generate with Qwen'}
+                  <Sparkles size={16} />{qwenBusy ? 'Analyzing image...' : '✨ AI se analyse karein'}
                 </BtnPrimary>
                 <p className="text-xs text-ink-muted">Selected sabhi images (front/back/sleeve) se: name, description, tags, SINGLE dominant blouse colour, categories (pehla category, doosra sub-category), embroidery, approximate price, care instructions aur SEO auto-fill honge. Stock, sizes, SKU aur design ID aap khud bharo — ye kabhi overwrite nahi honge.</p>
               </div>
@@ -453,6 +544,43 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
                 <Field label="Keywords" className="sm:col-span-2"><StringListEditor values={form.seo.keywords} onChange={(keywords) => setForm({ ...form, seo: { ...form.seo, keywords } })} placeholder="Add keyword..." /></Field>
                 <Field label="OG image URL" className="sm:col-span-2"><TextInput value={form.seo.ogImage} onChange={(e) => setForm({ ...form, seo: { ...form.seo, ogImage: e.target.value } })} /></Field>
               </div>
+            </div>
+
+            <div className="sm:col-span-2 rounded-xl border border-maroon-100 bg-maroon-50/30 p-4">
+              <h4 className="text-sm font-bold text-maroon-700">Coupons lagao</h4>
+              {!form._id ? (
+                <p className="mt-2 text-xs font-semibold text-ink-muted">Pehle product save karein — naye product par coupons sirf save ke baad map ho sakte hain.</p>
+              ) : coupons.length === 0 ? (
+                <p className="mt-2 text-xs font-semibold text-ink-muted">Koi coupon nahi. "Coupons & offers" tab se pehle coupon banayein.</p>
+              ) : (
+                <div className="mt-2 max-h-56 space-y-1.5 overflow-auto pr-1">
+                  {coupons.map((coupon) => {
+                    const global = (coupon.products ?? []).length === 0;
+                    const mapped = !global && coupon.products.includes(form._id);
+                    return (
+                      <div key={coupon._id} className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2 ${global ? 'border-dashed border-ink-light/40 bg-white/60' : 'border-maroon-100 bg-white'}`}>
+                        <div className="min-w-0">
+                          <p className="font-mono text-sm font-bold tracking-wide text-maroon-700">{coupon.code}</p>
+                          {coupon.description ? <p className="truncate text-[11px] text-ink-light">{coupon.description}</p> : null}
+                          {global ? <p className="text-[11px] font-semibold text-ink-light">Sabhi products par chalta hai</p> : null}
+                        </div>
+                        {global ? (
+                          <Badge label="All" />
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={busy === `cpn-${coupon._id}`}
+                            onClick={() => toggleCouponForProduct(coupon)}
+                            className={`shrink-0 text-sm font-semibold ${mapped ? 'text-leaf' : 'text-maroon-600'}`}
+                          >
+                            {busy === `cpn-${coupon._id}` ? 'Saving...' : mapped ? <><Check size={14} className="mr-0.5 inline" />Mapped</> : 'Map karein'}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <div className="sm:col-span-2 flex flex-wrap items-center justify-between gap-4">

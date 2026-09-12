@@ -1,6 +1,8 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, apiWithRefresh, ApiError } from '../lib/api';
+import type { Currency } from '../lib/format';
 import type {
+  AvailableCoupon,
   CartQuote,
   Category,
   CurrentUser,
@@ -405,6 +407,27 @@ export function useCartQuote(couponCode: string) {
       }),
     enabled: lines.length > 0,
     staleTime: 0,
+  });
+}
+
+/**
+ * Coupons the current cart already qualifies for, with estimated discounts.
+ * Separate from the quote so the list stays visible even while a coupon is
+ * being applied/rejected.
+ */
+export function useAvailableCoupons() {
+  const lines = useCart((state) => state.lines);
+
+  return useQuery({
+    queryKey: ['cart-coupons-available', lines],
+    queryFn: () =>
+      api<{ items: AvailableCoupon[]; currency: Currency }>('/cart/coupons/available', {
+        method: 'POST',
+        body: { lines: toApiLines(lines) },
+      }),
+    enabled: lines.length > 0,
+    staleTime: 0,
+    retry: 1,
   });
 }
 

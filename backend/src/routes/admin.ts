@@ -1,6 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer, { MulterError } from 'multer';
 import { z } from 'zod';
+import { Types } from 'mongoose';
 import { requireAdmin, requireAuth } from '../middleware/auth.js';
 import { adminReadLimiter, adminWriteLimiter } from '../middleware/rateLimit.js';
 import { Category, Fabric, Lace, Latkan, Product } from '../models/catalog.js';
@@ -19,7 +20,7 @@ import { notifyOrderCancellation } from '../services/notifications.js';
 import { pushToShiprocket } from './orders.js';
 import { uploadImage, MAX_UPLOAD_BYTES } from '../services/media/cloudinary.js';
 import { generateLatkanSuggestion, generateFabricSuggestion, generateLaceSuggestion, generateProductSuggestions } from '../services/ai/qwen.js';
-import { env, integrations, shiprocketMock } from '../config/env.js';
+import { env, integrations, shiprocketMock, whatsapp } from '../config/env.js';
 import {
   applyTrackingToOrder,
   assignAwb,
@@ -36,6 +37,13 @@ import {
   updateShiprocketSettings,
   type ShiprocketSettings,
 } from '../services/shipping/shiprocket-settings.js';
+import { MessageLog, WaCampaign } from '../models/whatsapp.js';
+import { MESSAGE_TYPES } from '../services/whatsapp/constants.js';
+import { getWhatsAppSettings, updateWhatsAppSettings } from '../services/whatsapp/settings.js';
+import { TEMPLATE_REGISTRY, buildComponents } from '../services/whatsapp/templates.js';
+import { enqueueWhatsApp } from '../services/whatsapp/queue.js';
+import { notifyOrderEvent } from '../services/whatsapp/notify.js';
+import { sendCampaign, targetsForCampaign } from '../services/whatsapp/marketing.js';
 import { recordWebhookReceipt } from './webhooks.js';
 
 const router = Router();
@@ -776,6 +784,8 @@ router.post('/orders/:orderNumber/confirm', adminWriteLimiter, validate({ params
   await order.save();
   // Shiprocket auto-create gated inside pushToShiprocket (settings.autoCreate).
   void pushToShiprocket(String(order._id));
+  // Order confirmation message (order number + payment + track link) via WhatsApp.
+  void notifyOrderEvent(order, 'ORDER_CONFIRMED');
   await logAction(req, 'CONFIRM_ORDER', 'ORDER', orderNumber, `${orderNumber} confirmed (complexity → ${complexity})`);
 
   const fresh = await Order.findOne({ orderNumber });
@@ -1256,7 +1266,41 @@ router.post('/products', adminWriteLimiter, validate({ body: productSchema }), a
   // Blank design ID / slug are fine — they are generated automatically.
   const designId = body.designId?.trim() ? body.designId.trim() : await nextDesignId();
   const slug = body.slug?.trim() ? body.slug.trim().toLowerCase() : await uniqueSlug(body.name);
-  const product = await Product.create({ ...body, designId, slug, createdBy: adminId(req) });
+
+  // Ready-made products always keep a COMPLETE size × colour stock matrix:
+  // fill empty SKUs with the conventional code and create any colour × size
+  // combination the admin didn't send with default stock 10. This is the
+  // same cross product the seed uses, guarded server-side so no API caller
+  // can forget a combo.
+  const colors = (body.colors ?? []) as Array<{ slug: string }>;
+  const sizes = (body.sizes ?? []) as number[];
+  const sentVariants = (body.variants ?? []) as Array<{ colorSlug?: string; size?: number; sku?: string }>;
+  let variants: unknown[] = sentVariants;
+  if (body.type === 'READY_MADE') {
+    variants = sentVariants.map((v) =>
+      (v.sku && String(v.sku).trim()) || !v.colorSlug
+        ? v
+        : { ...v, sku: `${designId}-${v.colorSlug.toUpperCase().slice(0, 3)}-${v.size}` },
+    );
+    if (colors.length > 0 && sizes.length > 0) {
+      const known = new Set(variants.map((v) => `${String((v as { colorSlug?: string }).colorSlug)}|${(v as { size?: number }).size}`));
+      const additions: Array<Record<string, unknown>> = [];
+      for (const color of colors) {
+        for (const size of sizes) {
+          if (known.has(`${color.slug}|${size}`)) continue;
+          additions.push({
+            colorSlug: color.slug,
+            size,
+            stock: 10,
+            sku: `${designId}-${color.slug.toUpperCase().slice(0, 3)}-${size}`,
+          });
+        }
+      }
+      if (additions.length > 0) variants = [...variants, ...additions];
+    }
+  }
+
+  const product = await Product.create({ ...body, variants, designId, slug, createdBy: adminId(req) });
   await logAction(req, 'CREATE', 'PRODUCT', String(product._id), product.designId);
   res.status(201).json({ product });
 });
@@ -2345,6 +2389,200 @@ router.get('/export/inventory', adminReadLimiter, async (_req: Request, res: Res
     Product.find({ type: 'READY_MADE' }).select('designId name variants colors sizes').lean(),
   ]);
   res.json({ items: { fabrics, laces, latkans, products } });
+});
+
+/* ========================================================================== */
+/* WhatsApp Communications — 85.4 · MSG91 replaced by Meta Cloud API            */
+/* ========================================================================== */
+
+const whatsappSegmentSchema = z
+  .object({
+    hasOrders: z.boolean().default(false),
+    minSpendMinor: z.number().int().min(0).max(10_000_000).default(0),
+    purchasedProductIds: z.array(z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid product id')).max(50).default([]),
+  })
+  .default({});
+
+const whatsappCampaignSchema = z
+  .object({
+    name: z.string().trim().min(1).max(80),
+    message: z.string().trim().min(1).max(1000),
+    templateName: z.string().trim().min(1).max(40).default('guddi_offer'),
+    language: z.string().trim().min(1).max(8).default('en_US'),
+    targetSource: z.enum(['WEBSITE_USERS', 'ORDER_USERS', 'MANUAL_NUMBERS']).default('WEBSITE_USERS'),
+    manualNumbers: z
+      .array(z.string().trim().min(1).max(20))
+      .max(500)
+      .default([]),
+    segment: whatsappSegmentSchema,
+    perMessageCostInr: z.number().min(0).max(100).default(0.9),
+  })
+  .strict();
+const whatsappCampaignPatchSchema = whatsappCampaignSchema.partial().strict();
+const whatsappCampaignSendSchema = z.object({ confirm: z.boolean() }).strict();
+
+const whatsappSettingsPatchSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    notifyConfirmed: z.boolean().optional(),
+    notifyShipped: z.boolean().optional(),
+    notifyOutForDelivery: z.boolean().optional(),
+    notifyDelivered: z.boolean().optional(),
+    notifyCancelled: z.boolean().optional(),
+    marketingCooldownDays: z.number().int().min(1).max(90).optional(),
+    costPerMessageInr: z.number().min(0).max(100).optional(),
+    dailyQuota: z.number().int().min(1).max(100_000).optional(),
+    addOrderLink: z.boolean().optional(),
+  })
+  .strict();
+
+const whatsappTestSchema = z.object({ mobile: z.string().trim().max(20).optional() }).strict();
+
+router.get('/communications/overview', adminReadLimiter, async (_req: Request, res: Response) => {
+  const dayStart = new Date();
+  dayStart.setHours(0, 0, 0, 0);
+  const [createdToday, sentToday, deliveredToday, failedToday, pending, deliveredAll, activeCampaigns, webhookLastAt, settings] = await Promise.all([
+    MessageLog.countDocuments({ createdAt: { $gte: dayStart } }),
+    MessageLog.countDocuments({ status: 'SENT', sentAt: { $gte: dayStart } }),
+    MessageLog.countDocuments({ status: 'DELIVERED', deliveredAt: { $gte: dayStart } }),
+    MessageLog.countDocuments({ status: 'FAILED', updatedAt: { $gte: dayStart } }),
+    MessageLog.countDocuments({ status: 'PENDING' }),
+    MessageLog.countDocuments({ status: { $in: ['DELIVERED', 'READ'] } }),
+    WaCampaign.countDocuments({ status: { $in: ['QUEUED', 'SENDING'] } }),
+    Setting.findOne({ key: 'whatsappWebhookLastAt' }).select('value').lean(),
+    getWhatsAppSettings(),
+  ]);
+  res.json({
+    integration: {
+      configured: integrations.whatsapp,
+      mode: whatsapp.mode,
+      phoneNumberId: whatsapp.phoneNumberId || null,
+      businessAccountId: whatsapp.businessAccountId || null,
+      verifyTokenSet: Boolean(whatsapp.verifyToken),
+      appSecretSet: Boolean(whatsapp.appSecret),
+      testNumbers: [...new Set([env.ADMIN_MOBILE, ...whatsapp.testNumbers])].filter(Boolean),
+    },
+    webhookUrl: `${env.APP_BASE_URL.replace(/\/+$/, '')}/api/whatsapp/webhook`,
+    counts: { createdToday, sentToday, deliveredToday, failedToday, pending, delivered: deliveredAll, activeCampaigns },
+    webhookLastAt: webhookLastAt?.value ? String(webhookLastAt.value) : null,
+    settings,
+  });
+});
+
+router.get('/communications/messages', adminReadLimiter, async (req: Request, res: Response) => {
+  const page = Math.max(parseInt(String(req.query.page ?? '1'), 10) || 1, 1);
+  const pageSize = 25;
+  const status = String(req.query.status ?? '').toUpperCase();
+  const type = String(req.query.type ?? '').toUpperCase();
+  const filter: Record<string, unknown> = {};
+  if ((['PENDING', 'SENT', 'DELIVERED', 'READ', 'FAILED', 'SKIPPED'] as readonly string[]).includes(status)) filter.status = status;
+  if ((MESSAGE_TYPES as readonly string[]).includes(type)) filter.type = type;
+  const [items, total] = await Promise.all([
+    MessageLog.find(filter).sort({ createdAt: -1 }).skip((page - 1) * pageSize).limit(pageSize).lean(),
+    MessageLog.countDocuments(filter),
+  ]);
+  res.json({ items, total, page, pageSize, hasMore: page * pageSize < total });
+});
+
+router.get('/communications/templates', adminReadLimiter, async (_req: Request, res: Response) => {
+  res.json({
+    templates: TEMPLATE_REGISTRY,
+    webhookUrl: `${env.APP_BASE_URL.replace(/\/+$/, '')}/api/whatsapp/webhook`,
+    mode: whatsapp.mode,
+    configured: integrations.whatsapp,
+  });
+});
+
+router.post('/communications/test', adminWriteLimiter, validate({ body: whatsappTestSchema }), async (req: Request, res: Response) => {
+  const body = (req as ValidatedRequest<{ mobile?: string }>).validated.body;
+  const candidates = [body.mobile?.replace(/[^\d]/g, ''), env.ADMIN_MOBILE, ...whatsapp.testNumbers];
+  const mobile = candidates.find((m) => Boolean(m) && /^\d{10,15}$/.test(m as string));
+  if (!mobile) throw badRequest('WhatsApp test number configure karein (WHATSAPP_TEST_NUMBERS ya ADMIN_MOBILE).');
+  const result = await enqueueWhatsApp({
+    mobile,
+    templateName: 'guddi_offer',
+    category: 'MARKETING',
+    type: 'TEST',
+    dedupeKey: `test:${mobile}:${Date.now()}`,
+    components: buildComponents([`Yeh Guddi Silai ka TEST message hai — sab set! (${new Date().toLocaleString('en-IN')})`]),
+  });
+  if (!result.queued) throw badRequest(`Test message queue nahi hua: ${result.reason ?? 'unknown'}`);
+  await logAction(req, 'WA_TEST', 'COMMUNICATIONS', mobile, 'Test WhatsApp bheja');
+  res.json({ ok: true, messageLogId: result.messageLogId });
+});
+
+router.get('/communications/settings', adminReadLimiter, async (_req: Request, res: Response) => {
+  res.json({ settings: await getWhatsAppSettings() });
+});
+
+router.put('/communications/settings', adminWriteLimiter, validate({ body: whatsappSettingsPatchSchema }), async (req: Request, res: Response) => {
+  const body = (req as ValidatedRequest<Record<string, unknown>>).validated.body;
+  const settings = await updateWhatsAppSettings(body);
+  await logAction(req, 'UPDATE', 'COMMUNICATIONS_SETTINGS', 'whatsapp', JSON.stringify(body));
+  res.json({ settings });
+});
+
+router.get('/communications/campaigns', adminReadLimiter, async (_req: Request, res: Response) => {
+  res.json({ items: await WaCampaign.find().sort({ createdAt: -1 }).limit(100).lean() });
+});
+
+router.post('/communications/campaigns', adminWriteLimiter, validate({ body: whatsappCampaignSchema }), async (req: Request, res: Response) => {
+  const body = (req as ValidatedRequest<z.infer<typeof whatsappCampaignSchema>>).validated.body;
+  const campaign = await WaCampaign.create({ ...body, createdBy: new Types.ObjectId(adminId(req)), status: 'DRAFT' });
+  await logAction(req, 'CREATE', 'CAMPAIGN', String(campaign._id), campaign.name);
+  res.json({ campaign });
+});
+
+router.get('/communications/campaigns/:id', adminReadLimiter, validate({ params: objectIdParamSchema }), async (req: Request, res: Response) => {
+  const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
+  const campaign = await WaCampaign.findById(id);
+  if (!campaign) throw notFound('Campaign nahi mila.');
+  res.json({ campaign });
+});
+
+router.patch('/communications/campaigns/:id', adminWriteLimiter, validate({ params: objectIdParamSchema, body: whatsappCampaignPatchSchema }), async (req: Request, res: Response) => {
+  const { id } = (req as ValidatedRequest<Record<string, unknown>, unknown, { id: string }>).validated.params;
+  const body = (req as ValidatedRequest<Record<string, unknown>, unknown, { id: string }>).validated.body;
+  const campaign = await WaCampaign.findById(id);
+  if (!campaign) throw notFound('Campaign nahi mila.');
+  if (campaign.status !== 'DRAFT') throw badRequest('Sirf DRAFT campaign edit hota hai — send hone ke baad locked.');
+  Object.assign(campaign, body);
+  await campaign.save();
+  await logAction(req, 'UPDATE', 'CAMPAIGN', id, campaign.name);
+  res.json({ campaign });
+});
+
+router.delete('/communications/campaigns/:id', adminWriteLimiter, validate({ params: objectIdParamSchema }), async (req: Request, res: Response) => {
+  const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
+  const campaign = await WaCampaign.findById(id);
+  if (!campaign) throw notFound('Campaign nahi mila.');
+  if (campaign.status !== 'DRAFT') throw badRequest('Sirf DRAFT campaign delete hota hai.');
+  await WaCampaign.deleteOne({ _id: id });
+  await logAction(req, 'DELETE', 'CAMPAIGN', id, campaign.name);
+  res.json({ ok: true });
+});
+
+router.post('/communications/campaigns/:id/preview', adminWriteLimiter, validate({ params: objectIdParamSchema }), async (req: Request, res: Response) => {
+  const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
+  const campaign = await WaCampaign.findById(id);
+  if (!campaign) throw notFound('Campaign nahi mila.');
+  const recipients = await targetsForCampaign(campaign);
+  const settings = await getWhatsAppSettings();
+  res.json({
+    recipientCount: recipients.length,
+    estimatedCostInr: Math.round(recipients.length * campaign.perMessageCostInr * 100) / 100,
+    cooldownDays: settings.marketingCooldownDays,
+  });
+});
+
+router.post('/communications/campaigns/:id/send', adminWriteLimiter, validate({ params: objectIdParamSchema, body: whatsappCampaignSendSchema }), async (req: Request, res: Response) => {
+  const { id } = (req as ValidatedRequest<{ confirm: boolean }, unknown, { id: string }>).validated.params;
+  const { confirm } = (req as ValidatedRequest<{ confirm: boolean }, unknown, { id: string }>).validated.body;
+  const campaign = await WaCampaign.findById(id);
+  if (!campaign) throw notFound('Campaign nahi mila.');
+  const result = await sendCampaign(campaign, confirm);
+  await logAction(req, 'SEND', 'CAMPAIGN', id, `${campaign.name} → ${result.queued} recipients`);
+  res.json({ ...result, status: campaign.status });
 });
 
 export default router;

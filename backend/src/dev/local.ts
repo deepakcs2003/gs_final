@@ -28,7 +28,6 @@ async function main(): Promise<void> {
   process.env.CORS_ORIGINS ??= 'http://localhost:5173';
   process.env.JWT_SECRET ??= crypto.randomBytes(48).toString('base64url');
   process.env.CSRF_SECRET ??= crypto.randomBytes(48).toString('base64url');
-  process.env.SMS_PROVIDER ??= 'console';
 
   const [{ connectDb }, { seedDatabase }, { createApp }, { env }, { logger }] = await Promise.all([
     import('../config/db.js'),
