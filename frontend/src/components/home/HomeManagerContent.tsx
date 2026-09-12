@@ -308,6 +308,7 @@ function SectionProductTile({
         <span className="pointer-events-none absolute left-2 top-2 flex flex-col items-start gap-1.5">
           {product.type === 'SHOWCASE' ? <Badge tone="dark">Showcase</Badge> : null}
           {product.type === 'CUSTOMIZE' ? <Badge tone="accent">Customize</Badge> : null}
+          {product.type === 'BOTH' ? <Badge>Ready + Custom</Badge> : null}
           {discountPercent > 0 ? <Badge>{discountPercent}% OFF</Badge> : null}
         </span>
       </div>

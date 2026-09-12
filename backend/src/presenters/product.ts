@@ -76,7 +76,7 @@ const LOW_STOCK_THRESHOLD = 3;
 
 export function presentProductCard(product: ProductLike, currency: Currency, fxRateInr: number) {
   const totalStock = (product.variants ?? []).reduce((sum, v) => sum + (v.stock ?? 0), 0);
-  const isReadyMade = product.type === 'READY_MADE';
+  const isReadyMade = product.type === 'READY_MADE' || product.type === 'BOTH';
 
   return {
     id: String(product._id),

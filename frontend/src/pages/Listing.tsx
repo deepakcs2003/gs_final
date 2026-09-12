@@ -45,6 +45,7 @@ const AVAILABILITY = [
 const TITLES: Record<ProductType, { title: string; subtitle: string }> = {
   READY_MADE: { title: 'Ready to Buy', subtitle: 'Silai kiye hue blouse — turant order karein' },
   CUSTOMIZE: { title: 'Customize with Measurement', subtitle: 'Fabric choose karein, apna naap dein' },
+  BOTH: { title: 'Ready to Buy + Customize', subtitle: 'Turant lein ya apni pasand ke hisaab se banwayein' },
   SHOWCASE: { title: 'New & Upcoming Designs', subtitle: 'Aane wale designs — pasand aaye to WhatsApp karein' },
 };
 

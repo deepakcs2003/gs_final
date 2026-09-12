@@ -1,10 +1,13 @@
 /**
  * Domain constants shared by models, routes and the seed script.
  *
- * README §83: the three product types are kept apart at the data layer so the
- * frontend never has to guess which controls a product supports.
+ * README §83: the product types are kept apart at the data layer so the
+ * frontend never has to guess which controls a product supports. BOTH is a
+ * design that is sold readymade *and* offered as a custom-stitch option — the
+ * order's effective type is CUSTOMIZE or READY_MADE, resolved in pricing from
+ * whether the customer chose fabrics/laces/latkans/measurements.
  */
-export const PRODUCT_TYPES = ['READY_MADE', 'CUSTOMIZE', 'SHOWCASE'] as const;
+export const PRODUCT_TYPES = ['READY_MADE', 'CUSTOMIZE', 'BOTH', 'SHOWCASE'] as const;
 export type ProductType = (typeof PRODUCT_TYPES)[number];
 
 export const ORDER_STATUSES = [

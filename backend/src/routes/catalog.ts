@@ -72,7 +72,13 @@ type ListQuery = z.infer<typeof listQuerySchema>;
 async function buildProductFilter(query: ListQuery): Promise<Record<string, unknown>> {
   const filter: Record<string, unknown> = { isActive: true };
 
-  if (query.type) filter.type = query.type;
+  if (query.type === 'READY_MADE' || query.type === 'CUSTOMIZE') {
+    // BOTH designs are sold readymade *and* offered as a custom option, so they
+    // belong in both storefront sections (pricing resolves the effective type).
+    filter.type = { $in: [query.type, 'BOTH'] };
+  } else if (query.type) {
+    filter.type = query.type;
+  }
 
   if (query.category) {
     const category = await Category.findOne({ slug: query.category, isActive: true }).select('_id').lean();
@@ -319,7 +325,8 @@ router.get('/search', searchLimiter, validate({ query: searchQuerySchema }), asy
   const fxRate = geo.currency === 'INR' ? 1 : settings.usdRateInr;
 
   const base: Record<string, unknown> = { isActive: true };
-  if (type) base.type = type;
+  if (type === 'READY_MADE' || type === 'CUSTOMIZE') base.type = { $in: [type, 'BOTH'] };
+  else if (type) base.type = type;
 
   // A design id like "GS-206" or "gs206" should jump straight to that product.
   const designIdGuess = q.toUpperCase().replace(/[^A-Z0-9-]/g, '');
@@ -412,7 +419,11 @@ router.get('/home/feed', readLimiter, validate({ query: feedQuerySchema }), asyn
   const fxRate = geo.currency === 'INR' ? 1 : settings.usdRateInr;
 
   const typeOrder = settings.homeFeedOrder.split(',');
-  const typeFilter = { isActive: true, type: { $in: typeOrder } };
+  // BOTH designs join whichever of READY_MADE / CUSTOMIZE rails are enabled.
+  const expandType = (t: string): string | { $in: string[] } =>
+    t === 'READY_MADE' || t === 'CUSTOMIZE' ? { $in: [t, 'BOTH'] } : t;
+  const feedTypes = [...new Set(typeOrder.flatMap((t) => (t === 'READY_MADE' || t === 'CUSTOMIZE' ? [t, 'BOTH'] : [t])))];
+  const typeFilter = { isActive: true, type: { $in: feedTypes } };
   let products;
   let nextOffset: number | null;
 
@@ -425,7 +436,7 @@ router.get('/home/feed', readLimiter, validate({ query: feedQuerySchema }), asyn
       .lean();
     nextOffset = offset + products.length < total ? offset + products.length : null;
   } else {
-    const counts = await Promise.all(typeOrder.map((type) => Product.countDocuments({ ...typeFilter, type })));
+    const counts = await Promise.all(typeOrder.map((type) => Product.countDocuments({ isActive: true, type: expandType(type) })));
     const total = counts.reduce((sum, count) => sum + count, 0);
     let remaining = offset;
     let typeIndex = 0;
@@ -436,7 +447,7 @@ router.get('/home/feed', readLimiter, validate({ query: feedQuerySchema }), asyn
     products = [];
     let take = settings.homeFeedPageSize;
     while (typeIndex < typeOrder.length && take > 0) {
-      const batch = await Product.find({ ...typeFilter, type: typeOrder[typeIndex] })
+      const batch = await Product.find({ isActive: true, type: expandType(typeOrder[typeIndex] ?? '') })
         .sort({ 'stats.views': -1, publishedAt: -1 })
         .skip(remaining)
         .limit(take)
@@ -451,7 +462,8 @@ router.get('/home/feed', readLimiter, validate({ query: feedQuerySchema }), asyn
 
   const grouped = new Map<string, typeof products>();
   for (const product of products) {
-    const key = product.type;
+    // BOTH designs are buyable now → surface them in the Ready to Buy rail.
+    const key = product.type === 'BOTH' ? 'READY_MADE' : product.type;
     const existing = grouped.get(key) ?? [];
     existing.push(product);
     grouped.set(key, existing);

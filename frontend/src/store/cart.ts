@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { CartLine, MeasurementData, ProductCard, ProductDetail } from '../lib/types';
+import type { CartLine, MeasurementData, ProductCard, ProductDetail, ProductType } from '../lib/types';
 import { track } from '../lib/analytics';
 
 /**
@@ -44,17 +44,34 @@ interface CartState {
   find: (key: string) => CartLine | undefined;
 }
 
+/** A line is a custom stitch whenever the customer made custom choices. */
+function hasCustomChoices(input: AddLineInput): boolean {
+  return Boolean(
+    (input.fabricIds?.length ?? 0) > 0 ||
+      input.fabricId ||
+      (input.laceIds?.length ?? 0) > 0 ||
+      (input.latkanIds?.length ?? 0) > 0 ||
+      input.measurement,
+  );
+}
+
 function makeKey(input: AddLineInput): string {
   // Identity of a line is its full configuration, so re-adding the same colour
   // and size bumps quantity rather than creating a duplicate row. A custom line
   // gets a unique suffix because two of them can differ by measurement alone.
-  if (input.product.type === 'CUSTOMIZE') {
+  if (input.product.type === 'CUSTOMIZE' || (input.product.type === 'BOTH' && hasCustomChoices(input))) {
     // Keep this below the API's 64-character key limit. Custom lines are
     // intentionally unique, so the product/fabric/lace ids do not need to be
     // embedded in the key itself.
     return `${input.product.id}|custom|${Math.random().toString(36).slice(2, 8)}`;
   }
   return [input.product.id, input.colorSlug ?? '', input.size ?? ''].join('|');
+}
+
+/** What the backend will quote this line as: BOTH depends on the custom choices. */
+function effectiveType(input: AddLineInput): ProductType {
+  if (input.product.type !== 'BOTH') return input.product.type;
+  return hasCustomChoices(input) ? 'CUSTOMIZE' : 'READY_MADE';
 }
 
 function migrateCart(state: unknown): { lines: CartLine[]; appliedCoupon: string } {
@@ -94,7 +111,7 @@ export const useCart = create<CartState>()(
           const line: CartLine = {
             key,
             productId: input.product.id,
-            type: input.product.type,
+            type: effectiveType(input),
             quantity,
             colorSlug: input.colorSlug,
             size: input.size ?? null,

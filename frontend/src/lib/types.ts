@@ -1,6 +1,6 @@
 import type { Currency } from './format';
 
-export type ProductType = 'READY_MADE' | 'CUSTOMIZE' | 'SHOWCASE';
+export type ProductType = 'READY_MADE' | 'CUSTOMIZE' | 'BOTH' | 'SHOWCASE';
 
 export interface PriceView {
   currency: Currency;

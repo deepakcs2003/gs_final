@@ -100,7 +100,8 @@ export function ProductDetailPage() {
   }
 
   const selectedStatus = size !== null ? sizeStatus.get(size) : undefined;
-  const readyToOrder = product.type === 'READY_MADE' && Boolean(activeColor) && size !== null && selectedStatus?.available;
+  const readyToOrder =
+    (product.type === 'READY_MADE' || product.type === 'BOTH') && Boolean(activeColor) && size !== null && selectedStatus?.available;
   const productUrl = `${window.location.origin}/blouse/${product.slug}`;
 
   const onShare = async () => {
@@ -157,10 +158,14 @@ export function ProductDetailPage() {
         </Link>
         <span>›</span>
         <Link
-          to={product.type === 'READY_MADE' ? '/ready-to-buy' : product.type === 'CUSTOMIZE' ? '/customize' : '/showcase'}
+          to={product.type === 'READY_MADE' || product.type === 'BOTH' ? '/ready-to-buy' : product.type === 'CUSTOMIZE' ? '/customize' : '/showcase'}
           className="hover:underline"
         >
-          {product.type === 'READY_MADE' ? 'Ready to Buy' : product.type === 'CUSTOMIZE' ? 'Customize' : 'Showcase'}
+          {product.type === 'READY_MADE' || product.type === 'BOTH'
+            ? 'Ready to Buy'
+            : product.type === 'CUSTOMIZE'
+              ? 'Customize'
+              : 'Showcase'}
         </Link>
         {product.category ? (
           <>
@@ -259,8 +264,8 @@ export function ProductDetailPage() {
             </p>
           )}
 
-          {/* READY_MADE: colour + size */}
-          {product.type === 'READY_MADE' ? (
+          {/* READY_MADE / BOTH: colour + size */}
+          {product.type === 'READY_MADE' || product.type === 'BOTH' ? (
             <div className="mt-6 space-y-5">
               <section>
                 <h2 className="label">
@@ -359,8 +364,8 @@ export function ProductDetailPage() {
             </div>
           ) : null}
 
-          {/* CUSTOMIZE: three-step explainer */}
-          {product.type === 'CUSTOMIZE' ? (
+          {/* CUSTOMIZE / BOTH: three-step explainer */}
+          {product.type === 'CUSTOMIZE' || product.type === 'BOTH' ? (
             <div className="mt-6 rounded-xl2 bg-marigold-50 p-4">
               <h2 className="mb-2.5 flex items-center gap-2 font-display text-base font-bold text-ink">
                 <Ruler size={18} />
@@ -574,6 +579,26 @@ function ProductActions({
         <Scissors size={18} />
         Fabric Choose Karein
       </button>
+    );
+  }
+
+  if (product.type === 'BOTH') {
+    return (
+      <div className="flex w-full flex-col gap-2.5">
+        <div className="flex gap-2.5">
+          <button type="button" onClick={onAddToCart} disabled={!readyToOrder} className="btn-outline btn-lg flex-1">
+            <ShoppingCart size={18} />
+            Cart
+          </button>
+          <button type="button" onClick={onBuyNow} disabled={!readyToOrder} className="btn-primary btn-lg flex-[1.4]">
+            {readyToOrder ? 'Buy Now' : 'Size choose karein'}
+          </button>
+        </div>
+        <button type="button" onClick={onCustomize} className="btn-accent btn-lg w-full">
+          <Scissors size={18} />
+          Custom banwayein
+        </button>
+      </div>
     );
   }
 

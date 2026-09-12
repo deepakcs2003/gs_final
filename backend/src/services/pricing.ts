@@ -172,6 +172,12 @@ export async function quoteCart(inputLines: CartLineInput[], ctx: QuoteContext):
     const issues: string[] = [];
     const type = product.type as ProductType;
 
+    // BOTH products resolve to READY_MADE or CUSTOMIZE depending on whether
+    // the customer picked customisation options — keeps all downstream flows
+    // (orders, stock, delivery estimate) unchanged.
+    const hasCustomData = Boolean(line.fabricIds?.length || line.fabricId || line.laceIds?.length || line.latkanIds?.length || line.measurement);
+    const effectiveType: ProductType = type === 'BOTH' ? (hasCustomData ? 'CUSTOMIZE' : 'READY_MADE') : type;
+
     // Showcase designs are display-only (README §25) — never sellable.
     if (type === 'SHOWCASE') {
       issues.push('Yeh design abhi sirf showcase ke liye hai, order nahi ho sakta.');
@@ -183,7 +189,7 @@ export async function quoteCart(inputLines: CartLineInput[], ctx: QuoteContext):
     let sku = '';
     let stockLeft: number | null = null;
 
-    if (type === 'READY_MADE') {
+    if (effectiveType === 'READY_MADE') {
       const color = (product.colors ?? []).find((c) => c.slug === line.colorSlug);
       const requestedSize = typeof line.size === 'number' ? line.size : null;
 
@@ -227,7 +233,7 @@ export async function quoteCart(inputLines: CartLineInput[], ctx: QuoteContext):
     const latkanDetails: Array<{ name: string; colorName: string; image: string }> = [];
     const chosenLatkanIds: string[] = [];
 
-    if (type === 'CUSTOMIZE') {
+    if (effectiveType === 'CUSTOMIZE') {
       const requestedFabricIds = (line.fabricIds?.length ? line.fabricIds : line.fabricId ? [line.fabricId] : []).slice(0, 6);
       const fabrics = requestedFabricIds.map((id) => fabricMap.get(String(id))).filter((fabric): fabric is NonNullable<typeof fabric> => Boolean(fabric));
 
@@ -306,7 +312,7 @@ export async function quoteCart(inputLines: CartLineInput[], ctx: QuoteContext):
     quoted.push({
       key: line.key,
       productId: String(product._id),
-      type,
+      type: effectiveType,
       designId: product.designId,
       name: product.name,
       slug: product.slug,
@@ -327,7 +333,7 @@ export async function quoteCart(inputLines: CartLineInput[], ctx: QuoteContext):
       latkanIds: chosenLatkanIds,
       latkanNames,
       latkanDetails,
-      measurementReady: type === 'CUSTOMIZE' ? isMeasurementReady(line.measurement) : true,
+      measurementReady: effectiveType === 'CUSTOMIZE' ? isMeasurementReady(line.measurement) : true,
       note: (line.note ?? '').slice(0, 300),
       unitBaseMinor,
       unitFabricMinor,
@@ -336,7 +342,7 @@ export async function quoteCart(inputLines: CartLineInput[], ctx: QuoteContext):
       unitStitchingMinor,
       unitTotalMinor,
       lineTotalMinor: unitTotalMinor * quantity,
-      codInitialPaymentPercent: type === 'CUSTOMIZE' || type === 'READY_MADE' ? Math.min(Math.max(product.codInitialPaymentPercent ?? 25, 0), 100) : 0,
+      codInitialPaymentPercent: effectiveType === 'CUSTOMIZE' || effectiveType === 'READY_MADE' ? Math.min(Math.max(product.codInitialPaymentPercent ?? 25, 0), 100) : 0,
       issues,
       stockLeft,
     });

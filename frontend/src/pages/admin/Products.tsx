@@ -6,7 +6,7 @@ import { Archive, Copy, Plus, Pencil, X, Check, Sparkles } from 'lucide-react';
 export interface AdminCategory { _id: string; name: string; slug: string }
 export interface AdminProduct {
   _id: string; designId: string; slug: string; name: string; description: string;
-  type: 'READY_MADE' | 'CUSTOMIZE' | 'SHOWCASE';
+  type: 'READY_MADE' | 'CUSTOMIZE' | 'BOTH' | 'SHOWCASE';
   category: string | { _id: string; name: string };
   subCategory: string | null;
   tags: string[]; mrpInr: number; sellingPriceInr: number; codInitialPaymentPercent: number;
@@ -199,7 +199,7 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
     const counts: Record<string, number> = { ALL: items.length };
     for (const item of items) {
       counts[item.isActive ? 'LIVE' : 'ARCHIVED'] = (counts[item.isActive ? 'LIVE' : 'ARCHIVED'] ?? 0) + 1;
-      if (item.type === 'READY_MADE') {
+      if (item.type === 'READY_MADE' || item.type === 'BOTH') {
         const stock = totalStock(item);
         if (stock <= 0) counts.OUT_OF_STOCK = (counts.OUT_OF_STOCK ?? 0) + 1;
         else if (stock <= 5) counts.LOW_STOCK = (counts.LOW_STOCK ?? 0) + 1;
@@ -224,8 +224,8 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
     (statusFilter === 'ALL'
       || (statusFilter === 'LIVE' && item.isActive)
       || (statusFilter === 'ARCHIVED' && !item.isActive)
-      || (statusFilter === 'OUT_OF_STOCK' && item.type === 'READY_MADE' && totalStock(item) <= 0)
-      || (statusFilter === 'LOW_STOCK' && item.type === 'READY_MADE' && totalStock(item) > 0 && totalStock(item) <= 5)
+      || (statusFilter === 'OUT_OF_STOCK' && (item.type === 'READY_MADE' || item.type === 'BOTH') && totalStock(item) <= 0)
+      || (statusFilter === 'LOW_STOCK' && (item.type === 'READY_MADE' || item.type === 'BOTH') && totalStock(item) > 0 && totalStock(item) <= 5)
       || (statusFilter === 'COMING_SOON' && item.comingSoon)) &&
     `${item.designId} ${item.name} ${item.slug}`.toLowerCase().includes(query.toLowerCase()),
   ), [items, query, typeFilter, statusFilter]);
@@ -237,7 +237,7 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
 
   const save = () => {
     if (!form) return;
-    if (form.type === 'CUSTOMIZE' && (
+    if ((form.type === 'CUSTOMIZE' || form.type === 'BOTH') && (
       form.minFabricCount > form.maxFabricCount || form.minLaceCount > form.maxLaceCount || form.minLatkanCount > form.maxLatkanCount
     )) {
       setError('Har material ka minimum count maximum count se kam ya barabar hona chahiye.');
@@ -249,7 +249,7 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
       const { _id, stats, createdAt, updatedAt, createdBy, ...values } = form;
       const body = {
         ...values,
-        ...(values.type === 'CUSTOMIZE' ? { fabricOptions: [], laceOptions: [], latkanOptions: [] } : {}),
+        ...(values.type === 'CUSTOMIZE' || values.type === 'BOTH' ? { fabricOptions: [], laceOptions: [], latkanOptions: [] } : {}),
         mrpInr: Number(values.mrpInr), sellingPriceInr: Number(values.sellingPriceInr), codInitialPaymentPercent: Number(values.codInitialPaymentPercent),
         stitchingChargeInr: Number(values.stitchingChargeInr), stitchingDays: Number(values.stitchingDays),
         minFabricCount: Number(values.minFabricCount), maxFabricCount: Number(values.maxFabricCount),
@@ -317,10 +317,10 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
    * Keeps the size × colour stock matrix in sync with the selected colours and
    * sizes: every colour × size combination gets a variant row (new combos start
    * at stock 10, existing ones keep their stock/SKU). Removed colours/sizes drop
-   * their rows. Only meaningful for READY_MADE — other types hold no inventory.
+   * their rows. Only meaningful for READY_MADE/BOTH — other types hold no inventory.
    */
   const withInventory = (current: AdminProduct, colors: AdminProduct['colors'], sizes: number[]): AdminProduct => {
-    if (current.type !== 'READY_MADE') return { ...current, colors, sizes, variants: [] };
+    if (current.type !== 'READY_MADE' && current.type !== 'BOTH') return { ...current, colors, sizes, variants: [] };
     const existing = new Map<string, AdminProduct['variants'][number]>();
     for (const v of current.variants) {
       if (colors.some((c) => c.slug === v.colorSlug) && sizes.includes(v.size)) existing.set(`${v.colorSlug}|${v.size}`, v);
@@ -352,9 +352,9 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
       <Toolbar title="Product catalogue" count={filtered.length} searchPlaceholder="Search design, name or slug"
         query={query} onQuery={setQuery} onAdd={openNew} addLabel="New product" />
       <div className="flex flex-wrap gap-2 border-b border-maroon-100 px-5 py-3">
-        {['ALL', 'READY_MADE', 'CUSTOMIZE', 'SHOWCASE'].map((type) => (
+        {['ALL', 'READY_MADE', 'CUSTOMIZE', 'BOTH', 'SHOWCASE'].map((type) => (
           <button key={type} onClick={() => setTypeFilter(type)}
-            className={`chip whitespace-nowrap ${typeFilter === type ? 'chip-active' : ''}`}>{type.replace('_', ' ')}</button>
+            className={`chip whitespace-nowrap ${typeFilter === type ? 'chip-active' : ''}`}>{type === 'BOTH' ? 'Ready + Custom' : type.replace('_', ' ')}</button>
         ))}
       </div>
       <div className="flex flex-wrap gap-2 border-b border-maroon-100 bg-maroon-50/30 px-5 py-2">
@@ -386,7 +386,7 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
                 <Badge label={product.type.replace('_', ' ')} />
                 {product.isActive ? <Badge label="Live" /> : <Badge label="Archived" />}
                 {product.comingSoon ? <Badge label="Coming soon" /> : null}
-                {product.type === 'READY_MADE' ? (() => {
+                {product.type === 'READY_MADE' || product.type === 'BOTH' ? (() => {
                   const stock = totalStock(product);
                   if (stock <= 0) return <Badge label="Out of stock" tone="bg-alert/10 text-alert" />;
                   if (stock <= 5) return <Badge label={`Low stock · ${stock}`} tone="bg-marigold-100 text-ink" />;
@@ -419,22 +419,22 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
           <form onSubmit={(e) => { e.preventDefault(); save(); }} className="grid gap-4 sm:grid-cols-2">
             <Field label="Design ID" hint="Khaali chhorein — auto generate hoga, e.g. GS-207"><TextInput value={form.designId} onChange={(e) => setForm({ ...form, designId: e.target.value.toUpperCase() })} /></Field>
             <Field label="Slug" hint="Khaali chhorein — name se auto generate hoga"><TextInput value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} /></Field>
-            <Field label="Product name" className="sm:col-span-2"><TextInput required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+            <Field label="Product name" hint="Khaali chhorein to design ID, e.g. GS-207, ban jayega" className="sm:col-span-2"><TextInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
             <Field label="Type"><Select value={form.type} onChange={(e) => {
               const type = e.target.value as AdminProduct['type'];
               // Switching to CUSTOMIZE with no fabrics chosen defaults to "all fabrics".
               const next = { ...form, type, fabricOptions: type === 'CUSTOMIZE' ? [] : form.fabricOptions };
-              setForm(type === 'READY_MADE' ? withInventory(next, next.colors, next.sizes) : { ...next, variants: [] });
+              setForm(type === 'READY_MADE' || type === 'BOTH' ? withInventory(next, next.colors, next.sizes) : { ...next, variants: [] });
             }}>
-              <option value="READY_MADE">Ready to Buy</option><option value="CUSTOMIZE">Customize</option><option value="SHOWCASE">Showcase / Upcoming</option>
+              <option value="READY_MADE">Ready to Buy</option><option value="CUSTOMIZE">Customize</option><option value="BOTH">Ready + Customize</option><option value="SHOWCASE">Showcase / Upcoming</option>
             </Select></Field>
-            <Field label="Category"><Select required value={typeof form.category === 'string' ? form.category : ''} onChange={(e) => setForm({ ...form, category: e.target.value, subCategory: null })}>
+            <Field label="Category" hint="Khaali chhorne par pehli category lega"><Select value={typeof form.category === 'string' ? form.category : ''} onChange={(e) => setForm({ ...form, category: e.target.value, subCategory: null })}>
               <option value="">Select category</option>{categories.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}
             </Select></Field>
             {form.type === 'SHOWCASE' ? null : (
               <>
-                <Field label="MRP (INR)"><TextInput type="number" min={0} required value={form.mrpInr} onChange={(e) => setForm({ ...form, mrpInr: Number(e.target.value) })} /></Field>
-                <Field label="Selling price (INR)"><TextInput type="number" min={0} required value={form.sellingPriceInr} onChange={(e) => setForm({ ...form, sellingPriceInr: Number(e.target.value) })} /></Field>
+                <Field label="MRP (INR)" hint="Khaali = selling price hi MRP maana jayega"><TextInput type="number" min={0} value={form.mrpInr} onChange={(e) => setForm({ ...form, mrpInr: Number(e.target.value) })} /></Field>
+                <Field label="Selling price (INR)" hint="Required"><TextInput type="number" min={0} required value={form.sellingPriceInr} onChange={(e) => setForm({ ...form, sellingPriceInr: Number(e.target.value) })} /></Field>
                 <Field label="COD initial payment (%)" hint="Delivery se pehle customer se kitna advance lena hai. 20–30% recommended."><TextInput type="number" min={0} max={100} value={form.codInitialPaymentPercent} onChange={(e) => setForm({ ...form, codInitialPaymentPercent: Number(e.target.value) })} /></Field>
                 {(form.mrpInr > form.sellingPriceInr) ? <p className="text-sm font-bold text-leaf sm:col-span-2">Discount: {Math.round(((form.mrpInr - form.sellingPriceInr) / form.mrpInr) * 100)}% off</p> : null}
               </>
@@ -453,7 +453,7 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
               </div>
             ) : null}
 
-            {form.type === 'READY_MADE' ? (
+            {form.type === 'READY_MADE' || form.type === 'BOTH' ? (
               <>
                 <div className="sm:col-span-2 rounded-xl border border-maroon-100 bg-maroon-50/30 p-4">
                   <h4 className="text-sm font-bold text-maroon-700">Sizes</h4>
@@ -492,15 +492,15 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
               </>
             ) : null}
 
-            {form.type === 'CUSTOMIZE' ? (
+            {form.type === 'CUSTOMIZE' || form.type === 'BOTH' ? (
               <div className="sm:col-span-2 rounded-xl border border-maroon-100 bg-maroon-50/30 p-4">
                 <h4 className="text-sm font-bold text-maroon-700">Customize options</h4>
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   <Field label="Minimum fabric" hint="Default 1, maximum 6"><TextInput type="number" min={1} max={6} value={form.minFabricCount} onChange={(e) => setForm({ ...form, minFabricCount: Number(e.target.value) })} /></Field>
                   <Field label="Maximum fabric" hint="Default 1, maximum 6"><TextInput type="number" min={form.minFabricCount} max={6} value={form.maxFabricCount} onChange={(e) => setForm({ ...form, maxFabricCount: Number(e.target.value) })} /></Field>
-                  <Field label="Minimum lace" hint="Default 1, maximum 6"><TextInput type="number" min={1} max={6} value={form.minLaceCount} onChange={(e) => setForm({ ...form, minLaceCount: Number(e.target.value) })} /></Field>
+                  <Field label="Minimum lace" hint="Default 1, 0 se shuru ho sakta hai, maximum 6"><TextInput type="number" min={0} max={6} value={form.minLaceCount} onChange={(e) => setForm({ ...form, minLaceCount: Number(e.target.value) })} /></Field>
                   <Field label="Maximum lace" hint="Default 1, maximum 6"><TextInput type="number" min={form.minLaceCount} max={6} value={form.maxLaceCount} onChange={(e) => setForm({ ...form, maxLaceCount: Number(e.target.value) })} /></Field>
-                  <Field label="Minimum latkan" hint="Default 1, maximum 6"><TextInput type="number" min={1} max={6} value={form.minLatkanCount} onChange={(e) => setForm({ ...form, minLatkanCount: Number(e.target.value) })} /></Field>
+                  <Field label="Minimum latkan" hint="Default 1, 0 se shuru ho sakta hai, maximum 6"><TextInput type="number" min={0} max={6} value={form.minLatkanCount} onChange={(e) => setForm({ ...form, minLatkanCount: Number(e.target.value) })} /></Field>
                   <Field label="Maximum latkan" hint="Default 1, maximum 6"><TextInput type="number" min={form.minLatkanCount} max={6} value={form.maxLatkanCount} onChange={(e) => setForm({ ...form, maxLatkanCount: Number(e.target.value) })} /></Field>
                   <Field label="Stitching charge (INR)"><TextInput type="number" min={0} value={form.stitchingChargeInr} onChange={(e) => setForm({ ...form, stitchingChargeInr: Number(e.target.value) })} /></Field>
                   <Field label="Stitching days" hint="Custom blouse kitne din mein ready hota hai"><TextInput type="number" min={0} max={90} value={form.stitchingDays} onChange={(e) => setForm({ ...form, stitchingDays: Number(e.target.value) })} /></Field>

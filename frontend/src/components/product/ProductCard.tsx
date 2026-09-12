@@ -16,8 +16,9 @@ import type { Currency } from '../../lib/format';
  * The product card (README §6).
  *
  * Kept deliberately plain: image, name, price, rating, colours, sizes and one
- * obvious action. Which action appears is decided by product type — the three
- * types never share a code path, which is what §83 asks for.
+ * obvious action. Which actions appear is decided by product type — READY_MADE
+ * and SHOWCASE each have their own path, and BOTH offers the readymade pair
+ * alongside a custom-stitch option (README §83).
  */
 
 interface ProductCardProps {
@@ -37,7 +38,7 @@ export function ProductCardView({ product, currency, eager }: ProductCardProps) 
   const [fabricOpen, setFabricOpen] = useState(false);
 
   const href = `/blouse/${product.slug}`;
-  const soldOut = product.type === 'READY_MADE' && !product.inStock;
+  const soldOut = (product.type === 'READY_MADE' || product.type === 'BOTH') && !product.inStock;
 
   return (
     <article className="group card flex flex-col overflow-hidden">
@@ -128,6 +129,35 @@ export function ProductCardView({ product, currency, eager }: ProductCardProps) 
               <Scissors size={16} />
               Fabric Choose Karein
             </button>
+          ) : product.type === 'BOTH' ? (
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  disabled={soldOut}
+                  onClick={() => setPicker('cart')}
+                  className="btn-outline px-2 text-[13px]"
+                >
+                  <ShoppingCart size={16} />
+                  Cart
+                </button>
+                <button
+                  type="button"
+                  disabled={soldOut}
+                  onClick={() => {
+                    track('BUY_NOW', { productId: product.id });
+                    setPicker('buy');
+                  }}
+                  className="btn-primary px-2 text-[13px]"
+                >
+                  Buy Now
+                </button>
+              </div>
+              <button type="button" onClick={() => setFabricOpen(true)} className="btn-outline w-full text-[13px]">
+                <Scissors size={16} />
+                Custom banwayein
+              </button>
+            </div>
           ) : (
             <Link to={href} className="btn-outline w-full text-[13px]">
               <Eye size={16} />

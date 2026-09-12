@@ -262,16 +262,16 @@ const userAdminSchema = z.object({
 
 const productSchemaBase = z.object({
   designId: z.string().trim().max(24).optional(), slug: z.string().trim().max(60).optional(),
-  name: z.string().trim().min(1).max(140), description: z.string().max(4000).default(''),
-  type: z.enum(['READY_MADE', 'CUSTOMIZE', 'SHOWCASE']), category: z.string().min(1),
+  name: z.string().trim().max(140).default(''), description: z.string().max(4000).default(''),
+  type: z.enum(['READY_MADE', 'CUSTOMIZE', 'BOTH', 'SHOWCASE']).default('CUSTOMIZE'), category: z.string().trim().optional(),
   subCategory: z.string().nullable().optional(), tags: z.array(z.string().max(60)).default([]),
-  mrpInr: z.number().min(0), sellingPriceInr: z.number().min(0), codInitialPaymentPercent: z.number().int().min(0).max(100).default(25), images: z.array(z.unknown()).default([]),
+  mrpInr: z.number().min(0).optional(), sellingPriceInr: z.number().min(0).optional(), codInitialPaymentPercent: z.number().int().min(0).max(100).default(25), images: z.array(z.unknown()).default([]),
   videoUrl: z.string().max(500).default(''), colors: z.array(z.unknown()).default([]), sizes: z.array(z.number()).default([]),
   variants: z.array(z.unknown()).default([]), fabricOptions: z.array(z.string()).default([]), laceOptions: z.array(z.string()).default([]),
   latkanOptions: z.array(z.string()).default([]),
   minFabricCount: z.number().int().min(1).max(6).default(1), maxFabricCount: z.number().int().min(1).max(6).default(1),
-  minLaceCount: z.number().int().min(1).max(6).default(1), maxLaceCount: z.number().int().min(1).max(6).default(1),
-  minLatkanCount: z.number().int().min(1).max(6).default(1), maxLatkanCount: z.number().int().min(1).max(6).default(1),
+  minLaceCount: z.number().int().min(0).max(6).default(1), maxLaceCount: z.number().int().min(1).max(6).default(1),
+  minLatkanCount: z.number().int().min(0).max(6).default(1), maxLatkanCount: z.number().int().min(1).max(6).default(1),
   stitchingChargeInr: z.number().min(0).default(0),
   fabricInfo: z.string().max(300).default(''), embroidery: z.array(z.string()).default([]), careInstructions: z.string().max(600).default(''),
   stitchingInfo: z.string().max(600).default(''), stitchingDays: z.number().int().min(0).max(90).default(7),
@@ -305,7 +305,12 @@ const withValidProductRanges = <T extends z.ZodTypeAny>(schema: T) => schema.sup
   }
 });
 
-const productSchema = withValidProductRanges(productSchemaBase);
+const productSchema = withValidProductRanges(
+  productSchemaBase.extend({
+    sellingPriceInr: z.number().min(0),
+    images: z.array(z.unknown()).min(1, 'Kam se kam ek image add karein.'),
+  }),
+);
 const productPatchSchema = withValidProductRanges(productSchemaBase.partial());
 
 function adminId(req: Request): string { return req.auth!.userId; }
@@ -1273,7 +1278,14 @@ router.post('/products', adminWriteLimiter, validate({ body: productSchema }), a
   const body = (req as ValidatedRequest<z.infer<typeof productSchema>>).validated.body;
   // Blank design ID / slug are fine — they are generated automatically.
   const designId = body.designId?.trim() ? body.designId.trim() : await nextDesignId();
-  const slug = body.slug?.trim() ? body.slug.trim().toLowerCase() : await uniqueSlug(body.name);
+  // Blank name falls back to the design code so products remain findable.
+  const name = body.name?.trim() || designId;
+  const slug = body.slug?.trim() ? body.slug.trim().toLowerCase() : await uniqueSlug(name);
+  // Blank category falls back to the first category so a "price + image" save works.
+  const category = body.category?.trim() || String((await Category.findOne({}).sort({ _id: 1 }).select('_id').lean())?._id ?? '');
+  if (!category) throw badRequest('Pehle ek category bana lein (Catalog tab), phir product save karein.');
+  // Blank MRP just mirrors the selling price (no fake discount shown).
+  const mrpInr = body.mrpInr && body.mrpInr > 0 ? body.mrpInr : body.sellingPriceInr;
 
   // Ready-made products always keep a COMPLETE size × colour stock matrix:
   // fill empty SKUs with the conventional code and create any colour × size
@@ -1284,7 +1296,7 @@ router.post('/products', adminWriteLimiter, validate({ body: productSchema }), a
   const sizes = (body.sizes ?? []) as number[];
   const sentVariants = (body.variants ?? []) as Array<{ colorSlug?: string; size?: number; sku?: string }>;
   let variants: unknown[] = sentVariants;
-  if (body.type === 'READY_MADE') {
+  if (body.type === 'READY_MADE' || body.type === 'BOTH') {
     variants = sentVariants.map((v) =>
       (v.sku && String(v.sku).trim()) || !v.colorSlug
         ? v
@@ -1308,7 +1320,7 @@ router.post('/products', adminWriteLimiter, validate({ body: productSchema }), a
     }
   }
 
-  const product = await Product.create({ ...body, variants, designId, slug, createdBy: adminId(req) });
+  const product = await Product.create({ ...body, name, category, mrpInr, variants, designId, slug, createdBy: adminId(req) });
   await logAction(req, 'CREATE', 'PRODUCT', String(product._id), product.designId);
   res.status(201).json({ product });
 });
@@ -2269,7 +2281,7 @@ router.get('/dashboard/products', adminReadLimiter, async (req: Request, res: Re
         sku: p.variants?.[0]?.sku ?? '',
         priceMinor: Number(p.sellingPriceInr ?? 0) * 100,
         mrpMinor: Number(p.mrpInr ?? 0) * 100,
-        stock: p.type === 'READY_MADE' ? (p.variants ?? []).reduce((sum, v) => sum + Number(v.stock ?? 0), 0) : null,
+        stock: p.type === 'READY_MADE' || p.type === 'BOTH' ? (p.variants ?? []).reduce((sum, v) => sum + Number(v.stock ?? 0), 0) : null,
         isActive: Boolean(p.isActive),
         allTimeOrders: orders,
         views,

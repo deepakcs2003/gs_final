@@ -63,5 +63,6 @@ export function whatsappEnquiryUrl(params: {
 export const TYPE_LABEL: Record<string, string> = {
   READY_MADE: 'Ready to Buy',
   CUSTOMIZE: 'Customize',
+  BOTH: 'Ready to Buy + Customize',
   SHOWCASE: 'Showcase',
 };

@@ -176,9 +176,9 @@ const productSchema = new Schema(
     latkanOptions: { type: [{ type: Schema.Types.ObjectId, ref: 'Latkan' }], default: [] },
     minFabricCount: { type: Number, min: 1, max: 6, default: 1 },
     maxFabricCount: { type: Number, min: 1, max: 6, default: 1 },
-    minLaceCount: { type: Number, min: 1, max: 6, default: 1 },
+    minLaceCount: { type: Number, min: 0, max: 6, default: 1 },
     maxLaceCount: { type: Number, min: 1, max: 6, default: 1 },
-    minLatkanCount: { type: Number, min: 1, max: 6, default: 1 },
+    minLatkanCount: { type: Number, min: 0, max: 6, default: 1 },
     maxLatkanCount: { type: Number, min: 1, max: 6, default: 1 },
     stitchingChargeInr: { type: Number, min: 0, default: 0 },
 
@@ -237,7 +237,7 @@ productSchema.virtual('discountPercent').get(function () {
 
 /** Total sellable units, used for "Only 2 left" (README §67 — real stock only). */
 productSchema.virtual('totalStock').get(function () {
-  if (this.type !== 'READY_MADE') return null;
+  if (this.type !== 'READY_MADE' && this.type !== 'BOTH') return null;
   return (this.variants ?? []).reduce((sum, v) => sum + (v.stock ?? 0), 0);
 });
 

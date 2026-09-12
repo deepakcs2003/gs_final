@@ -361,7 +361,7 @@ function ProductPicker({ products, value, onChange }: { products: AdminProduct[]
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
 
-  const eligible = products.filter((p) => p.type === 'READY_MADE' || p.type === 'CUSTOMIZE');
+  const eligible = products.filter((p) => p.type === 'READY_MADE' || p.type === 'CUSTOMIZE' || p.type === 'BOTH');
   const selected = eligible.find((p) => p._id === value) ?? null;
   const ql = q.trim().toLowerCase();
   const matches = eligible
