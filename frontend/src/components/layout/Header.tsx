@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
-import { Search, Heart, ShoppingCart, Menu, X, Package, Info, Phone, HelpCircle, LogOut, User } from 'lucide-react';
+import { Search, Heart, ShoppingCart, Menu, X, Package, Info, Phone, HelpCircle, LogOut, User, LayoutDashboard } from 'lucide-react';
 import clsx from 'clsx';
 import { useCart } from '../../store/cart';
 import { useUi, useWishlist } from '../../store/ui';
@@ -36,11 +37,25 @@ const POLICY_LINKS = [
 ];
 
 export function Logo({ compact }: { compact?: boolean }) {
+  // Shows /logo.png from the public folder when present; falls back to the
+  // lettermark so the header never breaks while the file is missing.
+  const [logoFailed, setLogoFailed] = useState(false);
   return (
     <Link to="/" className="flex items-center gap-2 no-tap-highlight" aria-label="Guddi Silai home">
-      <span className="grid h-9 w-9 place-items-center rounded-full bg-maroon-600 font-display text-lg font-bold text-marigold-300">
-        G
-      </span>
+      {logoFailed ? (
+        <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-maroon-600 font-display text-xl font-bold text-marigold-300">
+          G
+        </span>
+      ) : (
+        <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full">
+          <img
+            src="/logo.png"
+            alt="Guddi Silai"
+            className="h-full w-full object-cover"
+            onError={() => setLogoFailed(true)}
+          />
+        </span>
+      )}
       {!compact ? (
         <span className="leading-none">
           <span className="block font-display text-[17px] font-bold text-maroon-700">Guddi Silai</span>
@@ -219,6 +234,17 @@ function MenuDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
               </>
             )}
           </div>
+
+          {user?.isAdmin ? (
+            <Link
+              to="/admin"
+              onClick={onClose}
+              className="mb-4 flex items-center gap-2 rounded-xl bg-maroon-700 px-3 py-3 text-[15px] font-semibold text-white shadow-sm hover:bg-maroon-800"
+            >
+              <LayoutDashboard size={18} />
+              Admin Panel
+            </Link>
+          ) : null}
 
           <nav className="space-y-0.5">
             {PRIMARY_LINKS.map((link) => (

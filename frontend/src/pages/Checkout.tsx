@@ -105,15 +105,23 @@ export function CheckoutPage() {
     if (!codAllowed && paymentMethod === 'COD') setPaymentMethod('RAZORPAY');
   }, [codAllowed, paymentMethod]);
 
+  // Fill city/state from the verified pincode. Area/landmark are intentionally
+  // NOT auto-filled — the customer types those themselves.
   useEffect(() => {
     if (!pincodeCheck.data?.valid || pincodeCheck.data.pincode !== form.pincode) return;
     setForm((current) => ({
       ...current,
       city: pincodeCheck.data.city,
       state: pincodeCheck.data.state,
-      line2: pincodeCheck.data.areas[0] || current.line2,
     }));
   }, [form.pincode, pincodeCheck.data]);
+
+  // Auto-verify the pincode the moment all 6 digits are entered.
+  useEffect(() => {
+    if (form.pincode.length !== 6) return;
+    if (pincodeCheck.data?.pincode === form.pincode) return;
+    if (!pincodeCheck.isPending) pincodeCheck.mutate(form.pincode);
+  }, [form.pincode, pincodeCheck.data?.pincode, pincodeCheck.isPending, pincodeCheck.mutate]);
 
   if (lines.length === 0) {
     return (
@@ -303,16 +311,7 @@ export function CheckoutPage() {
                 <IconInput icon={<Landmark size={16} strokeWidth={1.8} />} value={form.line2} onChange={(e) => set('line2', e.target.value)} maxLength={160} placeholder="Area, landmark, kisi jaane-mane marke ke paas" />
               </Field>
 
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="City" error={errors.city} required>
-                  <IconInput icon={<Building2 size={16} strokeWidth={1.8} />} value={form.city} onChange={(e) => set('city', e.target.value)} invalid={Boolean(errors.city)} maxLength={60} placeholder="City" />
-                </Field>
-                <Field label="State" error={errors.state} required>
-                  <IconInput icon={<Map size={16} strokeWidth={1.8} />} value={form.state} onChange={(e) => set('state', e.target.value)} invalid={Boolean(errors.state)} maxLength={60} placeholder="State" />
-                </Field>
-              </div>
-
-              {/* Pincode check (README §72) */}
+              {/* Pincode first — verified pincode auto-fills city + state (README §72) */}
               <Field label="Pincode" error={errors.pincode} required>
                 <div className="flex gap-2">
                   <IconInput
@@ -326,7 +325,6 @@ export function CheckoutPage() {
                         pincode: e.target.value.replace(/\D/g, '').slice(0, 6),
                         city: '',
                         state: '',
-                        line2: '',
                       }));
                       setErrors((current) => {
                         const next = { ...current };
@@ -349,6 +347,7 @@ export function CheckoutPage() {
                     {pincodeCheck.isPending ? '…' : 'Check'}
                   </button>
                 </div>
+                <p className="mt-1.5 text-[11px] text-ink-muted">6 digit likhte hi pincode check hoga, city aur state apne aap bharenge.</p>
               </Field>
 
               {pincodeResult ? (
@@ -363,9 +362,18 @@ export function CheckoutPage() {
                     ? `${pincodeResult.city}, ${pincodeResult.state} • ${pincodeResult.estimatedDeliveryText}${pincodeResult.courier ? ` • ${pincodeResult.courier}` : ''}`
                     : pincodeResult.valid
                       ? 'Pincode valid hai, lekin is address par delivery available nahi hai.'
-                      : 'Pincode verify nahi hua. Pincode check karein.'}
+                      : 'Pincode verify nahi hua. 6 digit pincode likhein.'}
                 </p>
               ) : null}
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="City" error={errors.city} required>
+                  <IconInput icon={<Building2 size={16} strokeWidth={1.8} />} value={form.city} onChange={(e) => set('city', e.target.value)} invalid={Boolean(errors.city)} maxLength={60} placeholder="City" />
+                </Field>
+                <Field label="State" error={errors.state} required>
+                  <IconInput icon={<Map size={16} strokeWidth={1.8} />} value={form.state} onChange={(e) => set('state', e.target.value)} invalid={Boolean(errors.state)} maxLength={60} placeholder="State" />
+                </Field>
+              </div>
             </div>
           </section>
 
