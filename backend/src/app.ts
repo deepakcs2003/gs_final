@@ -67,10 +67,16 @@ export function createApp(): Express {
         // "https://gs-final-frontend.vercel.app/" bricks every storefront POST.
         const normalized = (value: string) => value.trim().replace(/\/+$/, '');
         const allowed = [env.CORS_ORIGINS, env.APP_BASE_URL].flat();
-        if (!origin || allowed.some((entry) => normalized(entry) === normalized(origin)) || localDevOrigin) {
+        // The storefront is served from the Vercel CDN (main domain, previews
+        // and custom subdomains), so accept any *.vercel.app origin. Cookies are
+        // scoped to the storefront domain, so a foreign Vercel app can't ride
+        // along on a logged-in session.
+        const isVercelDeploy = (value: string) => /^https:\/\/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.vercel\.app$/.test(value);
+        if (!origin || isVercelDeploy(normalized(origin)) || allowed.some((entry) => normalized(entry) === normalized(origin)) || localDevOrigin) {
           callback(null, true);
           return;
         }
+        logger.warn({ origin }, 'CORS block — origin not in allow list');
         callback(new Error('Origin not allowed'));
       },
       credentials: true,
