@@ -35,7 +35,7 @@ export function LoginSheet() {
   const toast = useUi((state) => state.toast);
   const wishlistIds = useWishlist((state) => state.ids);
 
-  const { data: config } = useConfig();
+  const { data: config, isError: configLoadError } = useConfig();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -270,7 +270,13 @@ export function LoginSheet() {
           <div className="flex justify-center">
             <button
               type="button"
-              onClick={() => setError('Google login abhi configure nahi hua hai — admin backend .env mein GOOGLE_CLIENT_ID set karein.')}
+              onClick={() =>
+                setError(
+                  configLoadError
+                    ? 'Google login abhi chal nahi raha — server se sambandh nahi ho paya. Thodi der baad try karein.'
+                    : 'Google login abhi available nahi hai. Thodi der baad try karein.',
+                )
+              }
               className="flex h-12 w-full items-center justify-center gap-3 rounded-xl border border-ink-light/40 bg-white px-4 font-medium text-ink shadow-sm transition hover:bg-ink-light/5"
             >
               <GoogleIcon />
