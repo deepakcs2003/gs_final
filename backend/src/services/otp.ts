@@ -1,5 +1,5 @@
 import { logger } from '../utils/logger.js';
-import { integrations } from '../config/env.js';
+import { integrations, isProd } from '../config/env.js';
 import { sendOtpViaWhatsApp } from './whatsapp/notify.js';
 
 /**
@@ -47,7 +47,14 @@ const whatsappProvider: OtpProvider = {
 };
 
 export function getOtpProvider(): OtpProvider {
-  return integrations.whatsapp ? whatsappProvider : consoleProvider;
+  if (integrations.whatsapp) return whatsappProvider;
+  if (isProd) {
+    // Logging codes is a dev convenience — never a production fallback. Boot
+    // already refuses to start production without WhatsApp, so this is
+    // defence-in-depth against a typo quietly going live.
+    throw new Error('OTP provider configured nahi hai — WhatsApp credentials set karein.');
+  }
+  return consoleProvider;
 }
 
 /** Logs and errors show at most the last 4 digits of a phone number. */

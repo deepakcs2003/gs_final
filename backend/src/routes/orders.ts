@@ -177,6 +177,23 @@ router.post('/', checkoutLimiter, validate({ body: createOrderSchema }), async (
     throw badRequest('Cart khaali hai.');
   }
 
+  // Per-user coupon limit: a registered user may only apply a coupon up to
+  // `perUserLimit` times. Checked at order time (the DB is the source of
+  // truth), not just in the pricing estimate. CANCELLED orders don't count.
+  if (quote.amounts.couponCode && req.auth?.userId) {
+    const coupon = await Coupon.findOne({ code: quote.amounts.couponCode }).lean();
+    if (coupon && coupon.perUserLimit > 0) {
+      const usedByUser = await Order.countDocuments({
+        user: req.auth.userId,
+        'amounts.couponCode': quote.amounts.couponCode,
+        status: { $ne: 'CANCELLED' },
+      });
+      if (usedByUser >= coupon.perUserLimit) {
+        throw badRequest('Yeh coupon aap already use kar chuke hain.');
+      }
+    }
+  }
+
   // Normalise measurements to inches for the stitching team (README §44).
   const measurementByKey = new Map<string, { unit: string; values: Record<string, number>; confirmed: boolean }>();
   for (const line of body.lines) {
@@ -286,7 +303,15 @@ router.post('/', checkoutLimiter, validate({ body: createOrderSchema }), async (
     ).catch(() => undefined);
 
     if (quote.amounts.couponCode) {
-      await Coupon.updateOne({ code: quote.amounts.couponCode }, { $inc: { usedCount: 1 } }).catch(() => undefined);
+      // Conditional increment: usageLimit must not be overshot between the
+      // quote and the order. The outer catch releases reserved stock for us.
+      const couponClaim = await Coupon.updateOne(
+        { code: quote.amounts.couponCode, $or: [{ usageLimit: 0 }, { $expr: { $lt: ['$usedCount', '$usageLimit'] } }] },
+        { $inc: { usedCount: 1 } },
+      ).catch(() => null);
+      if (couponClaim && couponClaim.matchedCount === 0) {
+        throw conflict('Yeh coupon ab khatam ho gaya hai.');
+      }
     }
 
     if (isCod) {
@@ -387,6 +412,13 @@ router.post(
     const order = await Order.findOne({ orderNumber: params.orderNumber });
     if (!order) throw notFound('Yeh order nahi mila.');
 
+    // Idempotent: a previous verify call, or the webhook, may already have
+    // settled this order. Never process a second time.
+    if (order.payment.status === 'PAID' || order.payment.status === 'COD_ADVANCE_PAID') {
+      res.json({ ok: true, orderNumber: order.orderNumber, status: order.status });
+      return;
+    }
+
     if (order.payment.razorpayOrderId !== body.razorpayOrderId) {
       throw badRequest('Payment details match nahi ho rahe.');
     }
@@ -396,13 +428,11 @@ router.post(
       razorpayPaymentId: body.razorpayPaymentId,
       signature: body.signature,
     })) {
+      // Deliberately does NOT mark the order FAILED or release stock here:
+      // the order number is a low-trust identifier, so anyone could otherwise
+      // force a live order to FAILED (griefing / IDOR). The signed Razorpay
+      // webhook (`payment.failed`) is the authoritative failure path.
       logger.warn({ orderNumber: order.orderNumber }, 'razorpay checkout signature verification failed');
-      order.payment.status = 'FAILED';
-      order.payment.failureReason = 'signature_mismatch';
-      order.status = 'FAILED';
-      order.statusHistory.push({ status: 'FAILED', at: new Date(), note: 'Payment verification failed' });
-      await order.save();
-      await releaseStockForOrder(order);
       throw badRequest('Payment verify nahi ho paya. Paisa kata hai to 3-4 din mein wapas aa jayega.');
     }
 
@@ -593,6 +623,15 @@ export async function markPaid(order: InstanceType<typeof Order>, paymentId: str
   order.payment.razorpayPaymentId = paymentId;
   order.payment.verifiedAt = new Date();
   order.payment.paidAt = new Date();
+
+  // Late webhook: payment arrived after the order was marked FAILED (e.g.
+  // retry succeeded, or the browser verify was skipped). Restore to
+  // AWAITING_REVIEW so the admin can process it under the review-first flow.
+  if (order.status === 'FAILED') {
+    order.status = 'AWAITING_REVIEW';
+    order.statusHistory.push({ status: 'AWAITING_REVIEW', at: new Date(), note: 'Payment received after earlier failure' });
+  }
+
   await order.save();
 }
 
@@ -602,6 +641,14 @@ export async function markCodAdvancePaid(order: InstanceType<typeof Order>, paym
   order.payment.razorpayPaymentId = paymentId;
   order.payment.verifiedAt = new Date();
   order.payment.paidAt = new Date();
+
+  // Same late-arrival restore as markPaid — a failed COD advance that later
+  // lands should go back to the review queue, not stay FAILED.
+  if (order.status === 'FAILED') {
+    order.status = 'AWAITING_REVIEW';
+    order.statusHistory.push({ status: 'AWAITING_REVIEW', at: new Date(), note: 'COD advance received after earlier failure' });
+  }
+
   await order.save();
 }
 
@@ -616,7 +663,7 @@ export async function markPaymentFailed(order: InstanceType<typeof Order>, reaso
   await releaseStockForOrder(order);
 }
 
-async function releaseStockForOrder(order: InstanceType<typeof Order>): Promise<void> {
+export async function releaseStockForOrder(order: InstanceType<typeof Order>): Promise<void> {
   for (const item of order.items) {
     if (item.type !== 'READY_MADE') continue;
     await Product.updateOne(

@@ -17,7 +17,7 @@ import { invalidateSettingsCache } from '../services/settings.js';
 import { computeEstimate, detectComplexity, complexitySpecialization, dailyCapacityFor, activeWorkload, tailorWorkloads, pendingWorkload, awaitingTailorCount, getProductionConfig } from '../services/production.js';
 import { createRefund, fetchRefund, refundLifecycle } from '../services/payment/razorpay.js';
 import { notifyOrderCancellation } from '../services/notifications.js';
-import { pushToShiprocket } from './orders.js';
+import { pushToShiprocket, releaseStockForOrder } from './orders.js';
 import { uploadImage, MAX_UPLOAD_BYTES } from '../services/media/cloudinary.js';
 import { generateLatkanSuggestion, generateFabricSuggestion, generateLaceSuggestion, generateProductSuggestions } from '../services/ai/qwen.js';
 import { env, integrations, shiprocketMock, whatsapp } from '../config/env.js';
@@ -624,12 +624,16 @@ router.patch('/orders/:orderNumber/status', adminWriteLimiter, validate({ params
   if (status === 'CONFIRMED' || status === 'CANCELLED') {
     throw badRequest('Confirm/cancel dedicated flow se karein (review controls).');
   }
-  const order = await Order.findOneAndUpdate({ orderNumber }, { $set: { status }, $push: { statusHistory: { status, note, at: new Date() } } }, { new: true });
+  // Validate constraints BEFORE persisting anything — an invalid transition
+  // must not survive a thrown error from the constraints check.
+  const order = await Order.findOne({ orderNumber });
   if (!order) throw notFound('Order nahi mila.');
   if (order.cancellation?.refund?.status && order.cancellation.refund.status !== 'COMPLETED') {
-    // Cancelled + refund in flight — do not let a status edit un-cancel it.
     throw badRequest('Cancelled order modify nahi ho sakta jab tak refund settle na ho.');
   }
+  order.status = status;
+  order.statusHistory.push({ status, note, at: new Date() });
+  await order.save();
   await logAction(req, 'UPDATE_STATUS', 'ORDER', orderNumber, `${orderNumber} -> ${status}${note ? ` (${note})` : ''}`);
   res.json({ order });
 });
@@ -832,6 +836,10 @@ router.post('/orders/:orderNumber/cancel', adminWriteLimiter, validate({ params:
     notificationMessage: '',
   });
   await order.save();
+
+  // Reserved ready-made stock held since checkout is released on cancel —
+  // otherwise cancelled orders would silently keep tying up inventory.
+  await releaseStockForOrder(order);
 
   const refundOutcome = await issueRefund(order);
 
@@ -1839,7 +1847,7 @@ router.delete('/homepage-sections/:id', adminWriteLimiter, validate({ params: id
 router.get('/customers', adminReadLimiter, async (req: Request, res: Response) => {
   const filter: Record<string, unknown> = {};
   if (req.query.q) {
-    const q = String(req.query.q).trim();
+    const q = String(req.query.q).trim().slice(0, 80).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     if (q) filter.$or = [{ name: new RegExp(q, 'i') }, { mobile: new RegExp(q, 'i') }, { email: new RegExp(q, 'i') }];
   }
   const users = await User.find(filter).select('-refreshTokens').sort({ createdAt: -1 }).limit(300).lean();
@@ -2359,7 +2367,12 @@ router.delete('/admin-users/:id', adminWriteLimiter, validate({ params: idSchema
 /* Settings — 85.32                                                           */
 /* ========================================================================== */
 
-router.get('/settings', adminReadLimiter, async (_req: Request, res: Response) => res.json({ items: await Setting.find().sort({ key: 1 }).lean() }));
+router.get('/settings', adminReadLimiter, async (_req: Request, res: Response) => {
+  // Never echo credential-looking values back to the UI, even to admins.
+  const secretKey = /(secret|password|api[-_]?key|razorpay|_token$|app[-_]?secret)/i;
+  const items = await Setting.find().sort({ key: 1 }).lean();
+  res.json({ items: items.filter((doc) => !secretKey.test(String(doc.key))) });
+});
 router.put('/settings/:key', adminWriteLimiter, validate({ body: settingSchema }), async (req: Request, res: Response) => {
   const key = String(req.params.key).trim().slice(0, 60);
   const setting = await Setting.findOneAndUpdate({ key }, { $set: { value: (req as ValidatedRequest<{ value: unknown }>).validated.body.value, updatedBy: adminId(req) } }, { upsert: true, new: true });

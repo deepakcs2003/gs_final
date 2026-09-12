@@ -16,7 +16,7 @@ guddi docker container (Node, serves SPA + /api)
    │
    ├─ MongoDB Atlas (cloud, existing)
    ├─ Razorpay (live keys)
-   ├─ msg91 SMS
+   ├─ WhatsApp Business Cloud API (OTP + notifications, direct Meta)
    └─ Shiprocket (orders/fulfilment)
 ```
 
@@ -88,9 +88,12 @@ CSRF_SECRET=<64 char random, different>
 RAZORPAY_KEY_ID=rzp_live_...
 RAZORPAY_KEY_SECRET=...
 RAZORPAY_WEBHOOK_SECRET=...
-SMS_PROVIDER=msg91
-MSG91_AUTH_KEY=...
-MSG91_OTP_TEMPLATE_ID=...
+WHATSAPP_MODE=production
+WHATSAPP_PRODUCTION_PHONE_NUMBER_ID=...
+WHATSAPP_PRODUCTION_BUSINESS_ACCOUNT_ID=...
+WHATSAPP_PRODUCTION_ACCESS_TOKEN=...
+WHATSAPP_VERIFY_TOKEN=<random string you also put in the Meta webhook config>
+WHATSAPP_APP_SECRET=<Meta app secret — HMAC for delivery-status signatures>
 PUBLIC_DIR=../frontend/dist
 SHIPROCKET_EMAIL=...
 SHIPROCKET_PASSWORD=...
@@ -127,6 +130,12 @@ https://yourdomain.com/api/payments/webhook
 ```
 (events: `payment.captured`, `payment.failed`, `order.paid`) using the same
 `RAZORPAY_WEBHOOK_SECRET`.
+
+Then register the WhatsApp **delivery-status webhook** in the Meta app:
+- Callback URL: `https://yourdomain.com/api/whatsapp/webhook`
+- Verify token: the same `WHATSAPP_VERIFY_TOKEN`
+- Subscribe to `messages` webhook field, with `WHATSAPP_APP_SECRET` used to
+  verify the `X-Hub-Signature-256` header on each POST.
 
 ## 8. Auto-deploy (merge `main` -> the VM goes live)
 

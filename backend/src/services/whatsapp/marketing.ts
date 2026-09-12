@@ -1,6 +1,6 @@
 import { Order } from '../../models/commerce.js';
 import { User } from '../../models/user.js';
-import type { PipelineStage } from 'mongoose';
+import { Types, type PipelineStage } from 'mongoose';
 import { AppError } from '../../utils/errors.js';
 import { logger } from '../../utils/logger.js';
 import { getWhatsAppSettings } from './settings.js';
@@ -56,9 +56,18 @@ export async function targetsForCampaign(campaign: WaCampaignDoc): Promise<Campa
 
   const orderMatch: Record<string, unknown> = { user: { $ne: null } };
   if (segment.purchasedProductIds?.length) {
-    orderMatch['items.product'] = { $in: segment.purchasedProductIds.map(String) };
+    // items.product stores ObjectIds — cast so the $in actually matches, and
+    // drop any non-ObjectId junk the admin form could have persisted.
+    const ids = segment.purchasedProductIds
+      .map((id) => String(id))
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    if (ids.length) orderMatch['items.product'] = { $in: ids };
+    else return [];
   }
-  if (segment.hasOrders) orderMatch.status = { $ne: 'CANCELLED' };
+  // "Has orders" means *completed* orders — customers whose only order FAILED
+  // have not actually bought anything.
+  if (segment.hasOrders) orderMatch.status = { $nin: ['CANCELLED', 'FAILED'] };
 
   if (campaign.targetSource === 'ORDER_USERS') {
     const pipeline: PipelineStage[] = [

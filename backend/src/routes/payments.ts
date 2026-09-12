@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { Order } from '../models/commerce.js';
 import { verifyWebhookSignature } from '../services/payment/razorpay.js';
-import { markPaid, markPaymentFailed } from './orders.js';
+import { markPaid, markCodAdvancePaid, markPaymentFailed } from './orders.js';
 import { logger } from '../utils/logger.js';
 import { getPublicKeyId, razorpayEnabled } from '../services/payment/razorpay.js';
 
@@ -98,8 +98,10 @@ router.post('/webhook', async (req: Request, res: Response) => {
     switch (event.event) {
       case 'payment.captured':
       case 'order.paid':
-        // markPaid is idempotent — the browser callback usually got here first.
-        await markPaid(order, razorpayPaymentId);
+        // COD advance payments use a distinct status; the webhook must honour
+        // the payment method stored on the order, not assume full capture.
+        if (order.payment.method === 'COD') await markCodAdvancePaid(order, razorpayPaymentId);
+        else await markPaid(order, razorpayPaymentId);
         break;
       case 'payment.failed':
         await markPaymentFailed(order, String(entity?.error_reason ?? 'payment_failed'));

@@ -24,14 +24,14 @@ npm run dev:api
 
 ## 2. Create The First Admin
 
-Set an authorised mobile number and configure the MSG91 OTP provider in `backend/.env`:
+Set an authorised mobile number and configure the WhatsApp OTP provider in `backend/.env`:
 
 ```env
 ADMIN_MOBILE=917709894512
-SMS_PROVIDER=msg91
-MSG91_AUTH_KEY=your-msg91-auth-key
-MSG91_SENDER_ID=GUDDIS
-MSG91_OTP_TEMPLATE_ID=your-approved-otp-template-id
+WHATSAPP_MODE=test            # test/dev; switch to production + WHATSAPP_PRODUCTION_* for live
+WHATSAPP_TEST_PHONE_NUMBER_ID=<Meta phone number id>
+WHATSAPP_TEST_BUSINESS_ACCOUNT_ID=<Meta WABA id>
+WHATSAPP_TEST_ACCESS_TOKEN=<Meta access token>
 ```
 
 Then run the seed command:
@@ -40,7 +40,10 @@ Then run the seed command:
 npm run seed
 ```
 
-The seed creates or promotes this mobile number to `SUPER_ADMIN`. `MSG91_OTP_TEMPLATE_ID` must be the approved template ID from the MSG91 **OTP** section. A widget name, widget access token, or JWT is not a template ID.
+The seed creates or promotes this mobile number to `SUPER_ADMIN`. The OTP is
+delivered through the WhatsApp `guddi_otp` AUTHENTICATION template by the queue
+worker. If WhatsApp is not configured, the OTP is printed to the backend log
+(development only).
 
 Do not use a real production admin number in a shared development database.
 
@@ -58,7 +61,7 @@ X-CSRF-Token: <csrf-cookie-value>
 {"mobile":"917709894512"}
 ```
 
-With `SMS_PROVIDER=msg91`, the six-digit OTP is sent by MSG91 to the mobile number. If you switch back to `SMS_PROVIDER=console` for local testing, the OTP is printed in the backend terminal instead.
+With WhatsApp configured, the six-digit OTP is delivered through the approved `guddi_otp` WhatsApp template. For local testing without WhatsApp, the OTP is printed in the backend terminal instead.
 
 ### Verify OTP
 
@@ -297,17 +300,17 @@ For a full manual request, use Postman with cookie persistence:
 1. `GET http://localhost:4000/api/config`.
 2. Copy the `gs_csrf` cookie.
 3. Send OTP with `X-CSRF-Token` equal to that cookie.
-4. Read the OTP from the backend console when `SMS_PROVIDER=console`.
+4. Read the OTP from the backend console when WhatsApp is not configured.
 5. Verify OTP and keep the returned cookies.
 6. Call `GET http://localhost:4000/api/admin/dashboard`.
 7. For writes, send the same `gs_csrf` cookie and header.
 
 ## 8. Security Notes
 
-- Never expose JWT, refresh-token, MongoDB, Razorpay, or SMS secrets in frontend code.
+- Never expose JWT, refresh-token, MongoDB, Razorpay, or WhatsApp secrets in frontend code.
 - Do not remove `requireAdmin()` from `backend/src/routes/admin.ts`.
 - Admin sessions use httpOnly cookies; do not copy access tokens into localStorage.
-- Use HTTPS and a real SMS provider in production. `SMS_PROVIDER=console` is for development only.
+- Use HTTPS and the WhatsApp production mode in production. Logged-out OTP codes are for development only.
 - The current route group checks that the account has an admin role. Individual role restrictions are not yet separated per endpoint; `SUPER_ADMIN` and other admin-role accounts currently pass the same admin route guard.
 
 ## 9. Frontend Admin Workspace

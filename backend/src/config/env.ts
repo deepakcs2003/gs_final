@@ -212,6 +212,25 @@ const schema = z
         message: 'must differ from JWT_SECRET',
       });
     }
+    // Production secrets must not be obvious placeholders that merely satisfy
+    // the length check (e.g. "xxxxx..."). These are not guesses — they are
+    // strings that look like template filler.
+    const placeholder = /^(test|xxxxx{1,}|change{1,}[-_]?me|your{1,}[-_]?(secret|key|token)|placeholder)/i;
+    for (const [key, value] of [
+      ['JWT_SECRET', cfg.JWT_SECRET],
+      ['CSRF_SECRET', cfg.CSRF_SECRET],
+      ['RAZORPAY_KEY_SECRET', cfg.RAZORPAY_KEY_SECRET],
+      ['RAZORPAY_WEBHOOK_SECRET', cfg.RAZORPAY_WEBHOOK_SECRET],
+      ['WHATSAPP_APP_SECRET', cfg.WHATSAPP_APP_SECRET],
+    ] as const) {
+      if (value && placeholder.test(value)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [key],
+          message: 'looks like a placeholder — set a real secret in production',
+        });
+      }
+    }
     if (cfg.SHIPROCKET_MOCK === 'true') {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

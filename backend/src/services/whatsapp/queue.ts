@@ -61,7 +61,16 @@ const log = await MessageLog.create({
     dedupeKey: input.dedupeKey ?? undefined,
     status: 'PENDING',
     mode: whatsapp.mode,
+  }).catch((err: unknown) => {
+    // Two enqueues racing on the same dedupeKey: the unique index is the
+    // source of truth — the loser gets a duplicate and must not queue twice.
+    if (err && typeof err === 'object' && 'code' in err && (err as { code: number }).code === 11000) {
+      return null as unknown as InstanceType<typeof MessageLog>;
+    }
+    throw err;
   });
+
+  if (!log) return { queued: false, reason: 'duplicate — pehle se gaya' };
 
   await WaJob.create({
     messageLog: log._id,
@@ -119,14 +128,18 @@ export async function drainWaQueue(max = 20): Promise<void> {
     const settings = await getWhatsAppSettings();
     if (!settings.enabled) return;
 
-    const jobs = await WaJob.find({ status: { $in: ['PENDING', 'SENDING'] }, nextAt: { $lte: new Date() } })
-      .sort({ createdAt: 1 })
-      .limit(max);
-
-    for (const job of jobs) {
-      job.status = 'SENDING';
-      job.updatedAt = new Date();
-      await job.save();
+    // Atomically claim one due job at a time. `PENDING → SENDING` via
+    // findOneAndUpdate is the lease: two workers on two instances can never
+    // claim the same row, so a message is never double-sent. Stale `SENDING`
+    // rows from a dead process are NOT re-picked — after `maxAttempts` a
+    // message goes FAILED, which the admin can inspect/retry.
+    for (let i = 0; i < max; i++) {
+      const job = await WaJob.findOneAndUpdate(
+        { status: 'PENDING', nextAt: { $lte: new Date() } },
+        { $set: { status: 'SENDING', updatedAt: new Date() } },
+        { sort: { createdAt: 1 }, new: true },
+      );
+      if (!job) break;
 
       const result = await sendWaTemplate({
         mobile: job.mobile,

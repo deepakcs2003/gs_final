@@ -5,7 +5,7 @@ designs. Built to the requirement document in [README.md](README.md).
 
 Stack: React 18 + TypeScript + Vite + Tailwind (frontend) · Node 20+ / Express 5
 + TypeScript + Mongoose (backend) · MongoDB Atlas · Razorpay · Cloudinary ·
-Shiprocket · MSG91.
+Shiprocket · WhatsApp Business Cloud API.
 
 ---
 
@@ -82,7 +82,7 @@ node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 | MongoDB Atlas | everything | server will not start |
 | Razorpay | online payment | online payment hidden, COD still works |
 | Cloudinary | product image hosting | uploads rejected; `gs-art:` placeholders still render |
-| MSG91 | login OTP by SMS | `SMS_PROVIDER=console` prints the code to the log (dev only) |
+| WhatsApp | login OTP + order notifications + campaigns | OTP falls back to the backend log (dev only); notifications/campaigns stay queued |
 | Shiprocket | pincode check, courier push | pincode check returns a neutral answer; orders still place |
 | Google | "Continue with Google" | the button is simply not shown |
 
