@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { App } from './App';
 import { startAnalytics } from './lib/analytics';
+import { initGA4 } from './lib/ga';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -19,6 +20,7 @@ const queryClient = new QueryClient({
 });
 
 startAnalytics();
+initGA4();
 
 const container = document.getElementById('root');
 if (!container) throw new Error('Root element missing');

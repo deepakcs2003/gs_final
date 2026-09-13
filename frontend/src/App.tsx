@@ -9,6 +9,7 @@ import { SearchOverlay } from './components/SearchOverlay';
 import { LoginSheet } from './components/LoginSheet';
 import { Toaster } from './components/ui';
 import { track } from './lib/analytics';
+import { trackPageView } from './lib/ga';
 
 import { HomePage } from './pages/Home';
 import { ListingPage } from './pages/Listing';
@@ -29,7 +30,8 @@ function RouteEffects() {
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
     track('PAGE_VIEW');
-  }, [location.pathname]);
+    trackPageView(location.pathname, location.search);
+  }, [location.pathname, location.search]);
 
   return null;
 }

@@ -160,15 +160,21 @@
     @apply snap-start;
   }
 
-  /* Vertical selection list for lace/latkan steps so the buyer scrolls down
-     instead of sliding left-right through a long option strip. */
+  /* Lace/latkan selection uses the same card grid pattern as fabric: rows of
+     2 cards on mobile, then more rows vertically as the buyer scrolls. */
   .vertical-rail {
-    @apply flex max-h-[26rem] flex-col gap-3 overflow-y-auto pr-1;
+    @apply grid max-h-[26rem] grid-cols-2 gap-3 overflow-y-auto pr-1;
     scrollbar-width: thin;
     scroll-snap-type: y proximity;
   }
   .vertical-rail > * {
     @apply snap-start;
+  }
+
+  @media (min-width: 640px) {
+    .vertical-rail {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
   }
 
   .skeleton {
