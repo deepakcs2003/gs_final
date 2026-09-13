@@ -46,6 +46,10 @@ export function createApp(): Express {
           formAction: ["'none'"],
         },
       },
+      // Google Identity Services relies on window.postMessage between the login
+      // popup and the parent page. Helmet's default COOP policy of
+      // "same-origin" blocks this handshake, so we disable it intentionally.
+      crossOriginOpenerPolicy: false,
       crossOriginResourcePolicy: { policy: 'same-site' },
       referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
       hsts: isProd ? { maxAge: 31_536_000, includeSubDomains: true, preload: true } : false,
