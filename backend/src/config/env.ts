@@ -94,9 +94,14 @@ const schema = z
 
     // Google Gemini free tier — the PRIMARY vision provider for the admin
     // "Generate with Qwen" helper (free, cloud-hosted, no server RAM needed).
-    // Give GEMINI_API_KEY from https://aistudio.google.com/apikey. If it's set,
-    // Gemini is used; otherwise the backend falls back to Groq.
+    // Set any of GEMINI_API_KEY, GEMINI_API_KEY_1, GEMINI_API_KEY_2,
+    // GEMINI_API_KEY_3, or GEMINI_API_KEY_4. When one key skips its quota/rate
+    // limit, the backend automatically rotates to the next configured key.
     GEMINI_API_KEY: z.string().default(''),
+    GEMINI_API_KEY_1: z.string().default(''),
+    GEMINI_API_KEY_2: z.string().default(''),
+    GEMINI_API_KEY_3: z.string().default(''),
+    GEMINI_API_KEY_4: z.string().default(''),
     // Free-tier model. gemini-2.5-flash = best quality; gemini-2.5-flash-lite
     // has much higher free daily limits. Both see up to 8 images per request.
     GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
@@ -250,6 +255,19 @@ if (!parsed.success) {
 }
 
 export const env = parsed.data;
+export const geminiApiKeys = Array.from(
+  new Set(
+    [
+      env.GEMINI_API_KEY,
+      env.GEMINI_API_KEY_1,
+      env.GEMINI_API_KEY_2,
+      env.GEMINI_API_KEY_3,
+      env.GEMINI_API_KEY_4,
+    ]
+      .map((value) => value.trim())
+      .filter(Boolean),
+  ),
+);
 export const isProd = env.NODE_ENV === 'production';
 export const isDev = env.NODE_ENV === 'development';
 
@@ -335,6 +353,6 @@ export const integrations = {
   cloudinary: Boolean(env.CLOUDINARY_CLOUD_NAME && env.CLOUDINARY_API_KEY && env.CLOUDINARY_API_SECRET),
   shiprocket: Boolean(env.SHIPROCKET_EMAIL && env.SHIPROCKET_PASSWORD),
   google: Boolean(env.GOOGLE_CLIENT_ID),
-  qwen: Boolean(env.GROQ_API_KEY || env.GEMINI_API_KEY),
+  qwen: Boolean(env.GROQ_API_KEY || geminiApiKeys.length > 0),
   whatsapp: whatsapp.enabled && whatsapp.configured,
 } as const;

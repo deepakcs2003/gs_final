@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { env } from '../../config/env.js';
+import { env, geminiApiKeys } from '../../config/env.js';
 import { logger } from '../../utils/logger.js';
 import { serviceUnavailable } from '../../utils/errors.js';
 
@@ -427,7 +427,7 @@ async function qwenChat(model: string, prompt: string, assets: ImageAsset[]): Pr
  * HTTP-like status on the thrown Error so the shared classifier can handle both
  * providers identically.
  */
-async function geminiChat(model: string, prompt: string, assets: ImageAsset[]): Promise<ChatResult> {
+async function geminiChat(model: string, prompt: string, assets: ImageAsset[], apiKey: string): Promise<ChatResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), QWEN_TIMEOUT_MS);
   try {
@@ -435,7 +435,7 @@ async function geminiChat(model: string, prompt: string, assets: ImageAsset[]): 
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-goog-api-key': env.GEMINI_API_KEY,
+        'x-goog-api-key': apiKey,
       },
       body: JSON.stringify({
         contents: [
@@ -500,6 +500,7 @@ interface AiProvider {
   kind: 'gemini' | 'groq';
   name: string;
   models: string[];
+  apiKey?: string;
 }
 
 /**
@@ -510,8 +511,14 @@ interface AiProvider {
  */
 function buildProviders(): AiProvider[] {
   const list: AiProvider[] = [];
-  if (env.GEMINI_API_KEY) {
-    list.push({ kind: 'gemini', name: 'Gemini (free tier)', models: [env.GEMINI_MODEL.trim() || 'gemini-2.5-flash'] });
+  const keys = geminiApiKeys.length > 0 ? geminiApiKeys : env.GEMINI_API_KEY ? [env.GEMINI_API_KEY] : [];
+  for (const [index, key] of keys.entries()) {
+    list.push({
+      kind: 'gemini',
+      name: `Gemini (${index + 1})`,
+      models: [env.GEMINI_MODEL.trim() || 'gemini-2.5-flash'],
+      apiKey: key,
+    });
   }
   if (env.GROQ_API_KEY) {
     list.push({ kind: 'groq', name: 'Groq', models: candidates });
@@ -521,7 +528,7 @@ function buildProviders(): AiProvider[] {
 
 /** Routes one vision call through the right provider's transport. */
 function chatFor(model: string, prompt: string, assets: ImageAsset[], provider: AiProvider): Promise<ChatResult> {
-  return provider.kind === 'gemini' ? geminiChat(model, prompt, assets) : qwenChat(model, prompt, assets);
+  return provider.kind === 'gemini' ? geminiChat(model, prompt, assets, provider.apiKey ?? env.GEMINI_API_KEY) : qwenChat(model, prompt, assets);
 }
 
 /** Which classes of failure happened — the final user message is built from these per provider. */
@@ -604,7 +611,9 @@ async function generateStructured<T extends Record<string, unknown>>(args: {
 }): Promise<T> {
   const providers = buildProviders();
   if (providers.length === 0) {
-    throw serviceUnavailable('AI abhi set nahi hai — GEMINI_API_KEY ya GROQ_API_KEY backend .env mein daalein.');
+    throw serviceUnavailable(
+      'AI abhi set nahi hai — GEMINI_API_KEY_1 / GEMINI_API_KEY_2 / GEMINI_API_KEY_3 / GEMINI_API_KEY_4 ya GROQ_API_KEY backend .env mein daalein.',
+    );
   }
 
   let assets: ImageAsset[];
