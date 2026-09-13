@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Instagram, MessageCircle, Phone } from 'lucide-react';
+import { Facebook, Instagram, MessageCircle, Phone, Youtube } from 'lucide-react';
 import { useConfig } from '../../hooks/queries';
 
 const SHOP_LINKS = [
@@ -57,9 +57,33 @@ export function Footer() {
                 <Phone size={18} />
               </a>
             ) : null}
-            <span className="grid h-10 w-10 place-items-center rounded-full bg-maroon-50 text-maroon-600">
+            <a
+              href="https://www.instagram.com/guddi_silai/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="grid h-10 w-10 place-items-center rounded-full bg-maroon-50 text-maroon-600"
+              aria-label="Instagram"
+            >
               <Instagram size={18} />
-            </span>
+            </a>
+            <a
+              href="https://www.facebook.com/GuddiSilai"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="grid h-10 w-10 place-items-center rounded-full bg-maroon-50 text-maroon-600"
+              aria-label="Facebook"
+            >
+              <Facebook size={18} />
+            </a>
+            <a
+              href="https://www.youtube.com/@Guddi_Silai"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="grid h-10 w-10 place-items-center rounded-full bg-maroon-50 text-maroon-600"
+              aria-label="YouTube"
+            >
+              <Youtube size={18} />
+            </a>
           </div>
         </div>
 
