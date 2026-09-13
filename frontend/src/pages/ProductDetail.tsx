@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Heart, Share2, MessageCircle, ShoppingCart, Scissors, ChevronDown, Truck, Ruler } from 'lucide-react';
 import clsx from 'clsx';
@@ -46,6 +46,7 @@ export function ProductDetailPage() {
   const [size, setSize] = useState<number | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [fabricOpen, setFabricOpen] = useState(false);
+  const touchStartX = useRef<number | null>(null);
 
   const currency = config?.currency ?? 'INR';
 
@@ -180,16 +181,38 @@ export function ProductDetailPage() {
       <div className="lg:grid lg:grid-cols-2 lg:gap-8">
         {/* Gallery (README §7–8) */}
         <div className="lg:sticky lg:top-[calc(var(--header-h)+16px)] lg:self-start">
-          <ZoomableImage
-            src={product.images[activeImage]?.url ?? product.image}
-            alt={product.images[activeImage]?.alt ?? product.name}
-            aspectRatio={
-              product.images[activeImage]?.width && product.images[activeImage]?.height
-                ? product.images[activeImage].width / product.images[activeImage].height
-                : undefined
-            }
-            onZoom={() => track('IMAGE_ZOOM', { productId: product.id })}
-          />
+          <div
+            onTouchStart={(event) => {
+              if (product.images.length <= 1) return;
+              touchStartX.current = event.touches[0]?.clientX ?? null;
+            }}
+            onTouchEnd={(event) => {
+              if (product.images.length <= 1 || touchStartX.current === null) return;
+              const currentX = event.changedTouches[0]?.clientX ?? touchStartX.current;
+              const delta = currentX - touchStartX.current;
+              if (Math.abs(delta) < 60) {
+                touchStartX.current = null;
+                return;
+              }
+              if (delta < 0 && activeImage < product.images.length - 1) {
+                setActiveImage((prev) => prev + 1);
+              } else if (delta > 0 && activeImage > 0) {
+                setActiveImage((prev) => prev - 1);
+              }
+              touchStartX.current = null;
+            }}
+          >
+            <ZoomableImage
+              src={product.images[activeImage]?.url ?? product.image}
+              alt={product.images[activeImage]?.alt ?? product.name}
+              aspectRatio={
+                product.images[activeImage]?.width && product.images[activeImage]?.height
+                  ? product.images[activeImage].width / product.images[activeImage].height
+                  : undefined
+              }
+              onZoom={() => track('IMAGE_ZOOM', { productId: product.id })}
+            />
+          </div>
 
           {product.images.length > 1 ? (
             <div className="rail mt-3">
