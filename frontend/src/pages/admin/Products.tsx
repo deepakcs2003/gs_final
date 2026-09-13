@@ -376,33 +376,33 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
       <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
         {filtered.map((product) => (
           <article key={product._id} className={`rounded-xl border p-4 ${product.isActive ? 'border-maroon-100 bg-white' : 'border-dashed border-ink-light/40 bg-ink-light/5 opacity-60'}`}>
-            <div className="flex items-start gap-3">
+            <div className="admin-row-stack items-start gap-3">
               {product.images?.[0]?.url ? (
-                <img src={cloudinarySrc(product.images[0].url, 160)} alt={product.name} loading="lazy" className="h-16 w-16 shrink-0 rounded-lg border border-maroon-100 object-cover" />
+                <img src={cloudinarySrc(product.images[0].url, 160)} alt={product.name} loading="lazy" className="h-14 w-14 shrink-0 rounded-lg border border-maroon-100 object-cover" />
               ) : (
-                <div className="grid h-16 w-16 shrink-0 place-items-center rounded-lg border border-dashed border-ink-light/40 bg-maroon-50/40 text-xs font-semibold text-ink-light">No img</div>
+                <div className="grid h-14 w-14 shrink-0 place-items-center rounded-lg border border-dashed border-ink-light/40 bg-maroon-50/40 text-[10px] font-semibold text-ink-light">No img</div>
               )}
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs font-bold tracking-wider text-maroon-600">{product.designId}</p>
-                <h4 className="mt-0.5 truncate font-semibold">{product.name}</h4>
-                {product.createdAt ? (
-                  <p className="mt-1 text-[11px] text-ink-muted">Added {new Date(product.createdAt).toLocaleDateString('en-IN')}
-                    {product.createdBy && typeof product.createdBy === 'object' && product.createdBy.mobile ? <> · by <span className="font-semibold">{product.createdBy.mobile}</span></> : null}
-                  </p>
-                ) : null}
-              </div>
-              <div className="flex shrink-0 flex-col items-end gap-1">
-                <Badge label={product.type.replace('_', ' ')} />
-                {product.isActive ? <Badge label="Live" /> : <Badge label="Archived" />}
-                {product.comingSoon ? <Badge label="Coming soon" /> : null}
-                {product.type === 'READY_MADE' || product.type === 'BOTH' ? (() => {
-                  const stock = totalStock(product);
-                  if (stock <= 0) return <Badge label="Out of stock" tone="bg-alert/10 text-alert" />;
-                  if (stock <= 5) return <Badge label={`Low stock · ${stock}`} tone="bg-marigold-100 text-ink" />;
-                  return <Badge label={`${stock} units`} />;
-                })() : null}
+                <h4 className="admin-text-wrap mt-0.5 font-semibold">{product.name}</h4>
               </div>
             </div>
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <Badge label={product.type.replace('_', ' ')} />
+              {product.isActive ? <Badge label="Live" /> : <Badge label="Archived" />}
+              {product.comingSoon ? <Badge label="Coming soon" /> : null}
+              {product.type === 'READY_MADE' || product.type === 'BOTH' ? (() => {
+                const stock = totalStock(product);
+                if (stock <= 0) return <Badge label="Out of stock" tone="bg-alert/10 text-alert" />;
+                if (stock <= 5) return <Badge label={`Low stock · ${stock}`} tone="bg-marigold-100 text-ink" />;
+                return <Badge label={`${stock} units`} />;
+              })() : null}
+            </div>
+            {product.createdAt ? (
+              <p className="mt-2 truncate text-[11px] text-ink-muted">Added {new Date(product.createdAt).toLocaleDateString('en-IN')}
+                {product.createdBy && typeof product.createdBy === 'object' && product.createdBy.mobile ? <> · by <span className="font-semibold">{product.createdBy.mobile}</span></> : null}
+              </p>
+            ) : null}
             {product.type === 'SHOWCASE' && product.sellingPriceInr <= 0
               ? <p className="mt-3 text-lg font-bold">Price on request</p>
               : <p className="mt-3 text-lg font-bold">{inr(product.sellingPriceInr * 100)} <span className="text-sm font-normal text-ink-light line-through">{inr(product.mrpInr * 100)}</span></p>}
@@ -410,7 +410,7 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
               <div className="mt-2 flex flex-wrap gap-1.5">{product.colors.map((c) => <span key={c.slug} title={c.name} className="h-4 w-4 rounded-full border border-ink-light/40" style={{ backgroundColor: c.hex }} />)}</div>
             ) : null}
             <div className="mt-3 flex flex-wrap gap-2">
-              <BtnOutline className="flex-1 px-3" onClick={() => openEdit(product)}><Pencil size={15} />Edit</BtnOutline>
+              <BtnOutline className="min-w-0 flex-1 px-3" onClick={() => openEdit(product)}><Pencil size={15} />Edit</BtnOutline>
               <BtnGhost className="px-3" onClick={() => void duplicate(product)} disabled={busy === `dup-${product._id}`}><Copy size={15} /></BtnGhost>
               {product.isActive
                 ? <BtnGhost className="px-3" onClick={() => void archive(product)} disabled={busy === `arc-${product._id}`} title="Archive"><Archive size={15} /></BtnGhost>

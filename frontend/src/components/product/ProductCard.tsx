@@ -9,7 +9,7 @@ import { FabricSheet } from '../customize/FabricSheet';
 import { useCart } from '../../store/cart';
 import { useUi, useWishlist } from '../../store/ui';
 import { track } from '../../lib/analytics';
-import type { ProductCard as ProductCardType } from '../../lib/types';
+import { ProductCard as ProductCardType } from '../../lib/types';
 import type { Currency } from '../../lib/format';
 
 /**

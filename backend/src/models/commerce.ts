@@ -355,6 +355,8 @@ const orderSchema = new Schema(
     production: { type: productionSchema, default: () => ({}) },
     /** Customer-facing "estimated delivery" range. */
     deliveryEstimate: { type: deliveryEstimateSchema, default: () => ({}) },
+    /** Admin-set confirmed delivery date (customer tracking par dikhti hai). */
+    promisedDeliveryAt: { type: Date, default: null },
     /** Present only after a cancellation. */
     cancellation: { type: cancellationSchema, default: () => ({}) },
 
@@ -364,6 +366,8 @@ const orderSchema = new Schema(
     customerNote: { type: String, default: '', maxlength: 500 },
     /** README §44 — stitching team needs to know which guide was followed. */
     measurementInstructionVersion: { type: String, default: 'v1' },
+    /** cart = whole cart checkout, buy_now = single-product Buy Now order. */
+    checkoutMode: { type: String, enum: ['cart', 'buy_now'], default: 'cart' },
 
     placedAt: { type: Date, default: Date.now, index: true },
   },

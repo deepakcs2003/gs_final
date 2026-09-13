@@ -335,6 +335,8 @@ export interface SiteConfig {
   homeFeedMode: 'SEQUENTIAL' | 'MIXED';
   homeFeedOrder: ProductType[];
   homeFeedPageSize: number;
+  laceColorPickerEnabled: boolean;
+  latkanColorPickerEnabled: boolean;
 }
 
 export interface CurrentUser {
@@ -406,6 +408,8 @@ export interface OrderDetail extends OrderSummary {
     statusText: string;
     lastSyncedAt: string | null;
   };
+  /** Admin-set confirmed delivery date (tracking par dikhti hai). */
+  promisedDeliveryAt: string | null;
   deliveryEstimate: {
     stitchingWorkingDays: number;
     from: string;

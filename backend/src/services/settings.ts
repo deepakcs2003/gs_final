@@ -25,6 +25,10 @@ export interface BusinessSettings {
   productionPackingDays: number;
   productionStandardShippingDays: number;
   productionBufferDays: number;
+
+  /** Lace/latkan colour picker popups (independent per accessory type). */
+  laceColorPickerEnabled: boolean;
+  latkanColorPickerEnabled: boolean;
 }
 
 const DEFAULTS: BusinessSettings = {
@@ -44,8 +48,10 @@ const DEFAULTS: BusinessSettings = {
   productionPackingDays: 1,
   productionStandardShippingDays: 4,
   productionBufferDays: 1,
-};
 
+  laceColorPickerEnabled: false,
+  latkanColorPickerEnabled: false,
+};
 const CACHE_TTL_MS = 60_000;
 let cache: { value: BusinessSettings; at: number } | null = null;
 
@@ -112,6 +118,13 @@ function coerce(key: keyof BusinessSettings, raw: unknown): unknown {
       const n = Number(raw);
       return Number.isInteger(n) && n >= 0 && n <= 30 ? n : undefined;
     }
+    case 'laceColorPickerEnabled':
+    case 'latkanColorPickerEnabled':
+      return raw === true || raw === 'true' || raw === 1 || raw === '1'
+        ? true
+        : raw === false || raw === 'false' || raw === 0 || raw === '0'
+          ? false
+          : undefined;
     default:
       return undefined;
   }

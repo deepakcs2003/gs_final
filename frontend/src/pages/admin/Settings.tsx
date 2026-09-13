@@ -7,7 +7,7 @@ export interface SettingDef {
   key: string;
   label: string;
   hint?: string;
-  type?: 'text' | 'number' | 'textarea' | 'select';
+  type?: 'text' | 'number' | 'textarea' | 'select' | 'toggle';
   options?: Array<{ value: string; label: string }>;
 }
 
@@ -28,7 +28,7 @@ export function SettingsForm({ definitions }: { definitions: SettingDef[] }) {
         for (const def of definitions) {
           const found = res.items.find((i) => i.key === def.key)?.value;
           map[def.key] = found === undefined || found === null
-            ? def.options?.[0]?.value ?? ''
+            ? def.type === 'toggle' ? 'false' : def.options?.[0]?.value ?? ''
             : typeof found === 'object' ? JSON.stringify(found, null, 2) : String(found);
         }
         setValues(map);
@@ -37,10 +37,10 @@ export function SettingsForm({ definitions }: { definitions: SettingDef[] }) {
   };
   useEffect(() => { if (definitions.length) load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [definitions.length]);
 
-  const save = (def: SettingDef) => {
+  const save = (def: SettingDef, raw?: string) => {
     void setBusy(def.key);
-    const raw = values[def.key] ?? '';
-    const value = def.type === 'number' ? Number(raw) : raw;
+    const current = raw ?? values[def.key] ?? '';
+    const value = def.type === 'number' ? Number(current) : def.type === 'toggle' ? current === 'true' : current;
     void api(`/admin/settings/${def.key}`, { method: 'PUT', body: { value } })
       .then(() => { setError(''); setSavedAt(def.key); setTimeout(() => setSavedAt(''), 1600); })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Save nahi hua.'))
@@ -50,7 +50,9 @@ export function SettingsForm({ definitions }: { definitions: SettingDef[] }) {
   if (error) return <div className="m-4 rounded-xl border border-alert/30 bg-alert/10 p-4 text-sm font-semibold text-alert">{error}</div>;
   return (
     <div className="grid gap-4 p-4 lg:grid-cols-2">
-      {definitions.map((def) => (
+      {definitions.map((def) => {
+        const on = values[def.key] === 'true';
+        return (
         <div className="rounded-xl border border-maroon-100 p-4" key={def.key}>
           <div className="flex items-center justify-between gap-2">
             <label className="text-sm font-semibold" htmlFor={`setting-${def.key}`}>{def.label}</label>
@@ -58,18 +60,42 @@ export function SettingsForm({ definitions }: { definitions: SettingDef[] }) {
           </div>
           {def.hint ? <p className="mt-1 text-xs text-ink-muted">{def.hint}</p> : null}
           <div className="mt-3 flex gap-2">
-            {def.type === 'select' ? (
+            {def.type === 'toggle' ? (
+              <button
+                type="button"
+                id={`setting-${def.key}`}
+                aria-pressed={on}
+                disabled={busy === def.key}
+                onClick={() => {
+                  const next = on ? 'false' : 'true';
+                  setValues({ ...values, [def.key]: next });
+                  save(def, next);
+                }}
+                className="flex min-h-[42px] items-center gap-2.5 rounded-xl border border-maroon-100 px-3 transition hover:bg-maroon-50"
+              >
+                <span className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${on ? 'bg-leaf' : 'bg-ink-light/30'}`}>
+                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${on ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </span>
+                <span className={`text-[13px] font-bold ${on ? 'text-leaf' : 'text-ink-muted'}`}>
+                  {on ? 'ON' : 'OFF'}
+                  {savedAt === def.key ? ' ✓' : ''}
+                </span>
+              </button>
+            ) : def.type === 'select' ? (
               <select id={`setting-${def.key}`} className="field min-h-[42px] flex-1" value={values[def.key] ?? ''} onChange={(e) => setValues({ ...values, [def.key]: e.target.value })} onBlur={() => save(def)}>
                 {def.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
             ) : (
               <input id={`setting-${def.key}`} className="field min-h-[42px] flex-1" type={def.type === 'number' ? 'number' : 'text'} value={values[def.key] ?? ''} onChange={(e) => setValues({ ...values, [def.key]: e.target.value })} onBlur={() => save(def)} />
             )}
-            <BtnGhost className="min-h-[42px] px-3" disabled={busy === def.key} onClick={() => save(def)}>{savedAt === def.key ? <Check size={15} /> : 'Save'}</BtnGhost>
+            {def.type !== 'toggle' ? (
+              <BtnGhost className="min-h-[42px] px-3" disabled={busy === def.key} onClick={() => save(def)}>{savedAt === def.key ? <Check size={15} /> : 'Save'}</BtnGhost>
+            ) : null}
           </div>
-          {savedAt === def.key ? <p className="mt-1 text-xs font-semibold text-leaf">Saved ✓</p> : null}
+          {savedAt === def.key && def.type !== 'toggle' ? <p className="mt-1 text-xs font-semibold text-leaf">Saved ✓</p> : null}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -90,6 +116,11 @@ const productionDefs: SettingDef[] = [
   { key: 'productionPackingDays', label: 'Packing (working days)', type: 'number' },
   { key: 'productionStandardShippingDays', label: 'Standard shipping (calendar days)', hint: 'Estimate ke "to" date: stitching ke baad itne din shipping.', type: 'number' },
   { key: 'productionBufferDays', label: 'Buffer (working days)', hint: 'Thoda cushion rakhe taaki late na ho.', type: 'number' },
+];
+
+const accessoryDefs: SettingDef[] = [
+  { key: 'laceColorPickerEnabled', label: 'Lace colour picker', hint: 'ON = lace par tap karte hi colour popup khulega. OFF = lace directly (exact same) add hogi — koi colour choice ya fabric matching nahi.', type: 'toggle' },
+  { key: 'latkanColorPickerEnabled', label: 'Latkan colour picker', hint: 'ON = latkan par tap karte hi colour popup khulega. OFF = latkan directly (exact same) add hoga — koi colour choice ya fabric matching nahi.', type: 'toggle' },
 ];
 
 export function SettingsModule() {
@@ -128,6 +159,14 @@ export function SettingsModule() {
           <p className="hint mt-1">Custom order estimates inhi settings se bante hain — Tailors module ke capacity se mil kar delivery range deta hai.</p>
         </div>
         <SettingsForm definitions={productionDefs} />
+      </div>
+
+      <div className="border-t border-maroon-100">
+        <div className="px-4 pt-4">
+          <h4 className="section-title">Lace & Latkan colour picker</h4>
+          <p className="hint mt-1">Dono toggle independent hain. OFF hone par user ko colour-popup nahi dikhta aur lace/latkan bilkul waise hi add hote hain jaise catalog mein dikh rahe hain (exact item colour, koi fabric matching nahi).</p>
+        </div>
+        <SettingsForm definitions={accessoryDefs} />
       </div>
 
       <div className="border-t border-maroon-100 p-4">

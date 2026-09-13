@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, ApiError } from '../../lib/api';
 import { BtnGhost, BtnPrimary, Checkbox, Empty, Field, ImagePicker, Modal, TextArea, TextInput, Toolbar, Toggle } from './shared';
 import { Pencil, Trash2, Check, X } from 'lucide-react';
+import { cloudinarySrc } from '../../lib/image';
 
 interface MeasurementField {
   _id: string; key: string; label: string; labelHi: string; instruction: string;
@@ -62,27 +63,34 @@ export function MeasurementsModule() {
       <Toolbar title="Measurement fields" count={items.length} onAdd={() => setForm(emptyField())} addLabel="Add field" />
       <p className="hint px-5 pb-2">Customer se kaun-kaun se measurements lene hain ye aap decide karte hain. Field add/remove/rename/reorder sab yahin se hota hai.</p>
       {error ? <div className="m-4 rounded-xl border border-alert/30 bg-alert/10 p-4 text-sm font-semibold text-alert">{error}</div> : null}
-      <div className="divide-y divide-maroon-100">
-        {items.length === 0 ? <Empty message="Koi measurement field nahi hai." /> :
+      <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+        {items.length === 0 ? <div className="col-span-full"><Empty message="Koi measurement field nahi hai." /></div> :
           items.map((field) => (
-            <div className="flex items-center justify-between gap-3 px-5 py-3" key={field._id}>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-maroon-50 text-xs font-bold text-maroon-700">{field.order}</span>
-                  <span className="font-semibold">{field.label}</span>
-                  {field.required ? <span className="rounded bg-maroon-50 px-1.5 py-0.5 text-[10px] font-bold text-maroon-700">REQUIRED</span> : null}
-                  {!field.isActive ? <span className="rounded bg-alert/10 px-1.5 py-0.5 text-[10px] font-bold text-alert">INACTIVE</span> : null}
+            <article key={field._id} onClick={() => setForm({ ...field })} className="cursor-pointer rounded-xl border border-maroon-100 bg-white p-4 shadow-card transition hover:border-maroon-200 active:scale-[0.99]">
+              <div className="flex items-start gap-3">
+                <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-xl bg-maroon-50">
+                  {field.imageUrl || field.gifUrl ? <img src={cloudinarySrc(field.imageUrl || field.gifUrl, 160)} alt={field.label} className="h-full w-full object-cover" /> : <span className="text-[10px] font-bold text-maroon-700">MEA</span>}
                 </div>
-                <div className="mt-0.5 text-xs text-ink-muted">
-                  <span className="font-mono">{field.key}</span> · {field.labelHi || '—'} · {field.minInch}"–{field.maxInch}"
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-maroon-50 text-xs font-bold text-maroon-700">{field.order}</span>
+                    <span className="truncate font-semibold text-ink">{field.label}</span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                    {field.required ? <span className="rounded bg-maroon-50 px-1.5 py-0.5 text-[10px] font-bold text-maroon-700">REQUIRED</span> : null}
+                    {!field.isActive ? <span className="rounded bg-alert/10 px-1.5 py-0.5 text-[10px] font-bold text-alert">INACTIVE</span> : null}
+                  </div>
+                  <p className="mt-1 text-xs text-ink-muted">
+                    <span className="font-mono">{field.key}</span> · {field.labelHi || '—'} · {field.minInch}"–{field.maxInch}"
+                  </p>
                 </div>
               </div>
-              <div className="flex shrink-0 gap-1.5">
+              <div className="mt-3 flex justify-end gap-1.5 border-t border-maroon-50 pt-3" onClick={(e) => e.stopPropagation()}>
                 <BtnGhost className="min-h-9 px-2.5" onClick={() => setForm({ ...field })}><Pencil size={14} /></BtnGhost>
                 <BtnGhost className="min-h-9 px-2.5" disabled={busy === field._id} onClick={() => toggle(field)}>{field.isActive ? <X size={14} /> : <Check size={14} />}</BtnGhost>
                 <BtnGhost className="min-h-9 px-2.5 text-alert" disabled={busy === field._id} onClick={() => remove(field._id)}><Trash2 size={14} /></BtnGhost>
               </div>
-            </div>
+            </article>
           ))}
       </div>
 

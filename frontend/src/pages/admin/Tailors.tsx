@@ -95,35 +95,33 @@ export function TailorsModule() {
           </div>
           <BtnPrimary onClick={() => { setEditing(null); setModal('create'); }}><Plus size={15} />Add tailor</BtnPrimary>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[780px] text-left text-sm">
-            <thead className="bg-maroon-50 text-ink-muted"><tr>
-              <th className="p-4">Tailor</th><th className="p-4">Status</th><th className="p-4">Workload</th><th className="p-4">Caps</th><th className="p-4">Days</th><th className="p-4">Actions</th>
-            </tr></thead>
-            <tbody>
-              {tailors.length === 0 ? <tr><td className="p-6 text-center text-ink-muted" colSpan={6}>Koi tailor nahi. Add karein.</td></tr> : tailors.map(({ tailor, workload }) => (
-                <tr className="border-t border-maroon-100 hover:bg-maroon-50/30" key={tailor._id}>
-                  <td className="p-4">
-                    <p className="font-semibold">{tailor.name}</p>
-                    <p className="text-xs text-ink-muted">{tailor.mobile}</p>
-                    {tailor.experienceYears ? <p className="text-xs text-ink-muted">{tailor.experienceYears} yrs</p> : null}
-                  </td>
-                  <td className="p-4"><Badge label={tailor.status} /></td>
-                  <td className="p-4">{workload.assignedOrders} orders / {workload.assignedUnits} units</td>
-                  <td className="p-4 text-xs text-ink-muted">{tailor.specializationCaps.map((c) => `${specLabels[c.code] ?? c.code} ${c.capacityPerDay}/day`).join(', ') || '—'}</td>
-                  <td className="p-4 text-xs text-ink-muted">{tailor.workingDays.map((d) => ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'][d]).join(' ')}</td>
-                  <td className="p-4">
-                    <div className="flex flex-wrap gap-2">
-                      <BtnGhost className="min-h-8 px-2 text-xs" onClick={() => { setEditing(tailor); setModal('edit'); }}><Pencil size={13} />Edit</BtnGhost>
-                      {tailor.status !== 'INACTIVE' ? (
-                        <BtnGhost className="min-h-8 px-2 text-xs text-alert" onClick={() => void deactivateTailor(tailor._id, tailor.name)}>Deactivate</BtnGhost>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+          {tailors.length === 0 ? <div className="col-span-full py-6 text-center text-sm text-ink-muted">Koi tailor nahi. Add karein.</div> : tailors.map(({ tailor, workload }) => (
+            <article key={tailor._id} className="flex flex-col rounded-xl border border-maroon-100 bg-white p-4 shadow-card transition hover:border-maroon-200">
+              <div className="flex items-start gap-3">
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-maroon-50 text-sm font-bold text-maroon-700">
+                  {(tailor.name || '?').slice(0, 1).toUpperCase()}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold text-ink">{tailor.name}</p>
+                  <p className="font-mono text-xs text-ink-muted">{tailor.mobile}</p>
+                  {tailor.experienceYears ? <p className="text-xs text-ink-muted">{tailor.experienceYears} yrs experience</p> : null}
+                </div>
+                <Badge label={tailor.status} />
+              </div>
+              <div className="mt-3 space-y-1.5 text-xs">
+                <p className="flex items-center justify-between gap-2"><span className="text-ink-muted">Workload</span><span className="font-semibold text-ink">{workload.assignedOrders} orders · {workload.assignedUnits} units</span></p>
+                <p className="flex items-start justify-between gap-2"><span className="shrink-0 text-ink-muted">Caps</span><span className="min-w-0 text-right text-ink">{tailor.specializationCaps.map((c) => `${specLabels[c.code] ?? c.code} ${c.capacityPerDay}/day`).join(', ') || '—'}</span></p>
+                <p className="flex items-center justify-between gap-2"><span className="text-ink-muted">Working days</span><span className="font-semibold text-ink">{tailor.workingDays.map((d) => ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'][d]).join(' ')}</span></p>
+              </div>
+              <div className="mt-3 flex items-center justify-end gap-2 border-t border-maroon-50 pt-3">
+                <BtnGhost className="min-h-8 px-2 text-xs" onClick={() => { setEditing(tailor); setModal('edit'); }}><Pencil size={13} />Edit</BtnGhost>
+                {tailor.status !== 'INACTIVE' ? (
+                  <BtnGhost className="min-h-8 px-2 text-xs text-alert" onClick={() => void deactivateTailor(tailor._id, tailor.name)}>Deactivate</BtnGhost>
+                ) : null}
+              </div>
+            </article>
+          ))}
         </div>
       </section>
 

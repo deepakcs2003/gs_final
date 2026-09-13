@@ -36,6 +36,10 @@ const STEP_LABELS: Record<string, string> = {
   DELIVERED: 'Delivered',
 };
 
+const STATUS_HINTS: Record<string, string> = {
+  STITCHING: 'Silai suru ho chuki hai — aapki blouse abhi tailor se stitch ki jaa rahi hai.',
+};
+
 export function OrderSuccessPage() {
   const { orderNumber } = useParams<{ orderNumber: string }>();
   const [searchParams] = useSearchParams();
@@ -114,7 +118,17 @@ export function OrderSuccessPage() {
         ) : null}
       </div>
 
-      {order.deliveryEstimate && isCustom ? (
+      {order.promisedDeliveryAt ? (
+        <section className="card mb-4 border-leaf/40 bg-leaf/5 p-4">
+          <h2 className="font-display text-base font-bold">Estimated delivery date</h2>
+          <p className="mt-1 text-lg font-bold text-leaf">{formatDate(order.promisedDeliveryAt)}</p>
+          <p className="hint mt-1">
+            {isCustom
+              ? 'Custom stitching ka confirmed estimate — admin ne delivery date set kar di hai.'
+              : 'Admin ne is order ke liye delivery date confirm kar di hai.'}
+          </p>
+        </section>
+      ) : order.deliveryEstimate && isCustom ? (
         <section className="card mb-4 p-4">
           <h2 className="font-display text-base font-bold">Estimated delivery</h2>
           <p className="hint mt-1">
@@ -163,6 +177,12 @@ export function OrderSuccessPage() {
               );
             })}
           </ol>
+
+          {STATUS_HINTS[order.status] ? (
+            <p className="mt-3 rounded-xl bg-marigold-50 px-3 py-2 text-[13px] font-semibold text-marigold-800">
+              {STATUS_HINTS[order.status]}
+            </p>
+          ) : null}
 
           {order.tracking.awb ? (
             <div className="mt-4 rounded-xl border border-ink-light/20 p-3">

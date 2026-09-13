@@ -48,7 +48,7 @@ export function Modal({ open, onClose, title, subtitle, children, footer, maxWid
 
   if (!open) return null;
   return createPortal(
-    <div className="fixed inset-0 z-30 flex items-end justify-center sm:items-center sm:p-6">
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-6">
       <button type="button" aria-label="Band karein" className="absolute inset-0 bg-ink/50" onClick={onClose} />
       <div ref={panelRef} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1}
         className={clsx('relative max-h-[92vh] w-full rounded-t-3xl bg-white shadow-sheet sm:rounded-2xl flex flex-col', maxWidth)}>
@@ -77,7 +77,7 @@ export function Modal({ open, onClose, title, subtitle, children, footer, maxWid
 
 export function Field({ label, hint, children, className }: { label: string; hint?: string; children: ReactNode; className?: string }) {
   return (
-    <label className={clsx('label', className)}>
+    <label className={clsx('label block w-full', className)}>
       <span className="mb-1 block text-sm font-semibold text-ink">{label}</span>
       {children}
       {hint ? <span className="mt-1 block text-xs text-ink-muted">{hint}</span> : null}
@@ -143,7 +143,7 @@ export function SearchInput({ value, onChange, placeholder = 'Search...' }: { va
   return (
     <label className="relative block w-full sm:w-72">
       <Search className="absolute left-3 top-3.5 text-ink-light" size={17} />
-      <input className="field pl-10 min-h-[46px]" placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} />
+      <input className="field min-h-[46px] pl-10" placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} />
     </label>
   );
 }
@@ -184,13 +184,13 @@ export function Toolbar({ title, count, searchPlaceholder, query, onQuery, onAdd
   title: string; count?: number; searchPlaceholder?: string; query?: string; onQuery?: (v: string) => void; onAdd?: () => void; addLabel?: string;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-maroon-100 p-5">
+    <div className="flex flex-col gap-3 border-b border-maroon-100 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
       <div>
         <h3 className="section-title">{title} {count !== undefined ? <span className="text-base font-normal text-ink-muted">({count})</span> : null}</h3>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
         {onQuery ? <SearchInput value={query ?? ''} onChange={onQuery} placeholder={searchPlaceholder} /> : null}
-        {onAdd ? <BtnPrimary onClick={onAdd}><Plus size={16} />{addLabel ?? 'Add'}</BtnPrimary> : null}
+        {onAdd ? <BtnPrimary onClick={onAdd} className="w-full sm:w-auto"><Plus size={16} />{addLabel ?? 'Add'}</BtnPrimary> : null}
       </div>
     </div>
   );

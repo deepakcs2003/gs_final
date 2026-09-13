@@ -22,6 +22,27 @@
     @apply bg-cream text-ink font-sans antialiased;
     /* Stops the whole page rubber-banding sideways when a rail scrolls. */
     overscroll-behavior-x: none;
+    min-height: 100vh;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  .admin-shell,
+  .admin-main,
+  .admin-page {
+    min-width: 0;
+  }
+
+  .admin-sidebar {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+  }
+
+  .admin-header {
+    @apply border-b border-maroon-100 bg-[#f7f3ed]/95;
   }
 
   /* Every interactive element gets a visible focus ring — this matters for
@@ -91,6 +112,40 @@
 
   .section-title {
     @apply font-display text-[19px] font-bold text-ink sm:text-[22px];
+  }
+
+  .admin-text-wrap {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .admin-row-stack {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  @media (min-width: 640px) {
+    .admin-row-stack {
+      flex-direction: row;
+      align-items: flex-start;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .card {
+      @apply rounded-xl;
+    }
+
+    .section-title {
+      @apply text-[18px];
+    }
+
+    .field {
+      @apply text-[15px];
+    }
   }
 
   /* Horizontal rails: scroll-snap makes flicking through designs feel native. */

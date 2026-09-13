@@ -181,103 +181,132 @@ function upsertItem<T extends { _id: string }>(items: T[], item: T): T[] {
 
 function CategoryList({ items, onEdit, onToggle, onDelete, onDuplicate, busy }: { items: Category[]; onEdit: (c: Category) => void; onToggle: (id: string, active: boolean) => void; onDelete: (id: string) => void; onDuplicate: (id: string) => void; busy: string }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[680px] text-left text-sm">
-        <thead className="bg-maroon-50 text-ink-muted"><tr><th className="p-4">Category</th><th className="p-4">Slug</th><th className="p-4">Types</th><th className="p-4">Products</th><th className="p-4">Status</th><th className="p-4">Actions</th></tr></thead>
-        <tbody>{items.length === 0 ? <tr><td className="p-6 text-center text-ink-muted" colSpan={6}>Koi category nahi hai.</td></tr> : items.map((item) => (
-          <tr className="border-t border-maroon-100" key={item._id}>
-            <td className="p-4"><div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-maroon-50">
-              {item.image ? <img src={cloudinarySrc(item.image, 160)} alt="" className="h-10 w-10 rounded-xl object-cover" /> : <span className="text-xs font-bold text-maroon-700">CAT</span>}
-            </div><div><strong>{item.name}</strong>{item.nameHi ? <div className="text-xs text-ink-muted">{item.nameHi}</div> : null}</div></div></td>
-            <td className="p-4 text-ink-muted">{item.slug}</td>
-            <td className="p-4"><div className="flex flex-wrap gap-1">{item.types.map((t) => <span key={t} className="rounded-full bg-maroon-50 px-2 py-0.5 text-[10px] font-bold">{t.replace('_', ' ')}</span>)}</div></td>
-            <td className="p-4 font-semibold">{item.productCount ?? 0}</td>
-            <td className="p-4"><Badge label={item.isActive ? 'Live' : 'Off'} /></td>
-            <td className="p-4"><div className="flex gap-1.5">
+    <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+      {items.length === 0 ? <div className="col-span-full"><Empty message="Koi category nahi hai." /></div> : items.map((item) => (
+        <article key={item._id} onClick={() => onEdit(item)} className="cursor-pointer rounded-xl border border-maroon-100 bg-white p-4 shadow-card transition hover:border-maroon-200 active:scale-[0.99]">
+          <div className="admin-row-stack items-start gap-3">
+            <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-xl bg-maroon-50">
+              {item.image ? <img src={cloudinarySrc(item.image, 160)} alt={item.name} className="h-full w-full object-cover" /> : <span className="text-[10px] font-bold text-maroon-700">CAT</span>}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="admin-text-wrap font-semibold text-ink">{item.name}</p>
+              {item.nameHi ? <p className="admin-text-wrap text-xs text-ink-muted">{item.nameHi}</p> : null}
+              <p className="admin-text-wrap mt-0.5 font-mono text-[10px] text-ink-light">{item.slug}</p>
+            </div>
+            <Badge label={item.isActive ? 'Live' : 'Off'} />
+          </div>
+          <div className="mt-3 flex flex-wrap gap-1">{item.types.map((t) => <span key={t} className="rounded-full bg-maroon-50 px-2 py-0.5 text-[10px] font-bold">{t.replace('_', ' ')}</span>)}</div>
+          <div className="mt-3 flex flex-col gap-2 border-t border-maroon-50 pt-3 sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-xs font-semibold text-ink-muted">{item.productCount ?? 0} products</span>
+            <div className="flex flex-wrap justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
               <BtnGhost className="min-h-9 px-2.5" onClick={() => onEdit(item)}><Pencil size={14} /></BtnGhost>
               <BtnGhost className="min-h-9 px-2.5" disabled={busy === `tog-${item._id}`} onClick={() => onToggle(item._id, item.isActive)}>{item.isActive ? <X size={14} /> : <Check size={14} />}</BtnGhost>
               <BtnGhost className="min-h-9 px-2.5" disabled={busy === `dup-${item._id}`} onClick={() => onDuplicate(item._id)}><Copy size={14} /></BtnGhost>
               <BtnGhost className="min-h-9 px-2.5 text-alert" disabled={busy === `del-${item._id}`} onClick={() => onDelete(item._id)}><Trash2 size={14} /></BtnGhost>
-            </div></td>
-          </tr>
-        ))}</tbody>
-      </table>
+            </div>
+          </div>
+        </article>
+      ))}
     </div>
   );
 }
 
 function FabricList({ items, onEdit, onToggle, onDelete, onDuplicate, busy }: { items: Fabric[]; onEdit: (f: Fabric) => void; onToggle: (id: string, active: boolean) => void; onDelete: (id: string) => void; onDuplicate: (id: string) => void; busy: string }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[720px] text-left text-sm">
-        <thead className="bg-maroon-50 text-ink-muted"><tr><th className="p-4">Fabric</th><th className="p-4">Material</th><th className="p-4">Color</th><th className="p-4">Price</th><th className="p-4">Stock</th><th className="p-4">Status</th><th className="p-4">Actions</th></tr></thead>
-        <tbody>{items.length === 0 ? <tr><td className="p-6 text-center text-ink-muted" colSpan={7}>Koi fabric nahi hai.</td></tr> : items.map((item) => (
-          <tr className="border-t border-maroon-100" key={item._id}>
-            <td className="p-4 font-semibold">{item.name}</td>
-            <td className="p-4">{item.material}</td>
-            <td className="p-4"><span className="inline-flex items-center gap-2"><span className="h-4 w-4 rounded-full border border-ink-light/40" style={{ backgroundColor: item.colorHex }} />{item.colorName}</span></td>
-            <td className="p-4 font-semibold">{inr(item.priceInr * 100)}</td>
-            <td className="p-4">{item.inStock ? <span className="font-semibold text-leaf">{item.stockMeters} m</span> : <span className="font-semibold text-alert">Out of stock</span>}</td>
-            <td className="p-4"><Badge label={item.isActive ? 'Live' : 'Off'} /></td>
-            <td className="p-4"><div className="flex gap-1.5">
-              <BtnGhost className="min-h-9 px-2.5" onClick={() => onEdit(item)}><Pencil size={14} /></BtnGhost>
-              <BtnGhost className="min-h-9 px-2.5" disabled={busy === `tog-${item._id}`} onClick={() => onToggle(item._id, item.isActive)}>{item.isActive ? <X size={14} /> : <Check size={14} />}</BtnGhost>
-              <BtnGhost className="min-h-9 px-2.5" disabled={busy === `dup-${item._id}`} onClick={() => onDuplicate(item._id)}><Copy size={14} /></BtnGhost>
-              <BtnGhost className="min-h-9 px-2.5 text-alert" disabled={busy === `del-${item._id}`} onClick={() => onDelete(item._id)}><Trash2 size={14} /></BtnGhost>
-            </div></td>
-          </tr>
-        ))}</tbody>
-      </table>
+    <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+      {items.length === 0 ? <div className="col-span-full"><Empty message="Koi fabric nahi hai." /></div> : items.map((item) => (
+        <article key={item._id} onClick={() => onEdit(item)} className="cursor-pointer rounded-xl border border-maroon-100 bg-white p-4 shadow-card transition hover:border-maroon-200 active:scale-[0.99]">
+          <div className="admin-row-stack items-start gap-3">
+            <div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-xl bg-maroon-50">
+              {item.image ? <img src={cloudinarySrc(item.image, 200)} alt={item.name} className="h-full w-full object-cover" /> : <span className="text-[10px] font-bold text-maroon-700">FABRIC</span>}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="admin-text-wrap font-semibold text-ink">{item.name}</p>
+              <p className="admin-text-wrap text-xs text-ink-muted">{item.material}</p>
+              <p className="mt-1 inline-flex min-w-0 items-center gap-1.5 text-xs text-ink-muted">
+                <span className="h-3.5 w-3.5 shrink-0 rounded-full border border-ink-light/40" style={{ backgroundColor: item.colorHex }} /><span className="admin-text-wrap">{item.colorName}</span>
+              </p>
+            </div>
+            <span className="shrink-0"><Badge label={item.isActive ? 'Live' : 'Off'} /></span>
+          </div>
+          <div className="mt-3 flex flex-col gap-2 border-t border-maroon-50 pt-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <span className="font-bold text-ink">{inr(item.priceInr * 100)}</span>
+            <span className={item.inStock ? 'font-semibold text-leaf' : 'font-semibold text-alert'}>{item.inStock ? `${item.stockMeters} m` : 'Out of stock'}</span>
+          </div>
+          <div className="mt-2 flex flex-wrap justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+            <BtnGhost className="min-h-9 px-2.5" onClick={() => onEdit(item)}><Pencil size={14} /></BtnGhost>
+            <BtnGhost className="min-h-9 px-2.5" disabled={busy === `tog-${item._id}`} onClick={() => onToggle(item._id, item.isActive)}>{item.isActive ? <X size={14} /> : <Check size={14} />}</BtnGhost>
+            <BtnGhost className="min-h-9 px-2.5" disabled={busy === `dup-${item._id}`} onClick={() => onDuplicate(item._id)}><Copy size={14} /></BtnGhost>
+            <BtnGhost className="min-h-9 px-2.5 text-alert" disabled={busy === `del-${item._id}`} onClick={() => onDelete(item._id)}><Trash2 size={14} /></BtnGhost>
+          </div>
+        </article>
+      ))}
     </div>
   );
 }
 
 function LaceList({ items, onEdit, onToggle, onDelete, onDuplicate, busy }: { items: Lace[]; onEdit: (l: Lace) => void; onToggle: (id: string, active: boolean) => void; onDelete: (id: string) => void; onDuplicate: (id: string) => void; busy: string }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[640px] text-left text-sm">
-        <thead className="bg-maroon-50 text-ink-muted"><tr><th className="p-4">Lace</th><th className="p-4">Color</th><th className="p-4">Price</th><th className="p-4">Stock</th><th className="p-4">Status</th><th className="p-4">Actions</th></tr></thead>
-        <tbody>{items.length === 0 ? <tr><td className="p-6 text-center text-ink-muted" colSpan={6}>Koi lace nahi hai.</td></tr> : items.map((item) => (
-          <tr className="border-t border-maroon-100" key={item._id}>
-            <td className="p-4 font-semibold">{item.name}</td>
-            <td className="p-4"><span className="inline-flex items-center gap-2"><span className="h-4 w-4 rounded-full border border-ink-light/40" style={{ backgroundColor: item.colorHex }} />{item.colorName || '—'}</span></td>
-            <td className="p-4 font-semibold">{inr(item.priceInr * 100)}</td>
-            <td className="p-4">{item.inStock ? <span className="text-leaf">In stock</span> : <span className="text-alert">Out of stock</span>}</td>
-            <td className="p-4"><Badge label={item.isActive ? 'Live' : 'Off'} /></td>
-            <td className="p-4"><div className="flex gap-1.5">
-              <BtnGhost className="min-h-9 px-2.5" onClick={() => onEdit(item)}><Pencil size={14} /></BtnGhost>
-              <BtnGhost className="min-h-9 px-2.5" disabled={busy === `tog-${item._id}`} onClick={() => onToggle(item._id, item.isActive)}>{item.isActive ? <X size={14} /> : <Check size={14} />}</BtnGhost>
-              <BtnGhost className="min-h-9 px-2.5" disabled={busy === `dup-${item._id}`} onClick={() => onDuplicate(item._id)}><Copy size={14} /></BtnGhost>
-              <BtnGhost className="min-h-9 px-2.5 text-alert" disabled={busy === `del-${item._id}`} onClick={() => onDelete(item._id)}><Trash2 size={14} /></BtnGhost>
-            </div></td>
-          </tr>
-        ))}</tbody>
-      </table>
+    <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+      {items.length === 0 ? <div className="col-span-full"><Empty message="Koi lace nahi hai." /></div> : items.map((item) => (
+        <article key={item._id} onClick={() => onEdit(item)} className="cursor-pointer rounded-xl border border-maroon-100 bg-white p-4 shadow-card transition hover:border-maroon-200 active:scale-[0.99]">
+          <div className="admin-row-stack items-start gap-3">
+            <div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-xl bg-maroon-50">
+              {item.image ? <img src={cloudinarySrc(item.image, 200)} alt={item.name} className="h-full w-full object-cover" /> : <span className="text-[10px] font-bold text-maroon-700">LACE</span>}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="admin-text-wrap font-semibold text-ink">{item.name}</p>
+              <p className="mt-1 inline-flex min-w-0 items-center gap-1.5 text-xs text-ink-muted">
+                <span className="h-3.5 w-3.5 shrink-0 rounded-full border border-ink-light/40" style={{ backgroundColor: item.colorHex }} /><span className="admin-text-wrap">{item.colorName || '—'}</span>
+              </p>
+            </div>
+            <span className="shrink-0"><Badge label={item.isActive ? 'Live' : 'Off'} /></span>
+          </div>
+          <div className="mt-3 flex flex-col gap-2 border-t border-maroon-50 pt-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <span className="font-bold text-ink">{inr(item.priceInr * 100)}</span>
+            <span className={item.inStock ? 'font-semibold text-leaf' : 'font-semibold text-alert'}>{item.inStock ? 'In stock' : 'Out of stock'}</span>
+          </div>
+          <div className="mt-2 flex flex-wrap justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+            <BtnGhost className="min-h-9 px-2.5" onClick={() => onEdit(item)}><Pencil size={14} /></BtnGhost>
+            <BtnGhost className="min-h-9 px-2.5" disabled={busy === `tog-${item._id}`} onClick={() => onToggle(item._id, item.isActive)}>{item.isActive ? <X size={14} /> : <Check size={14} />}</BtnGhost>
+            <BtnGhost className="min-h-9 px-2.5" disabled={busy === `dup-${item._id}`} onClick={() => onDuplicate(item._id)}><Copy size={14} /></BtnGhost>
+            <BtnGhost className="min-h-9 px-2.5 text-alert" disabled={busy === `del-${item._id}`} onClick={() => onDelete(item._id)}><Trash2 size={14} /></BtnGhost>
+          </div>
+        </article>
+      ))}
     </div>
   );
 }
 
 function LatkanList({ items, onEdit, onToggle, onDelete, onDuplicate, busy }: { items: Latkan[]; onEdit: (l: Latkan) => void; onToggle: (id: string, active: boolean) => void; onDelete: (id: string) => void; onDuplicate: (id: string) => void; busy: string }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[640px] text-left text-sm">
-        <thead className="bg-maroon-50 text-ink-muted"><tr><th className="p-4">Latkan</th><th className="p-4">Color</th><th className="p-4">Price</th><th className="p-4">Stock</th><th className="p-4">Status</th><th className="p-4">Actions</th></tr></thead>
-        <tbody>{items.length === 0 ? <tr><td className="p-6 text-center text-ink-muted" colSpan={6}>Koi latkan nahi hai.</td></tr> : items.map((item) => (
-          <tr className="border-t border-maroon-100" key={item._id}>
-            <td className="p-4 font-semibold">{item.name}</td>
-            <td className="p-4"><span className="inline-flex items-center gap-2"><span className="h-4 w-4 rounded-full border border-ink-light/40" style={{ backgroundColor: item.colorHex }} />{item.colorName || '—'}</span></td>
-            <td className="p-4 font-semibold">{inr(item.priceInr * 100)}</td>
-            <td className="p-4">{item.inStock ? <span className="text-leaf">In stock</span> : <span className="text-alert">Out of stock</span>}</td>
-            <td className="p-4"><Badge label={item.isActive ? 'Live' : 'Off'} /></td>
-            <td className="p-4"><div className="flex gap-1.5">
-              <BtnGhost className="min-h-9 px-2.5" onClick={() => onEdit(item)}><Pencil size={14} /></BtnGhost>
-              <BtnGhost className="min-h-9 px-2.5" disabled={busy === `tog-${item._id}`} onClick={() => onToggle(item._id, item.isActive)}>{item.isActive ? <X size={14} /> : <Check size={14} />}</BtnGhost>
-              <BtnGhost className="min-h-9 px-2.5" disabled={busy === `dup-${item._id}`} onClick={() => onDuplicate(item._id)}><Copy size={14} /></BtnGhost>
-              <BtnGhost className="min-h-9 px-2.5 text-alert" disabled={busy === `del-${item._id}`} onClick={() => onDelete(item._id)}><Trash2 size={14} /></BtnGhost>
-            </div></td>
-          </tr>
-        ))}</tbody>
-      </table>
+    <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+      {items.length === 0 ? <div className="col-span-full"><Empty message="Koi latkan nahi hai." /></div> : items.map((item) => (
+        <article key={item._id} onClick={() => onEdit(item)} className="cursor-pointer rounded-xl border border-maroon-100 bg-white p-4 shadow-card transition hover:border-maroon-200 active:scale-[0.99]">
+          <div className="admin-row-stack items-start gap-3">
+            <div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-xl bg-maroon-50">
+              {item.image ? <img src={cloudinarySrc(item.image, 200)} alt={item.name} className="h-full w-full object-cover" /> : <span className="text-[10px] font-bold text-maroon-700">LATKAN</span>}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="admin-text-wrap font-semibold text-ink">{item.name}</p>
+              <p className="mt-1 inline-flex min-w-0 items-center gap-1.5 text-xs text-ink-muted">
+                <span className="h-3.5 w-3.5 shrink-0 rounded-full border border-ink-light/40" style={{ backgroundColor: item.colorHex }} /><span className="admin-text-wrap">{item.colorName || '—'}</span>
+              </p>
+            </div>
+            <span className="shrink-0"><Badge label={item.isActive ? 'Live' : 'Off'} /></span>
+          </div>
+          <div className="mt-3 flex flex-col gap-2 border-t border-maroon-50 pt-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <span className="font-bold text-ink">{inr(item.priceInr * 100)}</span>
+            <span className={item.inStock ? 'font-semibold text-leaf' : 'font-semibold text-alert'}>{item.inStock ? 'In stock' : 'Out of stock'}</span>
+          </div>
+          <div className="mt-2 flex flex-wrap justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+            <BtnGhost className="min-h-9 px-2.5" onClick={() => onEdit(item)}><Pencil size={14} /></BtnGhost>
+            <BtnGhost className="min-h-9 px-2.5" disabled={busy === `tog-${item._id}`} onClick={() => onToggle(item._id, item.isActive)}>{item.isActive ? <X size={14} /> : <Check size={14} />}</BtnGhost>
+            <BtnGhost className="min-h-9 px-2.5" disabled={busy === `dup-${item._id}`} onClick={() => onDuplicate(item._id)}><Copy size={14} /></BtnGhost>
+            <BtnGhost className="min-h-9 px-2.5 text-alert" disabled={busy === `del-${item._id}`} onClick={() => onDelete(item._id)}><Trash2 size={14} /></BtnGhost>
+          </div>
+        </article>
+      ))}
     </div>
   );
 }
@@ -307,23 +336,26 @@ function ColorList({ items, onEdit, onToggle, onDelete, busy }: { items: Color[]
 
 function SizeList({ items, onEdit, onToggle, onDelete, busy }: { items: SizeItem[]; onEdit: (s: SizeItem) => void; onToggle: (id: string, active: boolean) => void; onDelete: (id: string) => void; busy: string }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[520px] text-left text-sm">
-        <thead className="bg-maroon-50 text-ink-muted"><tr><th className="p-4">Size</th><th className="p-4">Value</th><th className="p-4">Price modifier</th><th className="p-4">Status</th><th className="p-4">Actions</th></tr></thead>
-        <tbody>{items.length === 0 ? <tr><td className="p-6 text-center text-ink-muted" colSpan={5}>Koi size nahi hai.</td></tr> : items.map((item) => (
-          <tr className="border-t border-maroon-100" key={item._id}>
-            <td className="p-4 font-semibold">{item.label}</td>
-            <td className="p-4">{item.value}</td>
-            <td className="p-4">{item.priceModifierInr ? inr(item.priceModifierInr * 100) : '—'}</td>
-            <td className="p-4"><Badge label={item.isActive ? 'Active' : 'Inactive'} /></td>
-            <td className="p-4"><div className="flex gap-1.5">
+    <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+      {items.length === 0 ? <div className="col-span-full"><Empty message="Koi size nahi hai." /></div> : items.map((item) => (
+        <article key={item._id} onClick={() => onEdit(item)} className="cursor-pointer rounded-xl border border-maroon-100 bg-white p-4 shadow-card transition hover:border-maroon-200 active:scale-[0.99]">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="font-semibold text-ink">{item.label}</p>
+              <p className="text-xs text-ink-muted">{item.value}" chest</p>
+            </div>
+            <Badge label={item.isActive ? 'Active' : 'Inactive'} />
+          </div>
+          <div className="mt-3 flex items-center justify-between border-t border-maroon-50 pt-3">
+            <span className="text-xs text-ink-muted">Price modifier <strong className="text-ink">{item.priceModifierInr ? inr(item.priceModifierInr * 100) : '—'}</strong></span>
+            <div className="flex gap-1.5" onClick={(e) => e.stopPropagation()}>
               <BtnGhost className="min-h-9 px-2.5" onClick={() => onEdit(item)}><Pencil size={14} /></BtnGhost>
               <BtnGhost className="min-h-9 px-2.5" disabled={busy === `tog-${item._id}`} onClick={() => onToggle(item._id, item.isActive)}>{item.isActive ? <X size={14} /> : <Check size={14} />}</BtnGhost>
               <BtnGhost className="min-h-9 px-2.5 text-alert" disabled={busy === `del-${item._id}`} onClick={() => onDelete(item._id)}><Trash2 size={14} /></BtnGhost>
-            </div></td>
-          </tr>
-        ))}</tbody>
-      </table>
+            </div>
+          </div>
+        </article>
+      ))}
     </div>
   );
 }

@@ -44,25 +44,26 @@ export function PaymentsModule() {
           <div className="card p-5"><p className="flex items-center gap-2 text-sm text-ink-muted"><RotateCcw size={15} />Refunded</p><p className="mt-2 text-2xl font-bold text-blue-700">{inr(counts.REFUNDED?.total ?? 0)}</p><p className="text-xs text-ink-muted">{counts.REFUNDED?.count ?? 0} orders</p></div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-sm">
-            <thead className="bg-maroon-50 text-ink-muted"><tr>
-              <th className="p-4">Order</th><th className="p-4">Amount</th><th className="p-4">Method</th><th className="p-4">Status</th><th className="p-4">Razorpay</th><th className="p-4">Failure reason</th>
-            </tr></thead>
-            <tbody>
-              {orders.map((order) => (
-                <tr className="border-t border-maroon-100" key={order.orderNumber}>
-                  <td className="p-4 font-semibold">{order.orderNumber}<div className="text-xs font-normal text-ink-muted">{new Date(order.placedAt).toLocaleDateString('en-IN')}</div></td>
-                  <td className="p-4">{inr(order.amounts?.totalMinor ?? 0)}</td>
-                  <td className="p-4">{order.payment?.method ?? '—'}</td>
-                  <td className="p-4"><Badge label={order.payment?.status ?? 'PENDING'} /></td>
-                  <td className="p-4 font-mono text-xs text-ink-muted">{order.payment?.razorpayPaymentId || order.payment?.razorpayOrderId || '—'}</td>
-                  <td className="p-4 text-xs text-alert">{order.payment?.failureReason || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {orders.length === 0 ? <Empty message="Koi order nahi." /> : null}
+        <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+          {orders.length === 0 ? <div className="col-span-full"><Empty message="Koi order nahi." /></div> : orders.map((order) => (
+            <article key={order.orderNumber} className="rounded-xl border border-maroon-100 bg-white p-4 shadow-card transition hover:border-maroon-200">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-ink">{order.orderNumber}</p>
+                  <p className="text-xs text-ink-muted">{new Date(order.placedAt).toLocaleDateString('en-IN')}</p>
+                </div>
+                <span className="shrink-0 text-lg font-bold text-ink">{inr(order.amounts?.totalMinor ?? 0)}</span>
+              </div>
+              <div className="mt-3 space-y-1.5 text-xs">
+                <p className="flex items-center justify-between gap-2"><span className="text-ink-muted">Method</span><span className="font-semibold text-ink">{order.payment?.method ?? '—'}</span></p>
+                <p className="flex items-center justify-between gap-2"><span className="text-ink-muted">Status</span><Badge label={order.payment?.status ?? 'PENDING'} /></p>
+                <p className="flex items-start justify-between gap-2"><span className="shrink-0 text-ink-muted">Razorpay</span><span className="min-w-0 break-all text-right font-mono text-[10px] text-ink-muted">{order.payment?.razorpayPaymentId || order.payment?.razorpayOrderId || '—'}</span></p>
+                {order.payment?.failureReason ? (
+                  <p className="flex items-start justify-between gap-2"><span className="shrink-0 text-ink-muted">Failure</span><span className="min-w-0 text-right text-alert">{order.payment.failureReason}</span></p>
+                ) : null}
+              </div>
+            </article>
+          ))}
         </div>
       </section>
 

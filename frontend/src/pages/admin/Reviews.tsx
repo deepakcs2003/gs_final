@@ -59,7 +59,7 @@ export function ReviewsModule() {
               </div>
               {review.text ? <p className="mt-3 text-sm text-ink-muted">{review.text}</p> : null}
               {review.photos?.length ? (
-                <div className="mt-3 flex gap-2">{review.photos.map((p, i) => <img key={i} src={cloudinarySrc(p, 160)} alt="review" loading="lazy" className="h-16 w-16 rounded-lg object-cover" />)}</div>
+                <div className="mt-3 flex gap-2 overflow-x-auto pb-1">{review.photos.map((p, i) => <img key={i} src={cloudinarySrc(p, 160)} alt="review" loading="lazy" className="h-16 w-16 shrink-0 rounded-lg object-cover" />)}</div>
               ) : null}
               {review.status === 'PENDING' ? (
                 <div className="mt-3 flex gap-2">

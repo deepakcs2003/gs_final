@@ -376,7 +376,7 @@ function ProductsDrill({ data }: { data: Record<string, unknown> }) {
           {rows.map((p) => (
             <button key={p._id} type="button"
               onClick={() => goToProduct(p._id)}
-              className="grid w-full grid-cols-6 items-center gap-3 rounded-xl border border-ink-light/10 p-2.5 text-left text-sm transition hover:border-maroon-200 hover:bg-maroon-50/40">
+              className="grid w-full grid-cols-[1fr_auto] items-center gap-3 rounded-xl border border-ink-light/10 p-2.5 text-left text-sm transition hover:border-maroon-200 hover:bg-maroon-50/40 sm:grid-cols-6">
               <span className="flex min-w-0 items-center gap-2.5">
                 <Thumb src={p.image} alt={p.name} />
                 <span className="min-w-0">
@@ -496,7 +496,7 @@ function FailedPaymentsDrill({ data }: { data: Record<string, unknown> }) {
           {rows.map((row) => (
             <button key={row.orderNumber} type="button"
               onClick={() => goToOrders('ALL', row.orderNumber)}
-              className="grid w-full grid-cols-6 items-center gap-3 rounded-xl border border-alert/20 p-2.5 text-left text-sm transition hover:border-alert/40 hover:bg-alert/5">
+              className="grid w-full grid-cols-[1fr_auto] items-center gap-3 rounded-xl border border-alert/20 p-2.5 text-left text-sm transition hover:border-alert/40 hover:bg-alert/5 sm:grid-cols-6">
               <span className="min-w-0">
                 <span className="block truncate font-semibold">{row.orderNumber}</span>
                 <span className="block truncate text-xs text-ink-muted">{row.paymentId ? `Payment ${row.paymentId}` : 'Payment ID nahi mila'}</span>
@@ -590,12 +590,12 @@ export function OverviewModule() {
                 {data?.statuses.map((item) => (
                   <button key={item._id} type="button"
                     onClick={() => open('ordersByStatus', { status: item._id, title: `Orders — ${item._id.replace(/_/g, ' ')}`, subtitle: 'Selected range ke orders' })}
-                    className="flex w-full items-center gap-3 rounded-xl px-2 py-1.5 text-sm transition hover:bg-maroon-50/60">
-                    <span className="w-32 text-left text-ink-muted">{item._id.replace(/_/g, ' ')}</span>
-                    <div className="h-2 flex-1 rounded-full bg-maroon-50">
-                      <div className="h-2 rounded-full bg-maroon-500" style={{ width: `${Math.min(100, item.count * 8)}%` }} />
-                    </div>
-                    <strong className="w-8 text-right">{item.count}</strong>
+                    className="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left text-sm transition hover:bg-maroon-50/60 sm:gap-3">
+<span className="w-24 shrink-0 truncate text-ink-muted sm:w-32">{item._id.replace(/_/g, ' ')}</span>
+<div className="h-2 min-w-0 flex-1 rounded-full bg-maroon-50">
+  <div className="h-2 rounded-full bg-maroon-500" style={{ width: `${Math.min(100, item.count * 8)}%` }} />
+</div>
+<strong className="shrink-0 text-right tabular-nums">{item.count}</strong>
                   </button>
                 ))}
               </div>
@@ -608,9 +608,9 @@ export function OverviewModule() {
                   data?.topProducts.map((item) => (
                     <button key={item.designId} type="button"
                       onClick={() => goToProduct(item._id)}
-                      className="flex w-full items-center justify-between gap-3 py-3 text-left text-sm transition hover:bg-maroon-50/40">
-                      <span className="truncate"><strong>{item.designId}</strong> {item.name}</span>
-                      <span className="flex shrink-0 items-center gap-2 font-semibold text-maroon-700"><Eye size={14} />{item.views} views</span>
+                      className="flex w-full flex-col items-start justify-between gap-2 py-3 text-left text-sm transition hover:bg-maroon-50/40 sm:flex-row sm:items-center sm:gap-3">
+<span className="admin-text-wrap min-w-0 flex-1"><strong>{item.designId}</strong> {item.name}</span>
+<span className="flex shrink-0 items-center gap-2 whitespace-nowrap font-semibold text-maroon-700"><Eye size={14} />{item.views} views</span>
                     </button>
                   ))}
               </div>
@@ -650,7 +650,7 @@ export function OverviewModule() {
             </div>
           </section>
 
-          <div className="mt-5 flex items-center gap-2">
+          <div className="mt-5 flex flex-wrap items-center gap-2">
             {data?.statuses.map((s) => <Badge key={s._id} label={s._id} />)}
           </div>
         </>

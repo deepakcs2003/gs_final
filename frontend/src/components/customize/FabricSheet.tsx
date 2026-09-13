@@ -4,7 +4,7 @@ import clsx from 'clsx';
 import { AlertTriangle, Check, X, SlidersHorizontal } from 'lucide-react';
 import { Sheet } from '../ui';
 import { SmartImage } from '../SmartImage';
-import { useFabrics, useLaces, useLatkans } from '../../hooks/queries';
+import { useFabrics, useLaces, useLatkans, useConfig } from '../../hooks/queries';
 import { moneyLabel, type Currency } from '../../lib/format';
 import type { Fabric, Lace, Latkan, ProductCard } from '../../lib/types';
 
@@ -103,6 +103,11 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
   );
   const { data: laces } = useLaces(open);
   const { data: latkans } = useLatkans(open);
+  const { data: config } = useConfig();
+
+  // Admin toggles — off = no colour popup, the exact item is added as-is.
+  const lacePickerHidden = config ? !config.laceColorPickerEnabled : true;
+  const latkanPickerHidden = config ? !config.latkanColorPickerEnabled : true;
 
   const fabrics = data?.items ?? [];
   const facets = data?.facets;
@@ -173,8 +178,13 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
 
   /** Resolve an item's colour: fabric mode follows the chosen fabric (or its
    *  default colour), pick mode is exact, and an untouched preselected item
-   *  behaves like fabric mode. */
-  const resolveColor = (item: Lace | Latkan, map: Record<string, ColorChoice>) => {
+   *  behaves like fabric mode. When the picker is hidden the exact item colour
+   *  is always used — no fabric matching, no popup. */
+  const resolveColor = (item: Lace | Latkan, map: Record<string, ColorChoice>, hidden = false) => {
+    if (hidden) {
+      const exact: AccessoryColor = { colorName: item.colorName || item.name, colorHex: item.colorHex || '#cccccc' };
+      return { color: exact, label: exact.colorName };
+    }
     const entry = map[item.id];
     if (entry?.mode === 'pick' && entry.color) {
       return { color: entry.color, label: entry.color.colorName };
@@ -186,10 +196,10 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
     return { color: fallback, label: fallback.colorName };
   };
 
-  const resolvePicks = (items: Array<Lace | Latkan>, map: Record<string, ColorChoice>, ids: string[]): AccessoryPick[] =>
+  const resolvePicks = (items: Array<Lace | Latkan>, map: Record<string, ColorChoice>, ids: string[], hidden: boolean): AccessoryPick[] =>
     items
       .filter((item) => ids.includes(item.id))
-      .map((item) => ({ id: item.id, name: item.name, ...resolveColor(item, map).color }));
+      .map((item) => ({ id: item.id, name: item.name, ...resolveColor(item, map, hidden).color }));
 
   const toggleSelection = (
     kind: 'lace' | 'latkan',
@@ -220,7 +230,9 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
       setList([...list, itemId]);
       // New taps default to "same colour as fabric".
       setMap((prev) => ({ ...prev, [itemId]: { mode: 'fabric' } }));
-      setColorSheetFor({ kind, itemId });
+      // Colour popup only when the admin toggle for this accessory is ON.
+      const hidden = kind === 'lace' ? lacePickerHidden : latkanPickerHidden;
+      if (!hidden) setColorSheetFor({ kind, itemId });
     }
   };
 
@@ -326,8 +338,8 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
               if (!selectedFabric) return;
               onConfirm({
                 fabrics: selectedFabrics,
-                laces: resolvePicks(laces ?? [], laceColors, laceIds),
-                latkans: resolvePicks(latkans ?? [], latkanColors, latkanIds),
+                laces: resolvePicks(laces ?? [], laceColors, laceIds, lacePickerHidden),
+                latkans: resolvePicks(latkans ?? [], latkanColors, latkanIds, latkanPickerHidden),
               });
             }}
           >
@@ -500,7 +512,9 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
               Laces ({availableLaces.length}) <span className="font-normal text-ink-muted">— {laceIds.length}/{product.maxLaceCount ?? 1} select (optional)</span>
             </h3>
             <p className="mb-2 mt-0.5 text-[11px] text-ink-muted">
-              {t('Kisi bhi lace par tap karein — uska colour chunne ka option khul jayega.', 'Tap any lace to pick its colour.')}
+              {lacePickerHidden
+                ? t('Kisi bhi lace par tap karein — directly add ho jayegi.', 'Tap any lace to add it.')
+                : t('Kisi bhi lace par tap karein — uska colour chunne ka option khul jayega.', 'Tap any lace to pick its colour.')}
             </p>
             <div className="rail">
               {availableLaces.map((lace) => {
@@ -533,7 +547,7 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
                 );
               })}
             </div>
-            {renderChosenStrip(availableLaces, laceColors, laceIds, 'lace')}
+            {!lacePickerHidden ? renderChosenStrip(availableLaces, laceColors, laceIds, 'lace') : null}
           </section>
         ) : null}
 
@@ -544,7 +558,9 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
               Latkans ({availableLatkans.length}) <span className="font-normal text-ink-muted">— {latkanIds.length}/{product.maxLatkanCount ?? 1} select (optional)</span>
             </h3>
             <p className="mb-2 mt-0.5 text-[11px] text-ink-muted">
-              {t('Kisi bhi latkan par tap karein — uska colour chunne ka option khul jayega.', 'Tap any latkan to pick its colour.')}
+              {latkanPickerHidden
+                ? t('Kisi bhi latkan par tap karein — directly add ho jayega.', 'Tap any latkan to add it.')
+                : t('Kisi bhi latkan par tap karein — uska colour chunne ka option khul jayega.', 'Tap any latkan to pick its colour.')}
             </p>
             <div className="rail">
               {availableLatkans.map((latkan) => {
@@ -577,7 +593,7 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
                 );
               })}
             </div>
-            {renderChosenStrip(availableLatkans, latkanColors, latkanIds, 'latkan')}
+            {!latkanPickerHidden ? renderChosenStrip(availableLatkans, latkanColors, latkanIds, 'latkan') : null}
           </section>
         ) : null}
       </div>

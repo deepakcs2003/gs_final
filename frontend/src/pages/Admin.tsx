@@ -1,6 +1,11 @@
 import { useState, useEffect, type ComponentType } from 'react';
-import { Activity, BarChart3, ChevronRight, ClipboardList, CreditCard, DatabaseBackup, FolderTree, GalleryHorizontalEnd, Gauge, Globe2, Image, LayoutDashboard, LifeBuoy, MessageCircle, Package, RefreshCw, Scissors, Settings, ShieldCheck, SlidersHorizontal, Star, Store, Truck, Users, Wallet } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
+import { Activity, BarChart3, ChevronRight, ClipboardList, CreditCard, DatabaseBackup, FolderTree, GalleryHorizontalEnd, Gauge, Globe2, Image, LayoutDashboard, LifeBuoy, LogOut, Menu, MessageCircle, Package, RefreshCw, Scissors, Settings, ShieldCheck, SlidersHorizontal, Star, Store, Truck, Users, Wallet } from 'lucide-react';
 import { useCurrentUser } from '../hooks/queries';
+import { api } from '../lib/api';
+import { useUi } from '../store/ui';
+import { Modal } from './admin/shared';
 import { OverviewModule } from './admin/Overview';
 import { ProductsModule } from './admin/Products';
 import { CatalogModule } from './admin/Catalog';
@@ -51,11 +56,11 @@ const nav = {
   backup: { label: 'Backup & export', icon: DatabaseBackup },
 } as const;
 
-const navOrder = [
-  'overview', 'orders', 'tailors', 'customers', 'inventory', 'measurements', 'reviews',
-  'products', 'catalog', 'coupons', 'homepage', 'banners',
-  'analytics', 'communications', 'notifications', 'seo',
-  'shipping', 'payments', 'content', 'admin-users', 'settings', 'activity', 'backup',
+/* Mobile bottom nav — pehle 3 direct routes, baaki sab "More" drawer mein. */
+const bottomNavItems = [
+  { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'orders', label: 'Orders', icon: ClipboardList },
+  { id: 'tailors', label: 'Production', icon: Scissors },
 ] as const;
 
 const navGroups: Array<{ label: string; items: Array<keyof typeof nav> }> = [
@@ -93,7 +98,11 @@ const modules: Record<string, ComponentType<Record<string, unknown>>> = {
 
 export function AdminPage() {
   const { data: user, isLoading: userLoading } = useCurrentUser();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const toast = useUi((state) => state.toast);
   const [tab, setTab] = useState<keyof typeof nav>('overview');
+  const [moreOpen, setMoreOpen] = useState(false);
   const [ordersFilter, setOrdersFilter] = useState<string | null>(null);
   const [orderNumber, setOrderNumber] = useState<string | null>(null);
   const [productTarget, setProductTarget] = useState<string | null>(null);
@@ -104,6 +113,24 @@ export function AdminPage() {
     setOrderNumber(null);
     setProductTarget(null);
     setCustomerTarget(null);
+  };
+
+  const openTab = (id: keyof typeof nav) => {
+    resetDeepLink();
+    setTab(id);
+    setMoreOpen(false);
+  };
+
+  const logout = async () => {
+    try {
+      await api('/auth/logout', { method: 'POST' });
+    } catch {
+      /* logging out locally is what matters */
+    }
+    await queryClient.invalidateQueries({ queryKey: ['me'] });
+    setMoreOpen(false);
+    toast('Logout ho gaya', 'success');
+    navigate('/');
   };
 
   useEffect(() => {
@@ -159,8 +186,8 @@ export function AdminPage() {
   const ActiveModule = modules[tab];
 
   return (
-    <div className="min-h-dvh bg-[#f7f3ed] text-ink lg:flex">
-      <aside className="hidden w-72 shrink-0 border-r border-maroon-100 bg-[#3c1820] p-5 text-white lg:flex lg:flex-col">
+    <div className="admin-shell min-h-dvh bg-[#f7f3ed] text-ink lg:flex">
+      <aside className="admin-sidebar hidden w-72 shrink-0 border-r border-maroon-100 bg-[#3c1820] p-5 text-white lg:flex lg:flex-col">
         <div className="border-b border-white/15 pb-6">
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-marigold-400">Guddi Silai</p>
           <h1 className="mt-2 font-display text-2xl font-bold">Control room</h1>
@@ -189,25 +216,35 @@ export function AdminPage() {
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1">
-        <header className="sticky top-0 z-10 border-b border-maroon-100 bg-[#f7f3ed]/95 px-4 py-4 backdrop-blur sm:px-8">
-          <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-maroon-600">Guddi Silai / Admin</p>
-              <h2 className="font-display text-2xl font-bold">{item.label}</h2>
+      <main className="admin-main min-w-0 flex-1 overflow-x-hidden">
+        <header className="admin-header sticky top-0 z-10 border-b border-maroon-100 bg-[#f7f3ed]/95 px-3 py-3 backdrop-blur sm:px-6 lg:px-8">
+          <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setMoreOpen(true)}
+                aria-label="Admin menu kholen"
+                className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-maroon-100 bg-white text-maroon-700 shadow-card lg:hidden"
+              >
+                <Menu size={20} />
+              </button>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-maroon-600 sm:text-xs">Guddi Silai / Admin</p>
+                <h2 className="truncate font-display text-xl font-bold sm:text-2xl">{item.label}</h2>
+              </div>
             </div>
-            <button className="btn-outline px-3" onClick={() => window.location.reload()} title="Refresh data">
-              <RefreshCw size={17} /><span className="hidden sm:inline">Refresh</span>
-            </button>
-          </div>
-          <div className="mt-4 flex gap-2 overflow-x-auto lg:hidden">
-            {navOrder.map((id) => (
-              <button key={id} onClick={() => { resetDeepLink(); setTab(id); }} className={`chip whitespace-nowrap ${tab === id ? 'chip-active' : ''}`}>{nav[id].label}</button>
-            ))}
+            <div className="flex shrink-0 items-center gap-2">
+              <button type="button" className="btn-outline px-3" onClick={() => navigate('/')} title="View store" aria-label="View store">
+                <Store size={17} /><span className="hidden sm:inline">View store</span>
+              </button>
+              <button className="btn-outline px-3" onClick={() => window.location.reload()} title="Refresh data">
+                <RefreshCw size={17} /><span className="hidden sm:inline">Refresh</span>
+              </button>
+            </div>
           </div>
         </header>
 
-        <div className="mx-auto max-w-7xl p-4 sm:p-8">
+        <div className="admin-page mx-auto max-w-[1600px] p-3 sm:p-5 lg:p-8">
           {ActiveModule ? (
             <ActiveModule
               key={
@@ -238,8 +275,62 @@ export function AdminPage() {
               <div className="p-6 text-sm text-ink-muted">This module is being built — the server contract is ready, the screen is coming next.</div>
             </section>
           )}
+          <div className="h-[calc(var(--bottomnav-h)+var(--safe-bottom)+1rem)] lg:hidden" aria-hidden="true" />
         </div>
       </main>
+
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-maroon-100 bg-white/97 backdrop-blur lg:hidden"
+        style={{ paddingBottom: 'var(--safe-bottom)' }} aria-label="Admin navigation">
+        <div className="grid h-[var(--bottomnav-h)] grid-cols-4">
+          {bottomNavItems.map(({ id, label, icon: BottomIcon }) => (
+            <button key={id} type="button" onClick={() => openTab(id)}
+              className={`flex flex-col items-center justify-center gap-0.5 no-tap-highlight transition ${tab === id ? 'text-maroon-700' : 'text-ink-muted'}`}>
+              <BottomIcon size={22} />
+              <span className="text-[10.5px] font-semibold">{label}</span>
+            </button>
+          ))}
+          <button type="button" onClick={() => setMoreOpen(true)} aria-label="More admin modules kholen"
+            className={`flex flex-col items-center justify-center gap-0.5 no-tap-highlight transition ${!['overview', 'orders', 'tailors'].includes(tab) ? 'text-maroon-700' : 'text-ink-muted'}`}>
+            <Menu size={22} />
+            <span className="text-[10.5px] font-semibold">More</span>
+          </button>
+        </div>
+      </nav>
+
+      <Modal open={moreOpen} onClose={() => setMoreOpen(false)} title="Admin menu" subtitle="Saare modules ek jagah — bottomsheet drawer" maxWidth="sm:max-w-md">
+        <div className="space-y-4">
+          {navGroups.map((group) => (
+            <div key={group.label}>
+              <p className="mb-1.5 px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-ink-light">{group.label}</p>
+              <div className="space-y-0.5">
+                {group.items.map((id) => {
+                  const GroupIcon = nav[id].icon;
+                  const active = tab === id;
+                  return (
+                    <button key={id} type="button" onClick={() => openTab(id)}
+                      className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold transition ${active ? 'bg-maroon-50 text-maroon-700' : 'text-ink hover:bg-maroon-50'}`}>
+                      <GroupIcon size={18} />{nav[id].label}
+                      {active ? <span className="ml-auto h-2 w-2 rounded-full bg-maroon-600" /> : <ChevronRight className="ml-auto text-ink-light" size={15} />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 border-t border-maroon-100 pt-3">
+          <div className="space-y-0.5">
+            <button type="button" onClick={() => { setMoreOpen(false); navigate('/'); }}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold text-ink transition hover:bg-maroon-50">
+              <Store size={18} />View store<span className="ml-auto text-xs font-normal text-ink-muted">storefront kholen</span>
+            </button>
+            <button type="button" onClick={() => void logout()}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold text-alert transition hover:bg-alert/10">
+              <LogOut size={18} />Logout
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

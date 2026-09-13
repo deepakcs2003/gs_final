@@ -43,6 +43,9 @@ router.get('/config', readLimiter, async (req: Request, res: Response) => {
     homeFeedMode: settings.homeFeedMode,
     homeFeedOrder: settings.homeFeedOrder.split(','),
     homeFeedPageSize: settings.homeFeedPageSize,
+    // Lace/latkan colour picker popups — admin-controlled per accessory type.
+    laceColorPickerEnabled: settings.laceColorPickerEnabled,
+    latkanColorPickerEnabled: settings.latkanColorPickerEnabled,
   });
 });
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { User, Mail, Home, Landmark, Building2, Map, Navigation, ShieldCheck, Truck, Banknote, CreditCard, MapPin, Check, AlertTriangle, Tag, X, ShoppingBag, ArrowLeft, QrCode } from 'lucide-react';
+import { User, Mail, Home, Landmark, Building2, Map, Navigation, ShieldCheck, Truck, Banknote, CreditCard, MapPin, Check, AlertTriangle, Tag, X, ShoppingBag, ArrowLeft, QrCode, MessageSquare, ChevronDown, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import { EmptyState } from '../components/ui';
 import { useCartQuote, useAvailableCoupons, useConfig, useCurrentUser, usePincodeCheck } from '../hooks/queries';
@@ -57,6 +57,8 @@ export function CheckoutPage() {
   const appliedCoupon = useCart((state) => state.appliedCoupon);
   const setAppliedCoupon = useCart((state) => state.setAppliedCoupon);
   const clearCart = useCart((state) => state.clear);
+  const removeFromCart = useCart((state) => state.remove);
+  const removeKeys = useCart((state) => state.removeKeys);
   const endBuy = useCart((state) => state.endBuy);
   const toast = useUi((state) => state.toast);
   const openLogin = useUi((state) => state.openLogin);
@@ -64,6 +66,7 @@ export function CheckoutPage() {
   // "Buy Now" orders only the chosen line(s) even if other things sit in the
   // cart; the coupon list below reflects the same selection.
   const activeLines = useMemo(() => buyModeLines(lines, buyKeys), [lines, buyKeys]);
+  const hasCustom = activeLines.some((line) => line.type === 'CUSTOMIZE');
 
   const { data: config } = useConfig();
   const { data: user } = useCurrentUser();
@@ -83,10 +86,12 @@ export function CheckoutPage() {
     state: '',
     pincode: '',
   });
+  const isBuyNow = buyKeys.length > 0;
   const [paymentMethod, setPaymentMethod] = useState<'RAZORPAY' | 'COD'>('RAZORPAY');
   const [customerNote, setCustomerNote] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [placing, setPlacing] = useState(false);
+  const [itemsOpen, setItemsOpen] = useState(true);
 
   const currency = quote?.currency ?? config?.currency ?? 'INR';
   const codAllowed = quote?.codAllowed ?? config?.codAllowed ?? false;
@@ -170,6 +175,19 @@ export function CheckoutPage() {
     navigate('/cart');
   };
 
+  // Order summary se kisi item ko hatao. Buy Now mein sirf wahi line order
+  // ho raha tha, isliye usse cart se bhi nikaal kar buy mode band kar dete
+  // hain — baaki cart items (agar hain) normal cart checkout ban jaate hain.
+  const removeLine = (lineKey: string) => {
+    if (isBuyNow) {
+      removeKeys(buyKeys);
+      endBuy();
+    } else {
+      removeFromCart(lineKey);
+    }
+    toast('Item order se hata diya', 'info');
+  };
+
   const set = (key: keyof typeof form, value: string) => {
     setForm((current) => ({ ...current, [key]: value }));
     setErrors((current) => {
@@ -193,6 +211,19 @@ export function CheckoutPage() {
     return Object.keys(next).length === 0;
   };
 
+  /** Order lagne ke baad cart ka haal: cart checkout = poori cart clear; Buy Now
+   *  = sirf khareeda item hataya, baaki saman cart mein waise ka waasa rehta hai. */
+  const finishOrder = (orderNumber: string, mobile: string) => {
+    if (isBuyNow) {
+      removeKeys(buyKeys);
+      setAppliedCoupon('');
+    } else {
+      clearCart();
+    }
+    endBuy();
+    navigate(`/order/${orderNumber}?mobile=${encodeURIComponent(mobile)}`);
+  };
+
   const placeOrder = async () => {
     if (!validate()) {
       toast('Kuch details baaki hain', 'error');
@@ -205,6 +236,7 @@ export function CheckoutPage() {
         method: 'POST',
         body: {
           lines: toApiLines(activeLines),
+          checkoutMode: isBuyNow ? 'buy_now' : 'cart',
           contact: { name: form.name.trim(), mobile: form.mobile, ...(form.email ? { email: form.email } : {}) },
           address: {
             line1: form.line1.trim(),
@@ -223,8 +255,7 @@ export function CheckoutPage() {
       track('ORDER_PLACED', { value: quote?.amounts.totalMinor ?? 0 });
 
       if (order.paymentMethod === 'COD' && !order.razorpayOrderId) {
-        clearCart();
-        navigate(`/order/${order.orderNumber}?mobile=${form.mobile}`);
+        finishOrder(order.orderNumber, form.mobile);
         return;
       }
 
@@ -272,8 +303,7 @@ export function CheckoutPage() {
             },
           });
           track('PAYMENT_SUCCESS', { value: order.amountMinor ?? 0 });
-          clearCart();
-          navigate(`/order/${order.orderNumber}?mobile=${form.mobile}`);
+          finishOrder(order.orderNumber, form.mobile);
         } catch (err) {
           track('PAYMENT_FAILED');
           toast(err instanceof ApiError ? err.message : 'Payment verify nahi hua.', 'error');
@@ -338,9 +368,9 @@ export function CheckoutPage() {
 
       <div className="lg:grid lg:grid-cols-[1fr_340px] lg:gap-6">
         <div className="space-y-4">
-          {/* Contact */}
+          {/* Customer Details */}
           <section className="card p-5">
-            <SectionHeading icon={<User size={17} />} title="Aapki Details" />
+            <SectionHeading icon={<User size={17} />} title="Customer Details" />
             <div className="space-y-4">
               <Field label="Full name" error={errors.name} required>
                 <IconInput icon={<User size={16} strokeWidth={1.8} />} value={form.name} onChange={(e) => set('name', e.target.value)} invalid={Boolean(errors.name)} maxLength={80} placeholder="Apna pura naam likhein" />
@@ -440,7 +470,7 @@ export function CheckoutPage() {
             </div>
           </section>
 
-          {/* Payment */}
+          {/* Payment method — cart aur Buy Now dono mein yahin chuna jaata hai */}
           <section className="card p-5">
             <SectionHeading icon={<CreditCard size={17} />} title="Payment Method" />
             <div className="space-y-2.5">
@@ -480,10 +510,11 @@ export function CheckoutPage() {
                 </p>
               )}
             </div>
+          </section>
 
-            <label className="label mt-4" htmlFor="order-note">
-              Order ke liye koi note? <span className="font-normal text-ink-muted">(optional)</span>
-            </label>
+          {/* Order note */}
+          <section className="card p-5">
+            <SectionHeading icon={<MessageSquare size={17} />} title="Order Note" note="(optional)" />
             <textarea
               id="order-note"
               value={customerNote}
@@ -590,30 +621,57 @@ export function CheckoutPage() {
             ) : null}
 
             <div className="card p-5">
-              <SectionHeading icon={<Truck size={17} />} title="Order Summary" />
+              <button
+                type="button"
+                onClick={() => setItemsOpen((v) => !v)}
+                aria-expanded={itemsOpen}
+                className="mb-3 flex w-full items-center gap-2.5 text-left"
+              >
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-maroon-50 text-maroon-600">
+                  <Truck size={17} />
+                </span>
+                <span className="flex-1 font-display text-[17px] font-bold text-ink">Order Summary</span>
+                <span className="text-[12px] font-semibold text-ink-muted">
+                  {quote ? `${quote.lines.length} item${quote.lines.length > 1 ? 's' : ''}` : ''}
+                </span>
+                <ChevronDown size={16} className={`text-ink-muted transition-transform ${itemsOpen ? '' : '-rotate-90'}`} />
+              </button>
 
-              <ul className="mb-3 space-y-2 border-b border-maroon-100 pb-3">
-                {quote?.lines.map((line) => (
-                  <li key={line.key} className="flex justify-between gap-2 text-[13px]">
-                    <span className="min-w-0">
-                      <span className="block truncate font-medium text-ink">{line.name}</span>
-                      <span className="text-ink-muted">
-                        {line.quantity} × {line.colorName || line.fabricName || line.designId}
-                      </span>
-                      {line.type === 'CUSTOMIZE' ? (
-                        <span className="block text-[11px] text-ink-muted">
-                          Fabric: {line.fabricName || 'Not selected'}
-                          {line.laceNames.length ? ` • Lace: ${line.laceNames.join(', ')}` : ''}
-                          {line.latkanNames.length ? ` • Latkan: ${line.latkanNames.join(', ')}` : ''}
+              {itemsOpen ? (
+                <ul className="mb-3 space-y-2 border-b border-maroon-100 pb-3">
+                  {quote?.lines.map((line) => (
+                    <li key={line.key} className="flex items-start justify-between gap-2 text-[13px]">
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium text-ink">{line.name}</span>
+                        <span className="text-ink-muted">
+                          {line.quantity} × {line.colorName || line.fabricName || line.designId}
                         </span>
-                      ) : null}
-                    </span>
-                    <span className={line.lineTotalMinor === 0 ? 'shrink-0 font-black uppercase tracking-wide text-leaf' : 'shrink-0 font-semibold'}>
-                      {line.lineTotalMinor === 0 ? 'FREE' : formatMoney(line.lineTotalMinor, currency)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+                        {line.type === 'CUSTOMIZE' ? (
+                          <span className="block text-[11px] text-ink-muted">
+                            Fabric: {line.fabricName || 'Not selected'}
+                            {line.laceNames.length ? ` • Lace: ${line.laceNames.join(', ')}` : ''}
+                            {line.latkanNames.length ? ` • Latkan: ${line.latkanNames.join(', ')}` : ''}
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="flex shrink-0 items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => removeLine(line.key)}
+                          aria-label={`${line.name} order se hatayein`}
+                          title="Order se hatayein"
+                          className="grid h-7 w-7 place-items-center rounded-full text-ink-light transition hover:bg-alert/10 hover:text-alert"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                        <span className={line.lineTotalMinor === 0 ? 'font-black uppercase tracking-wide text-leaf' : 'font-semibold'}>
+                          {line.lineTotalMinor === 0 ? 'FREE' : formatMoney(line.lineTotalMinor, currency)}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
 
               {quote ? (
                 <dl className="space-y-2 text-[14px]">
@@ -666,6 +724,27 @@ export function CheckoutPage() {
                 </p>
               ) : null}
 
+              {hasCustom ? (
+                <div className="mt-4 rounded-xl border border-maroon-200/70 bg-maroon-50/70 p-4">
+                  <p className="flex items-center gap-2 text-[13px] font-bold text-maroon-800">
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-[12px]">⚠️</span>
+                    Customized Blouse – Important Note
+                  </p>
+                  <p className="mt-2 text-[12.5px] leading-relaxed text-ink">
+                    Please note: The displayed blouse is a design reference. Our artisans can create a replica with
+                    approximately 80–95% similarity, depending on the design, fabric, embroidery, stitching details,
+                    and availability of materials.
+                  </p>
+                  <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink">
+                    We always make our best effort to achieve the closest possible match to the shown design, but an
+                    exact 100% replica cannot be guaranteed.
+                  </p>
+                  <p className="mt-2 text-[12.5px] font-medium text-maroon-700">
+                    Thank you for your understanding and happy shopping! ❤️
+                  </p>
+                </div>
+              ) : null}
+
               {quote?.blocking ? (
                 <div className="mt-4 flex items-start gap-2 rounded-xl bg-alert/10 p-3 text-[13px] font-medium text-alert">
                   <AlertTriangle size={15} className="mt-0.5 shrink-0" />
@@ -689,12 +768,17 @@ export function CheckoutPage() {
                   {placing
                     ? 'Ruk jaiye…'
                     : paymentMethod === 'COD'
-                      ? quote && quote.amounts.codAdvanceMinor > 0
-                        ? `Pay COD advance ${formatMoney(quote.amounts.codAdvanceMinor, currency)}`
-                        : 'COD Order Confirm Karein'
+                      ? `Place Order • ${quote ? formatMoney(quote.amounts.totalMinor, currency) : ''}`
                       : `Pay ${quote ? formatMoney(quote.amounts.totalMinor, currency) : ''}`}
                 </button>
               )}
+
+              {paymentMethod === 'COD' && quote && quote.amounts.codAdvanceMinor > 0 ? (
+                <p className="mt-2 text-center text-[11.5px] font-medium text-ink-muted">
+                  {formatMoney(quote.amounts.codAdvanceMinor, currency)} advance abhi,
+                  baaki {formatMoney(quote.amounts.codBalanceMinor, currency)} delivery par.
+                </p>
+              ) : null}
 
               <p className="mt-3 flex items-center justify-center gap-1.5 text-[12px] text-ink-muted">
                 <ShieldCheck size={14} className="text-leaf" />

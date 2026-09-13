@@ -66,30 +66,29 @@ export function AdminUsersModule() {
       <Toolbar title="Admin users & roles" count={items.length} onAdd={() => setForm(emptyForm())} addLabel="Add staff" />
       <p className="hint px-5 pb-2">Roles control karte hain koi kaun si screen dekh/use kar sakta hai. Sirf Super Admin roles change kar sakta hai.</p>
       {error ? <div className="m-4 rounded-xl border border-alert/30 bg-alert/10 p-4 text-sm font-semibold text-alert">{error}</div> : null}
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[680px] text-left text-sm">
-          <thead className="bg-maroon-50 text-ink-muted"><tr>
-            <th className="p-4">Staff</th><th className="p-4">Roles</th><th className="p-4">Status</th><th className="p-4">Last login</th><th className="p-4" />
-          </tr></thead>
-          <tbody>
-            {items.length === 0 ? <tr><td colSpan={5}><Empty message="Koi staff member nahi." /></td></tr> :
-              items.map((staff) => (
-                <tr className="border-t border-maroon-100" key={staff._id}>
-                  <td className="p-4"><strong>{staff.name || '—'}</strong><div className="text-xs text-ink-muted">{staff.mobile}{staff.email ? ` · ${staff.email}` : ''}</div></td>
-                  <td className="p-4"><div className="flex flex-wrap gap-1">{staff.adminRoles.map((role) => <Badge key={role} label={role} />)}</div></td>
-                  <td className="p-4">{staff.isBlocked ? <Badge label="Blocked" /> : <Badge label="Active" />}</td>
-                  <td className="p-4 text-xs text-ink-muted">{staff.lastLoginAt ? new Date(staff.lastLoginAt).toLocaleString('en-IN') : 'Never'}</td>
-                  <td className="p-4">
-                    <div className="flex justify-end gap-1.5">
-                      <BtnGhost className="min-h-9 px-2.5" onClick={() => setForm({ _id: staff._id, name: staff.name ?? '', mobile: staff.mobile, roles: staff.adminRoles })}><Pencil size={14} /></BtnGhost>
-                      <BtnGhost className="min-h-9 px-2.5" disabled={busy === staff._id} onClick={() => toggleBlock(staff)}>{staff.isBlocked ? 'Unblock' : 'Block'}</BtnGhost>
-                      <BtnGhost className="min-h-9 px-2.5 text-alert" disabled={busy === staff._id} onClick={() => remove(staff)}><Trash2 size={14} /></BtnGhost>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
+      <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+        {items.length === 0 ? <div className="col-span-full"><Empty message="Koi staff member nahi." /></div> :
+          items.map((staff) => (
+            <article key={staff._id} className="flex flex-col rounded-xl border border-maroon-100 bg-white p-4 shadow-card transition hover:border-maroon-200">
+              <div className="flex items-start gap-3">
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-maroon-50 text-sm font-bold text-maroon-700">
+                  {(staff.name || staff.mobile || '?').slice(0, 1).toUpperCase()}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold text-ink">{staff.name || '—'}</p>
+                  <p className="break-all font-mono text-xs text-ink-muted">{staff.mobile}{staff.email ? ` · ${staff.email}` : ''}</p>
+                </div>
+                {staff.isBlocked ? <Badge label="Blocked" /> : <Badge label="Active" />}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-1">{staff.adminRoles.map((role) => <Badge key={role} label={role} />)}</div>
+              <p className="mt-3 border-t border-maroon-50 pt-3 text-xs text-ink-muted">Last login: {staff.lastLoginAt ? new Date(staff.lastLoginAt).toLocaleString('en-IN') : 'Never'}</p>
+              <div className="mt-2 flex justify-end gap-1.5">
+                <BtnGhost className="min-h-9 px-2.5" onClick={() => setForm({ _id: staff._id, name: staff.name ?? '', mobile: staff.mobile, roles: staff.adminRoles })}><Pencil size={14} /></BtnGhost>
+                <BtnGhost className="min-h-9 px-2.5" disabled={busy === staff._id} onClick={() => toggleBlock(staff)}>{staff.isBlocked ? 'Unblock' : 'Block'}</BtnGhost>
+                <BtnGhost className="min-h-9 px-2.5 text-alert" disabled={busy === staff._id} onClick={() => remove(staff)}><Trash2 size={14} /></BtnGhost>
+              </div>
+            </article>
+          ))}
       </div>
 
       {form ? (

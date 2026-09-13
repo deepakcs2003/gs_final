@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from '../../lib/api';
 import { Badge, BtnGhost, BtnOutline, BtnPrimary, Field, ImageLightbox, Modal, TextInput, Toolbar, inr } from './shared';
-import { Eye, X, Check, Truck, Wallet, LinkIcon, Image as ImageIcon, Scissors, RefreshCw, UserRound } from 'lucide-react';
+import { ChevronDown, ChevronRight, Eye, X, Check, Truck, Wallet, LinkIcon, Image as ImageIcon, Scissors, RefreshCw, SlidersHorizontal, UserRound } from 'lucide-react';
+import clsx from 'clsx';
 import { cloudinarySrc } from '../../lib/image';
 
 const statuses = ['AWAITING_REVIEW', 'PLACED', 'CONFIRMED', 'PROCESSING', 'STITCHING', 'QUALITY_CHECK', 'PACKED', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'RETURNED', 'FAILED'];
@@ -23,6 +24,7 @@ interface AdminOrder {
     status: string; statusText: string; lastSyncedAt: string | null; pickupScheduledAt: string | null; shippedAt: string | null; deliveredAt: string | null;
   };
   customerNote: string; placedAt: string;
+  promisedDeliveryAt: string | null;
   review: { status: string; reviewedAt: string | null; reviewNote: string; flags: string[] } | null;
   production: { complexity: string; productionUnits: number; estimatedWorkingDays: number; calculatedAt: string | null } | null;
   deliveryEstimate: { stitchingWorkingDays: number; packingWorkingDays: number; shippingDays: number; bufferDays: number; fromDate: string | null; toDate: string | null; workingDaysUsed: number; calculatedAt: string | null } | null;
@@ -42,6 +44,7 @@ export function OrdersModule({ initialFilter, initialOrderNumber }: { initialFil
   const [items, setItems] = useState<AdminOrder[]>([]);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState(initialFilter ?? 'ALL');
+  const [filterOpen, setFilterOpen] = useState(false);
   const [selected, setSelected] = useState<AdminOrder | null>(null);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
@@ -55,6 +58,11 @@ export function OrdersModule({ initialFilter, initialOrderNumber }: { initialFil
       else if (statusFilter === 'REFUND_PENDING') params.set('refund', 'pending');
       else if (statusFilter === 'REFUND_FAILED') params.set('refund', 'failed');
       else if (statusFilter === 'REFUNDED') params.set('refund', 'refunded');
+      else if (statusFilter === 'PAYMENT_PAID') params.set('payment', 'PAID');
+      else if (statusFilter === 'PAYMENT_PENDING') params.set('payment', 'PENDING');
+      else if (statusFilter === 'PAYMENT_COD_PENDING') params.set('payment', 'COD_PENDING');
+      else if (statusFilter === 'PAYMENT_COD_ADVANCE_PENDING') params.set('payment', 'COD_ADVANCE_PENDING');
+      else if (statusFilter === 'PAYMENT_FAILED') params.set('payment', 'FAILED');
       else if (statusFilter !== 'ALL') params.set('status', statusFilter);
       if (query.trim()) params.set('q', query.trim());
       const res = await api<{ items: AdminOrder[] }>(`/admin/orders?${params.toString()}`);
@@ -102,19 +110,43 @@ export function OrdersModule({ initialFilter, initialOrderNumber }: { initialFil
     const map: Record<string, number> = {};
     for (const s of statuses) map[s] = 0;
     for (const o of items) map[o.status] = (map[o.status] ?? 0) + 1;
+    map.AWAITING_REVIEW = items.filter((o) => o.status === 'AWAITING_REVIEW' && ['PAID', 'COD_PENDING'].includes(o.payment?.status ?? '')).length;
     map.UNASSIGNED = items.filter((o) => o.status !== 'CANCELLED' && o.status !== 'RETURNED' && o.tailor?.status !== 'ASSIGNED').length;
     map.REFUND_PENDING = items.filter((o) => o.cancellation?.refund?.status === 'PENDING' || o.cancellation?.refund?.status === 'PROCESSING').length;
     map.REFUND_FAILED = items.filter((o) => o.cancellation?.refund?.status === 'FAILED').length;
     map.REFUNDED = items.filter((o) => o.cancellation?.refund?.status === 'COMPLETED').length;
+    map.PAYMENT_PAID = items.filter((o) => o.payment?.status === 'PAID').length;
+    map.PAYMENT_PENDING = items.filter((o) => o.payment?.status === 'PENDING').length;
+    map.PAYMENT_COD_PENDING = items.filter((o) => o.payment?.status === 'COD_PENDING').length;
+    map.PAYMENT_COD_ADVANCE_PENDING = items.filter((o) => o.payment?.status === 'COD_ADVANCE_PENDING').length;
+    map.PAYMENT_FAILED = items.filter((o) => o.payment?.status === 'FAILED').length;
     return map;
   }, [items]);
 
   const specialFilters = ['UNASSIGNED', 'REFUND_PENDING', 'REFUND_FAILED', 'REFUNDED'];
 
+  const paymentFilters: Array<{ key: string; label: string }> = [
+    { key: 'PAYMENT_PAID', label: 'Payment: Paid' },
+    { key: 'PAYMENT_PENDING', label: 'Pending (Razorpay)' },
+    { key: 'PAYMENT_COD_PENDING', label: 'COD pending' },
+    { key: 'PAYMENT_COD_ADVANCE_PENDING', label: 'COD advance pending' },
+    { key: 'PAYMENT_FAILED', label: 'Payment failed' },
+  ];
+
+  /* Ek hi filter list — desktop chips + mobile Filter ▾ sheet dono yahin se. */
+  const filterOptions = useMemo(() => [
+    { key: 'ALL', label: `All (${items.length})` },
+    { key: 'AWAITING_REVIEW', label: `Awaiting review (${counts.AWAITING_REVIEW ?? 0})` },
+    { key: 'UNASSIGNED', label: `No tailor (${counts.UNASSIGNED ?? 0})` },
+    ...statuses.filter((s) => s !== 'AWAITING_REVIEW').map((s) => ({ key: s, label: `${s.replace('_', ' ')} (${counts[s] ?? 0})` })),
+    ...specialFilters.map((f) => ({ key: f, label: `${f.replace('_', ' ')} (${counts[f] ?? 0})` })),
+    ...paymentFilters.map((f) => ({ key: f.key, label: `${f.label} (${counts[f.key] ?? 0})` })),
+  ], [items, counts]);
+
   return (
     <section className="card overflow-hidden">
       <Toolbar title="Order management" count={filtered.length} searchPlaceholder="Order ID, customer, mobile" query={query} onQuery={search} />
-      <div className="flex gap-2 overflow-x-auto px-2 py-3">
+      <div className="hidden lg:flex gap-2 overflow-x-auto px-2 py-3">
         <button onClick={() => { setStatusFilter('ALL'); }} className={`chip whitespace-nowrap ${statusFilter === 'ALL' ? 'chip-active' : ''}`}>All ({items.length})</button>
         <button onClick={() => { setStatusFilter('AWAITING_REVIEW'); }} className={`chip whitespace-nowrap ${statusFilter === 'AWAITING_REVIEW' ? 'chip-active' : ''}`}>Awaiting review ({counts.AWAITING_REVIEW ?? 0})</button>
         <button onClick={() => { setStatusFilter('UNASSIGNED'); }} className={`chip whitespace-nowrap ${statusFilter === 'UNASSIGNED' ? 'chip-active' : ''}`}>No tailor ({counts.UNASSIGNED ?? 0})</button>
@@ -124,26 +156,67 @@ export function OrdersModule({ initialFilter, initialOrderNumber }: { initialFil
         {specialFilters.map((f) => (
           <button key={f} onClick={() => { setStatusFilter(f); }} className={`chip whitespace-nowrap ${statusFilter === f ? 'chip-active' : ''}`}>{f.replace('_', ' ')} ({counts[f] ?? 0})</button>
         ))}
+        {paymentFilters.map((f) => (
+          <button key={f.key} onClick={() => { setStatusFilter(f.key); }} className={`chip whitespace-nowrap ${statusFilter === f.key ? 'chip-active' : ''}`}>{f.label} ({counts[f.key] ?? 0})</button>
+        ))}
+      </div>
+      <div className="border-b border-maroon-100 p-3 lg:hidden">
+        <button type="button" onClick={() => setFilterOpen((v) => !v)} aria-expanded={filterOpen} aria-label="Orders filter kholen"
+          className="flex w-full items-center justify-between gap-2 rounded-xl border border-maroon-100 bg-white px-4 py-3 text-sm font-semibold text-ink shadow-card">
+          <span className="flex min-w-0 items-center gap-2">
+            <SlidersHorizontal size={16} className="shrink-0 text-maroon-700" />
+            Filter
+            <span className="truncate font-normal text-ink-muted">{filterOptions.find((f) => f.key === statusFilter)?.label}</span>
+          </span>
+          <ChevronDown size={16} className={`shrink-0 text-ink-muted transition-transform ${filterOpen ? 'rotate-180' : ''}`} />
+        </button>
+        {filterOpen ? (
+          <div className="mt-2 grid gap-1">
+            {filterOptions.map((f) => (
+              <button key={f.key} type="button" onClick={() => { setStatusFilter(f.key); setFilterOpen(false); }}
+                className={clsx('flex items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-medium transition', f.key === statusFilter ? 'bg-maroon-50 font-semibold text-maroon-700' : 'text-ink hover:bg-maroon-50')}>
+                {f.label}
+                {f.key === statusFilter ? <span className="h-2 w-2 rounded-full bg-maroon-600" /> : null}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
       {error ? <div className="m-4 rounded-xl border border-alert/30 bg-alert/10 p-4 text-sm font-semibold text-alert">{error}</div> : null}
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[780px] text-left text-sm">
-          <thead className="bg-maroon-50 text-ink-muted"><tr><th className="p-4">Order</th><th className="p-4">Customer</th><th className="p-4">Items</th><th className="p-4">Amount</th><th className="p-4">Payment</th><th className="p-4">Status</th><th className="p-4">View</th></tr></thead>
-          <tbody>{filtered.length === 0 ? <tr><td className="p-6 text-center text-ink-muted" colSpan={7}>Koi order nahi.</td></tr> : filtered.map((order) => (
-            <tr className="border-t border-maroon-100 hover:bg-maroon-50/30" key={order.orderNumber}>
-              <td className="p-4"><strong>{order.orderNumber}</strong>
-                <div className="text-xs text-ink-muted">{new Date(order.placedAt).toLocaleString('en-IN')}</div>
-                {order.isGuest ? <span className="text-[10px] font-bold text-ink-light">GUEST</span> : null}
-              </td>
-              <td className="p-4">{order.contact?.name ?? '—'}<div className="text-xs text-ink-muted">{order.contact?.mobile ?? ''}</div></td>
-              <td className="p-4">{(order.items ?? []).reduce((n, i) => n + i.quantity, 0)}</td>
-              <td className="p-4 font-semibold">{inr(order.amounts?.totalMinor ?? 0)}</td>
-              <td className="p-4"><Badge label={order.payment?.status ?? 'PENDING'} /><div className="mt-1 text-xs text-ink-muted">{order.payment?.method ?? ''}</div></td>
-              <td className="p-4"><Badge label={order.status ?? ''} /></td>
-              <td className="p-4"><BtnGhost className="min-h-9 px-2.5" onClick={() => void setSelected(order)}><Eye size={15} /></BtnGhost></td>
-            </tr>
-          ))}</tbody>
-        </table>
+
+      <div className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2 xl:grid-cols-3">
+        {filtered.length === 0 ? (
+          <p className="py-8 text-center text-sm text-ink-muted">Koi order nahi.</p>
+        ) : filtered.map((order) => (
+          <div key={order.orderNumber} role="button" tabIndex={0} aria-label={`Order ${order.orderNumber} kholen`}
+            onClick={() => setSelected(order)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelected(order); } }}
+            className="cursor-pointer rounded-xl2 border border-maroon-100 bg-white p-3.5 text-left shadow-card transition active:scale-[0.99]">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[15px] font-bold text-ink">{order.orderNumber}</span>
+              <span className="font-bold text-ink">{inr(order.amounts?.totalMinor ?? 0)}</span>
+            </div>
+            <div className="mt-1 flex items-center gap-2 text-xs text-ink-muted">
+              <span>{new Date(order.placedAt).toLocaleString('en-IN')}</span>
+              {order.isGuest ? <span className="rounded-full bg-ink-light/15 px-1.5 py-0.5 text-[10px] font-bold text-ink-light">GUEST</span> : null}
+            </div>
+            <div className="mt-2 text-sm">
+              <span className="font-semibold text-ink">{order.contact?.name ?? '—'}</span>
+              <span className="ml-2 text-ink-muted">{order.contact?.mobile ?? ''}</span>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs text-ink-muted">{(order.items ?? []).reduce((n, i) => n + i.quantity, 0)} items</span>
+              <span className="flex items-center gap-1.5">
+                <Badge label={order.payment?.status ?? 'PENDING'} />
+                <Badge label={order.status ?? ''} />
+              </span>
+            </div>
+            <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-maroon-50 pt-2.5">
+              <span className="inline-flex items-center gap-1 text-xs font-bold text-maroon-700"><Eye size={14} />View order</span>
+              <ChevronRight size={16} className="text-ink-light" />
+            </div>
+          </div>
+        ))}
       </div>
 
       {selected ? (
@@ -172,6 +245,7 @@ function OrderDetailModal({ order, onClose, busy, onStatus, onUpdated, onListRef
   const [preview, setPreview] = useState<string | null>(null);
 
   const [complexity, setComplexity] = useState(order.production?.complexity ?? 'medium');
+  const [promiseDate, setPromiseDate] = useState(toDateInput(order.promisedDeliveryAt));
   const [reviewNote, setReviewNote] = useState('');
   const [cancelReason, setCancelReason] = useState('');
   const [reviewBusy, setReviewBusy] = useState('');
@@ -183,12 +257,30 @@ function OrderDetailModal({ order, onClose, busy, onStatus, onUpdated, onListRef
     try {
       await api(`/admin/orders/${order.orderNumber}/confirm`, {
         method: 'POST',
-        body: { reviewNote: reviewNote.trim(), complexity },
+        body: {
+          reviewNote: reviewNote.trim(),
+          complexity,
+          estimatedDeliveryAt: promiseDate ? `${promiseDate}T00:00:00` : null,
+        },
       });
       setReviewNote('');
       await onUpdated();
       onListRefresh();
     } catch (err) { setError(err instanceof ApiError ? err.message : 'Confirm nahi hua.'); }
+    finally { setReviewBusy(''); }
+  };
+
+  const savePromise = async () => {
+    setReviewBusy('promise');
+    try {
+      await api(`/admin/orders/${order.orderNumber}/promised-delivery`, {
+        method: 'PATCH',
+        body: { estimatedDeliveryAt: promiseDate ? `${promiseDate}T00:00:00` : null },
+      });
+      setReviewNote('');
+      await onUpdated();
+      onListRefresh();
+    } catch (err) { setError(err instanceof ApiError ? err.message : 'Delivery date save nahi hua.'); }
     finally { setReviewBusy(''); }
   };
 
@@ -253,6 +345,7 @@ function OrderDetailModal({ order, onClose, busy, onStatus, onUpdated, onListRef
               {order.status === 'AWAITING_REVIEW' ? (
                 <ReviewControls busy={reviewBusy} complexity={complexity} onComplexity={setComplexity}
                   note={reviewNote} onNote={setReviewNote} cancelReason={cancelReason} onCancelReason={setCancelReason}
+                  promiseDate={promiseDate} onPromiseDate={setPromiseDate}
                   onConfirm={() => void confirmOrder()} onCancel={() => void cancelOrder()} />
               ) : (
                 <select className="field min-h-10 w-auto py-2 text-sm" value={order.status} disabled={busy === order.orderNumber}
@@ -301,6 +394,12 @@ function OrderDetailModal({ order, onClose, busy, onStatus, onUpdated, onListRef
                 {order.liveWorkload ? (
                   <Row k="Live workload / capacity" v={`${order.liveWorkload.activeUnits} units (${order.liveWorkload.activeOrders} orders) / ${order.liveWorkload.dailyCapacity} per day`} />
                 ) : null}
+                <Row k="Confirmed delivery date (customer ko dikhega)" v={
+                  <span className="inline-flex items-center gap-2">
+                    <input type="date" className="field min-h-8 w-auto py-1 text-xs" value={promiseDate} onChange={(e) => setPromiseDate(e.target.value)} disabled={reviewBusy === 'promise' || order.status === 'CANCELLED'} />
+                    <BtnGhost className="min-h-8 px-2 text-xs" onClick={() => void savePromise()} disabled={reviewBusy === 'promise' || order.status === 'CANCELLED'}><Check size={13} />Save</BtnGhost>
+                  </span>
+                } />
               </div>
             ) : <p className="mt-2 text-xs text-ink-muted">Confirm hote hi estimate banega.</p>}
           </section>
@@ -666,6 +765,12 @@ function fmtDate(v: string | null | undefined): string {
   return v ? new Date(v).toLocaleDateString('en-IN') : '—';
 }
 
+function toDateInput(v?: string | null): string {
+  if (!v) return '';
+  const d = new Date(v);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
 function ReviewBanner({ order }: { order: AdminOrder }) {
   const flags = order.risk?.flagLabels ?? [];
   if (flags.length === 0) return null;
@@ -682,10 +787,10 @@ function ReviewBanner({ order }: { order: AdminOrder }) {
   );
 }
 
-function ReviewControls({ busy, complexity, onComplexity, note, onNote, cancelReason, onCancelReason, onConfirm, onCancel }: {
+function ReviewControls({ busy, complexity, onComplexity, note, onNote, cancelReason, onCancelReason, promiseDate, onPromiseDate, onConfirm, onCancel }: {
   busy: string; complexity: string; onComplexity: (v: string) => void;
   note: string; onNote: (v: string) => void; cancelReason: string; onCancelReason: (v: string) => void;
-  onConfirm: () => void; onCancel: () => void;
+  promiseDate: string; onPromiseDate: (v: string) => void; onConfirm: () => void; onCancel: () => void;
 }) {
   return (
     <div className="w-full space-y-3">
@@ -697,6 +802,9 @@ function ReviewControls({ busy, complexity, onComplexity, note, onNote, cancelRe
         </Field>
         <Field label="Review note (optional)">
           <TextInput value={note} onChange={(e) => onNote(e.target.value)} placeholder="Approve note" />
+        </Field>
+        <Field label="Estimated delivery date (customer ko dikhega)">
+          <input type="date" className="field min-h-10 w-full text-sm" value={promiseDate} onChange={(e) => onPromiseDate(e.target.value)} />
         </Field>
       </div>
       <div className="flex flex-wrap items-center gap-2">

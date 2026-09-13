@@ -569,32 +569,26 @@ function MessagesTab({ onError }: { onError: (msg: string) => void }) {
           </label>
         </div>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] text-left text-sm">
-          <thead>
-            <tr className="border-b border-maroon-100 text-xs uppercase tracking-wide text-ink-muted">
-              <th className="px-5 py-3 font-semibold">Mobile</th>
-              <th className="px-3 py-3 font-semibold">Type</th>
-              <th className="px-3 py-3 font-semibold">Template</th>
-              <th className="px-3 py-3 font-semibold">Status</th>
-              <th className="px-3 py-3 font-semibold">Meta id</th>
-              <th className="px-5 py-3 font-semibold">Time</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-maroon-100">
-            {filtered.length === 0 ? <tr><td colSpan={6}><Empty message="Koi message nahi mila." /></td></tr> :
-              filtered.map((m) => (
-                <tr key={m._id} className="hover:bg-maroon-50/40">
-                  <td className="px-5 py-3 font-mono font-semibold">{m.mobile}</td>
-                  <td className="px-3 py-3"><Badge label={m.type} /></td>
-                  <td className="px-3 py-3 font-mono text-xs">{m.templateName}</td>
-                  <td className="px-3 py-3"><Badge label={m.status} tone={msgTones[m.status]} /></td>
-                  <td className="px-3 py-3 font-mono text-xs text-ink-muted">{m.metaMessageId || (m.status === 'FAILED' ? <span className="text-alert">{m.failureReason || 'failed'}</span> : '—')}</td>
-                  <td className="px-5 py-3 text-xs text-ink-muted">{at(m.createdAt)}</td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
+      <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+        {filtered.length === 0 ? <div className="col-span-full"><Empty message="Koi message nahi mila." /></div> :
+          filtered.map((m) => (
+            <article key={m._id} className="rounded-xl border border-maroon-100 bg-white p-4 shadow-card transition hover:border-maroon-200">
+              <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 truncate font-mono font-semibold text-ink">{m.mobile}</p>
+                <Badge label={m.status} tone={msgTones[m.status]} />
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <Badge label={m.type} />
+                <span className="rounded-full bg-ink-light/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-ink-muted">{m.templateName}</span>
+              </div>
+              <div className="mt-3 flex items-center justify-between gap-2 border-t border-maroon-50 pt-3 text-xs">
+                <span className="font-mono text-[10px] text-ink-muted break-all">
+                  {m.metaMessageId || (m.status === 'FAILED' ? <span className="text-alert">{m.failureReason || 'failed'}</span> : '—')}
+                </span>
+                <span className="shrink-0 text-ink-muted">{at(m.createdAt)}</span>
+              </div>
+            </article>
+          ))}
       </div>
       <div className="flex items-center justify-between border-t border-maroon-100 px-5 py-3 text-sm">
         <p className="text-xs text-ink-muted">Page {page} · {pageSize} per page</p>

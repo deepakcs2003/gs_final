@@ -11,7 +11,7 @@ import { Tailor } from '../models/tailor.js';
 import { AdminActivityLog, AnalyticsEvent, Setting } from '../models/analytics.js';
 import { Color, Size, Banner, OfferPopup, Page, HomepageSection } from '../models/admin-content.js';
 import { validate, type ValidatedRequest } from '../middleware/validate.js';
-import { ORDER_STATUSES, ADMIN_ROLES, TAILOR_SPECIALIZATIONS, TAILOR_STATUSES, COMPLEXITY_KEYS, type AdminRole, type OrderStatus, type ComplexityKey, type TailorSpecialization, type TailorStatus } from '../domain/constants.js';
+import { ORDER_STATUSES, PAYMENT_STATUSES, ADMIN_ROLES, TAILOR_SPECIALIZATIONS, TAILOR_STATUSES, COMPLEXITY_KEYS, type AdminRole, type OrderStatus, type ComplexityKey, type TailorSpecialization, type TailorStatus } from '../domain/constants.js';
 import { notFound, forbidden, badRequest, conflict } from '../utils/errors.js';
 import { invalidateSettingsCache } from '../services/settings.js';
 import { computeEstimate, detectComplexity, complexitySpecialization, dailyCapacityFor, activeWorkload, tailorWorkloads, pendingWorkload, awaitingTailorCount, getProductionConfig } from '../services/production.js';
@@ -75,6 +75,7 @@ const confirmOrderSchema = z
   .object({
     reviewNote: z.string().trim().max(500).default(''),
     complexity: z.enum([...COMPLEXITY_KEYS] as [ComplexityKey, ...ComplexityKey[]]).optional(),
+    estimatedDeliveryAt: z.coerce.date().nullable().optional(),
   })
   .strict();
 
@@ -552,7 +553,13 @@ async function enrichAdminOrder(
 router.get('/orders', adminReadLimiter, async (req: Request, res: Response) => {
   const filter: Record<string, unknown> = {};
   const requestedStatus = String(req.query.status ?? '');
-  if (requestedStatus && ORDER_STATUSES.includes(requestedStatus as OrderStatus)) filter.status = requestedStatus;
+  if (requestedStatus && ORDER_STATUSES.includes(requestedStatus as OrderStatus)) {
+    filter.status = requestedStatus;
+    // Awaiting review = sirf paid (Razorpay) ya COD_PENDING orders.
+    if (requestedStatus === 'AWAITING_REVIEW') filter['payment.status'] = { $in: ['PAID', 'COD_PENDING'] };
+  }
+  const paymentFilter = String(req.query.payment ?? '');
+  if (paymentFilter && (PAYMENT_STATUSES as readonly string[]).includes(paymentFilter)) filter['payment.status'] = paymentFilter;
   if (req.query.q) {
     const q = String(req.query.q).trim().slice(0, 80).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     if (q) filter.$or = [{ orderNumber: new RegExp(q, 'i') }, { 'contact.name': new RegExp(q, 'i') }, { 'contact.mobile': new RegExp(q, 'i') }];
@@ -670,6 +677,22 @@ router.patch('/orders/:orderNumber/shipping', adminWriteLimiter, validate({
   res.json({ order: fresh });
 });
 
+/** Admin-set confirmed delivery date — customer tracking par directly dikhti hai. */
+router.patch('/orders/:orderNumber/promised-delivery', adminWriteLimiter, validate({
+  params: orderNumberSchema,
+  body: z.object({ estimatedDeliveryAt: z.coerce.date().nullable().optional() }).strict(),
+}), async (req: Request, res: Response) => {
+  const { orderNumber } = (req as ValidatedRequest<unknown, unknown, { orderNumber: string }>).validated.params;
+  const body = (req as ValidatedRequest<{ estimatedDeliveryAt?: Date | null }>).validated.body;
+  const order = await Order.findOne({ orderNumber });
+  if (!order) throw notFound('Order nahi mila.');
+  if (body.estimatedDeliveryAt !== undefined) order.set('promisedDeliveryAt', body.estimatedDeliveryAt as Date | null);
+  await order.save();
+  await logAction(req, 'UPDATE_DELIVERY_PROMISE', 'ORDER', orderNumber, `Promised delivery set for ${orderNumber}`);
+  const fresh = await Order.findOne({ orderNumber }).lean();
+  res.json({ order: fresh });
+});
+
 /* ========================================================================== */
 /* Order review workflow — confirm / cancel / tailor / production / refund     */
 /* ========================================================================== */
@@ -772,13 +795,15 @@ async function issueRefund(order: InstanceType<typeof Order>): Promise<'requeste
 /** Confirm an AWAITING_REVIEW order: APPROVED review + CONFIRMED + estimate. */
 router.post('/orders/:orderNumber/confirm', adminWriteLimiter, validate({ params: orderNumberSchema, body: confirmOrderSchema }), async (req: Request, res: Response) => {
   const { orderNumber } = (req as ValidatedRequest<unknown, unknown, { orderNumber: string }>).validated.params;
-  const body = (req as ValidatedRequest<{ reviewNote: string; complexity?: ComplexityKey }>).validated.body;
+  const body = (req as ValidatedRequest<{ reviewNote: string; complexity?: ComplexityKey; estimatedDeliveryAt?: Date | null }>).validated.body;
   const order = await Order.findOne({ orderNumber });
   if (!order) throw notFound('Order nahi mila.');
   if (order.status !== 'AWAITING_REVIEW') throw badRequest('Sirf AWAITING_REVIEW order confirm ho sakta hai.');
 
   const complexity = body.complexity ?? (order.production?.complexity as ComplexityKey | undefined) ?? (await detectOrderComplexity(order));
   await applyProductionEstimate(order, complexity);
+
+  if (body.estimatedDeliveryAt !== undefined) order.set('promisedDeliveryAt', body.estimatedDeliveryAt as Date | null);
 
   order.set('review', {
     status: 'APPROVED',

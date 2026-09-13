@@ -65,6 +65,7 @@ const createOrderSchema = z
     paymentMethod: z.enum(['RAZORPAY', 'COD']),
     couponCode: couponCodeSchema,
     customerNote: z.string().trim().max(500).default(''),
+    checkoutMode: z.enum(['cart', 'buy_now']).optional(),
   })
   .strict();
 
@@ -292,6 +293,7 @@ router.post('/', checkoutLimiter, validate({ body: createOrderSchema }), async (
       },
       customerNote: body.customerNote,
       measurementInstructionVersion: settings.measurementInstructionVersion,
+      checkoutMode: body.checkoutMode ?? 'cart',
       placedAt: new Date(),
     });
 
@@ -538,6 +540,7 @@ interface OrderLike {
   contact?: unknown;
   customerNote?: string;
   placedAt?: Date;
+  promisedDeliveryAt?: Date | null;
   deliveryEstimate?: {
     stitchingWorkingDays?: number;
     packingWorkingDays?: number;
@@ -599,6 +602,8 @@ function presentOrder(order: OrderLike, detailed = false) {
           to: order.deliveryEstimate.toDate,
         }
       : null,
+    // Admin-set confirmed delivery date — customer tracking par dikhti hai.
+    promisedDeliveryAt: order.promisedDeliveryAt ?? null,
     tracking: {
       awb: order.shipping?.awb ?? '',
       courier: order.shipping?.courier ?? '',

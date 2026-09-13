@@ -45,15 +45,15 @@ export function InventoryModule() {
         {error ? <div className="m-4 rounded-xl border border-alert/30 bg-alert/10 p-4 text-sm font-semibold text-alert">{error}</div> : null}
         {lowProductCount > 0 ? (
           <div className="mx-4 mt-2 flex items-center gap-2 rounded-xl border border-alert/30 bg-alert/5 p-3 text-sm">
-            <AlertTriangle size={16} className="text-alert" /><span className="font-semibold text-alert">{lowProductCount} products ki stock 5 se kam hai.</span>
+            <AlertTriangle size={16} className="shrink-0 text-alert" /><span className="min-w-0 font-semibold text-alert">{lowProductCount} products ki stock 5 se kam hai.</span>
           </div>
         ) : null}
         <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
           {productStock.length === 0 ? <div className="col-span-full"><Empty message="Koi product nahi." /></div> :
             productStock.map((p) => (
               <article key={p._id} className={`rounded-xl border p-4 ${p.total === 0 ? 'border-alert/30 bg-alert/5' : p.low ? 'border-marigold-500/50' : 'border-maroon-100'}`}>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0"><p className="text-xs font-bold text-maroon-600">{p.designId}</p><h4 className="truncate font-semibold">{p.name}</h4></div>
+                <div className="admin-row-stack items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1"><p className="truncate text-xs font-bold text-maroon-600">{p.designId}</p><h4 className="admin-text-wrap font-semibold">{p.name}</h4></div>
                   <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${p.total === 0 ? 'bg-alert text-white' : p.low ? 'bg-marigold-500 text-ink' : 'bg-leaf/15 text-leaf'}`}>
                     {p.total === 0 ? 'Out of stock' : `${p.total} left`}
                   </span>
@@ -62,8 +62,8 @@ export function InventoryModule() {
                   {p.variants.slice(0, 12).map((v, i) => {
                     const color = p.colors.find((c) => c.slug === v.colorSlug);
                     return (
-                      <div key={i} className={`rounded-md px-2 py-1 ${v.stock === 0 ? 'bg-alert/10 text-alert' : v.stock <= 3 ? 'bg-marigold-100 text-ink' : 'bg-maroon-50 text-ink'}`}>
-                        <span className="font-semibold">{color?.name ?? v.colorSlug} · {v.size}</span> <strong>{v.stock}</strong>
+                      <div key={i} className={`flex items-center justify-between gap-1.5 rounded-md px-2 py-1 ${v.stock === 0 ? 'bg-alert/10 text-alert' : v.stock <= 3 ? 'bg-marigold-100 text-ink' : 'bg-maroon-50 text-ink'}`}>
+                        <span className="admin-text-wrap min-w-0 font-semibold">{color?.name ?? v.colorSlug} · {v.size}</span> <strong className="shrink-0">{v.stock}</strong>
                       </div>
                     );
                   })}
@@ -76,38 +76,44 @@ export function InventoryModule() {
       <div className="grid gap-5 lg:grid-cols-2">
         <section className="card overflow-hidden">
           <Toolbar title="Fabric stock (metres)" count={fabricMatches.length} />
-          <div className="divide-y divide-maroon-100">
-            {fabricMatches.length === 0 ? <Empty message="Koi fabric nahi." /> : fabricMatches.map((f) => (
-              <div className="flex items-center justify-between gap-2 px-5 py-3 text-sm" key={f._id}>
-                <div className="min-w-0"><span className="font-semibold">{f.name}</span><div className="text-xs text-ink-muted">{f.material} · {f.colorName}</div></div>
-                <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${f.stockMeters === 0 || !f.inStock ? 'bg-alert/10 text-alert' : 'bg-leaf/15 text-leaf'}`}>
-                  {f.inStock ? `${f.stockMeters} m` : 'Out of stock'}
-                </span>
-              </div>
+          <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+            {fabricMatches.length === 0 ? <div className="col-span-full"><Empty message="Koi fabric nahi." /></div> : fabricMatches.map((f) => (
+              <article key={f._id} className="rounded-xl border border-maroon-100 bg-white p-4 shadow-card transition hover:border-maroon-200">
+                <div className="admin-row-stack items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1"><p className="admin-text-wrap font-semibold text-ink">{f.name}</p><p className="admin-text-wrap text-xs text-ink-muted">{f.material} · {f.colorName}</p></div>
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${f.stockMeters === 0 || !f.inStock ? 'bg-alert/10 text-alert' : 'bg-leaf/15 text-leaf'}`}>
+                    {f.inStock ? `${f.stockMeters} m` : 'Out of stock'}
+                  </span>
+                </div>
+              </article>
             ))}
           </div>
         </section>
 
         <section className="card overflow-hidden">
           <Toolbar title="Lace stock" count={laceMatches.length} />
-          <div className="divide-y divide-maroon-100">
-            {laceMatches.length === 0 ? <Empty message="Koi lace nahi." /> : laceMatches.map((l) => (
-              <div className="flex items-center justify-between gap-2 px-5 py-3 text-sm" key={l._id}>
-                <div className="min-w-0"><span className="font-semibold">{l.name}</span><div className="text-xs text-ink-muted">{l.colorName} · {inr(l.priceInr * 100)}</div></div>
-                <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${l.inStock ? 'bg-leaf/15 text-leaf' : 'bg-alert/10 text-alert'}`}>{l.inStock ? 'In stock' : 'Out of stock'}</span>
-              </div>
+          <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+            {laceMatches.length === 0 ? <div className="col-span-full"><Empty message="Koi lace nahi." /></div> : laceMatches.map((l) => (
+              <article key={l._id} className="rounded-xl border border-maroon-100 bg-white p-4 shadow-card transition hover:border-maroon-200">
+                <div className="admin-row-stack items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1"><p className="admin-text-wrap font-semibold text-ink">{l.name}</p><p className="admin-text-wrap text-xs text-ink-muted">{l.colorName} · {inr(l.priceInr * 100)}</p></div>
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${l.inStock ? 'bg-leaf/15 text-leaf' : 'bg-alert/10 text-alert'}`}>{l.inStock ? 'In stock' : 'Out of stock'}</span>
+                </div>
+              </article>
             ))}
           </div>
         </section>
 
         <section className="card overflow-hidden">
           <Toolbar title="Latkan stock" count={latkanMatches.length} />
-          <div className="divide-y divide-maroon-100">
-            {latkanMatches.length === 0 ? <Empty message="Koi latkan nahi." /> : latkanMatches.map((l) => (
-              <div className="flex items-center justify-between gap-2 px-5 py-3 text-sm" key={l._id}>
-                <div className="min-w-0"><span className="font-semibold">{l.name}</span><div className="text-xs text-ink-muted">{l.colorName} · {inr(l.priceInr * 100)}</div></div>
-                <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${l.inStock ? 'bg-leaf/15 text-leaf' : 'bg-alert/10 text-alert'}`}>{l.inStock ? 'In stock' : 'Out of stock'}</span>
-              </div>
+          <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+            {latkanMatches.length === 0 ? <div className="col-span-full"><Empty message="Koi latkan nahi." /></div> : latkanMatches.map((l) => (
+              <article key={l._id} className="rounded-xl border border-maroon-100 bg-white p-4 shadow-card transition hover:border-maroon-200">
+                <div className="admin-row-stack items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1"><p className="admin-text-wrap font-semibold text-ink">{l.name}</p><p className="admin-text-wrap text-xs text-ink-muted">{l.colorName} · {inr(l.priceInr * 100)}</p></div>
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${l.inStock ? 'bg-leaf/15 text-leaf' : 'bg-alert/10 text-alert'}`}>{l.inStock ? 'In stock' : 'Out of stock'}</span>
+                </div>
+              </article>
             ))}
           </div>
         </section>

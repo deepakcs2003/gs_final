@@ -23,7 +23,7 @@ const PRIMARY_LINKS = [
 ];
 
 const MENU_LINKS = [
-  { to: '/orders', label: 'My Orders', icon: Package },
+  { to: '/orders', label: 'Track Order', icon: Package },
   { to: '/about', label: 'About Us', icon: Info },
   { to: '/contact', label: 'Contact Us', icon: Phone },
   { to: '/faq', label: 'FAQ', icon: HelpCircle },

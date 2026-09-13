@@ -38,6 +38,7 @@ interface CartState {
   buyKeys: string[];
   add: (input: AddLineInput) => string;
   remove: (key: string) => void;
+  removeKeys: (keys: string[]) => void;
   setQuantity: (key: string, quantity: number) => void;
   setMeasurement: (key: string, measurement: MeasurementData) => void;
   setNote: (key: string, note: string) => void;
@@ -159,6 +160,12 @@ export const useCart = create<CartState>()(
         const line = get().lines.find((l) => l.key === key);
         if (line) track('CART_REMOVE', { productId: line.productId });
         set({ lines: get().lines.filter((l) => l.key !== key) });
+      },
+
+      removeKeys(keys) {
+        const keySet = new Set(keys);
+        if (keySet.size === 0) return;
+        set({ lines: get().lines.filter((l) => !keySet.has(l.key)) });
       },
 
       setQuantity(key, quantity) {
