@@ -47,6 +47,16 @@ import { sendCampaign, targetsForCampaign } from '../services/whatsapp/marketing
 import { recordWebhookReceipt } from './webhooks.js';
 
 const router = Router();
+
+export function shouldBlockOrderStatusMutation(order: {
+  status?: string;
+  cancellation?: { refund?: { status?: string | null } | null } | null;
+}): boolean {
+  return order.status === 'CANCELLED'
+    && !!order.cancellation?.refund?.status
+    && order.cancellation.refund.status !== 'COMPLETED';
+}
+
 const idSchema = z.object({ id: z.string().trim().min(1).max(80) }).strict();
 const orderNumberSchema = z.object({ orderNumber: z.string().trim().min(6).max(30) }).strict();
 const statusSchema = z.object({ status: z.enum([...ORDER_STATUSES] as [OrderStatus, ...OrderStatus[]]), note: z.string().trim().max(200).default('') }).strict();
@@ -640,7 +650,7 @@ router.patch('/orders/:orderNumber/status', adminWriteLimiter, validate({ params
   // must not survive a thrown error from the constraints check.
   const order = await Order.findOne({ orderNumber });
   if (!order) throw notFound('Order nahi mila.');
-  if (order.cancellation?.refund?.status && order.cancellation.refund.status !== 'COMPLETED') {
+  if (shouldBlockOrderStatusMutation(order)) {
     throw badRequest('Cancelled order modify nahi ho sakta jab tak refund settle na ho.');
   }
   order.status = status;

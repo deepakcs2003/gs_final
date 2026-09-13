@@ -191,27 +191,32 @@ export function OrdersModule({ initialFilter, initialOrderNumber }: { initialFil
           <div key={order.orderNumber} role="button" tabIndex={0} aria-label={`Order ${order.orderNumber} kholen`}
             onClick={() => setSelected(order)}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelected(order); } }}
-            className="cursor-pointer rounded-xl2 border border-maroon-100 bg-white p-3.5 text-left shadow-card transition active:scale-[0.99]">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[15px] font-bold text-ink">{order.orderNumber}</span>
-              <span className="font-bold text-ink">{inr(order.amounts?.totalMinor ?? 0)}</span>
+            className="cursor-pointer rounded-2xl border border-maroon-100 bg-white p-3.5 text-left shadow-card transition hover:border-maroon-200 active:scale-[0.99]">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[15px] font-bold text-ink">{order.orderNumber}</div>
+                <div className="mt-1 flex items-center gap-2 text-[11px] text-ink-muted">
+                  <span>{new Date(order.placedAt).toLocaleString('en-IN')}</span>
+                  {order.isGuest ? <span className="rounded-full bg-ink-light/15 px-1.5 py-0.5 text-[9px] font-bold text-ink-light">GUEST</span> : null}
+                </div>
+              </div>
+              <span className="shrink-0 text-base font-bold text-ink">{inr(order.amounts?.totalMinor ?? 0)}</span>
             </div>
-            <div className="mt-1 flex items-center gap-2 text-xs text-ink-muted">
-              <span>{new Date(order.placedAt).toLocaleString('en-IN')}</span>
-              {order.isGuest ? <span className="rounded-full bg-ink-light/15 px-1.5 py-0.5 text-[10px] font-bold text-ink-light">GUEST</span> : null}
+
+            <div className="mt-2 min-w-0 text-sm">
+              <div className="truncate font-semibold text-ink">{order.contact?.name ?? '—'}</div>
+              <div className="mt-0.5 truncate text-ink-muted">{order.contact?.mobile ?? ''}</div>
             </div>
-            <div className="mt-2 text-sm">
-              <span className="font-semibold text-ink">{order.contact?.name ?? '—'}</span>
-              <span className="ml-2 text-ink-muted">{order.contact?.mobile ?? ''}</span>
-            </div>
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs text-ink-muted">{(order.items ?? []).reduce((n, i) => n + i.quantity, 0)} items</span>
-              <span className="flex items-center gap-1.5">
+              <span className="flex flex-wrap items-center justify-end gap-1.5">
                 <Badge label={order.payment?.status ?? 'PENDING'} />
                 <Badge label={order.status ?? ''} />
               </span>
             </div>
-            <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-maroon-50 pt-2.5">
+
+            <div className="mt-3 flex items-center justify-between gap-2 border-t border-maroon-50 pt-2.5">
               <span className="inline-flex items-center gap-1 text-xs font-bold text-maroon-700"><Eye size={14} />View order</span>
               <ChevronRight size={16} className="text-ink-light" />
             </div>
@@ -243,6 +248,8 @@ function OrderDetailModal({ order, onClose, busy, onStatus, onUpdated, onListRef
   const hasCustom = items.some((i) => i.type === 'CUSTOMIZE');
   const imrs = (v: number) => inr(v);
   const [preview, setPreview] = useState<string | null>(null);
+  const reviewLocked = Boolean(order.status === 'CANCELLED' && order.cancellation?.refund?.status && order.cancellation.refund.status !== 'COMPLETED');
+  const reviewOpen = order.status === 'AWAITING_REVIEW';
 
   const [complexity, setComplexity] = useState(order.production?.complexity ?? 'medium');
   const [promiseDate, setPromiseDate] = useState(toDateInput(order.promisedDeliveryAt));
@@ -342,18 +349,23 @@ function OrderDetailModal({ order, onClose, busy, onStatus, onUpdated, onListRef
             {hasCustom ? <span className="mt-1 inline-block rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-bold text-purple-700">CUSTOM ORDER</span> : null}
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <Badge label={order.status} />
-              {order.status === 'AWAITING_REVIEW' ? (
+              {reviewOpen ? (
                 <ReviewControls busy={reviewBusy} complexity={complexity} onComplexity={setComplexity}
                   note={reviewNote} onNote={setReviewNote} cancelReason={cancelReason} onCancelReason={setCancelReason}
                   promiseDate={promiseDate} onPromiseDate={setPromiseDate}
                   onConfirm={() => void confirmOrder()} onCancel={() => void cancelOrder()} />
               ) : (
-                <select className="field min-h-10 w-auto py-2 text-sm" value={order.status} disabled={busy === order.orderNumber}
+                <select className="field min-h-10 w-auto py-2 text-sm" value={order.status} disabled={busy === order.orderNumber || reviewLocked}
                   onChange={(e) => onStatus(e.target.value)}>
                   {['PROCESSING', 'STITCHING', 'QUALITY_CHECK', 'PACKED', 'SHIPPED', 'DELIVERED', 'RETURNED', 'FAILED'].map((s) => <option key={s}>{s}</option>)}
                 </select>
               )}
             </div>
+            {reviewLocked ? (
+              <div className="mt-3 rounded-lg border border-alert/30 bg-alert/10 p-3 text-xs font-semibold text-alert">
+                Ye order cancelled hai aur refund abhi settle nahi hua. Status change lock hai until refund completes.
+              </div>
+            ) : null}
             <ReviewBanner order={order} />
             <div className="mt-4 space-y-1.5">
               {statusHistory.map((h, i) => (
@@ -792,8 +804,13 @@ function ReviewControls({ busy, complexity, onComplexity, note, onNote, cancelRe
   note: string; onNote: (v: string) => void; cancelReason: string; onCancelReason: (v: string) => void;
   promiseDate: string; onPromiseDate: (v: string) => void; onConfirm: () => void; onCancel: () => void;
 }) {
+  const canCancel = cancelReason.trim().length >= 3;
+
   return (
     <div className="w-full space-y-3">
+      <div className="rounded-lg border border-maroon-100 bg-maroon-50/40 p-2 text-[11px] font-medium text-ink-muted">
+        Review ho chuki order ko confirm karen, ya reason ke saath cancel karein. Cancel ke liye minimum 3 characters ka reason zaroori hai.
+      </div>
       <div className="grid gap-2 rounded-lg bg-maroon-50/50 p-3 sm:grid-cols-2">
         <Field label="Complexity (production plan)">
           <select className="field min-h-10 w-full text-sm" value={complexity} onChange={(e) => onComplexity(e.target.value)}>
@@ -811,7 +828,7 @@ function ReviewControls({ busy, complexity, onComplexity, note, onNote, cancelRe
         <BtnPrimary onClick={onConfirm} disabled={busy === 'confirm'}><Check size={15} />{busy === 'confirm' ? 'Confirming...' : 'Confirm order'}</BtnPrimary>
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <TextInput value={cancelReason} onChange={(e) => onCancelReason(e.target.value)} placeholder="Cancel ka reason (zaroori)" />
-          <BtnGhost onClick={onCancel} disabled={busy === 'cancel'} className="shrink-0"><X size={15} />{busy === 'cancel' ? '...' : 'Cancel'}</BtnGhost>
+          <BtnGhost onClick={onCancel} disabled={busy === 'cancel' || !canCancel} className="shrink-0"><X size={15} />{busy === 'cancel' ? '...' : 'Cancel'}</BtnGhost>
         </div>
       </div>
     </div>
