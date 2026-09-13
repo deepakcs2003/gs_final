@@ -177,9 +177,9 @@ const productSchema = new Schema(
     minFabricCount: { type: Number, min: 1, max: 6, default: 1 },
     maxFabricCount: { type: Number, min: 1, max: 6, default: 1 },
     minLaceCount: { type: Number, min: 0, max: 6, default: 1 },
-    maxLaceCount: { type: Number, min: 1, max: 6, default: 1 },
+    maxLaceCount: { type: Number, min: 0, max: 6, default: 1 },
     minLatkanCount: { type: Number, min: 0, max: 6, default: 1 },
-    maxLatkanCount: { type: Number, min: 1, max: 6, default: 1 },
+    maxLatkanCount: { type: Number, min: 0, max: 6, default: 1 },
     stitchingChargeInr: { type: Number, min: 0, default: 0 },
 
     fabricInfo: { type: String, default: '', maxlength: 300 },

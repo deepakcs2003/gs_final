@@ -271,7 +271,7 @@ const userAdminSchema = z.object({
   roles: z.array(z.enum([...ADMIN_ROLES] as [AdminRole, ...AdminRole[]])).min(1),
 }).strict();
 
-const productSchemaBase = z.object({
+export const productSchemaBase = z.object({
   designId: z.string().trim().max(24).optional(), slug: z.string().trim().max(60).optional(),
   name: z.string().trim().max(140).default(''), description: z.string().max(4000).default(''),
   type: z.enum(['READY_MADE', 'CUSTOMIZE', 'BOTH', 'SHOWCASE']).default('CUSTOMIZE'), category: z.string().trim().optional(),
@@ -281,8 +281,8 @@ const productSchemaBase = z.object({
   variants: z.array(z.unknown()).default([]), fabricOptions: z.array(z.string()).default([]), laceOptions: z.array(z.string()).default([]),
   latkanOptions: z.array(z.string()).default([]),
   minFabricCount: z.number().int().min(1).max(6).default(1), maxFabricCount: z.number().int().min(1).max(6).default(1),
-  minLaceCount: z.number().int().min(0).max(6).default(1), maxLaceCount: z.number().int().min(1).max(6).default(1),
-  minLatkanCount: z.number().int().min(0).max(6).default(1), maxLatkanCount: z.number().int().min(1).max(6).default(1),
+  minLaceCount: z.number().int().min(0).max(6).default(1), maxLaceCount: z.number().int().min(0).max(6).default(1),
+  minLatkanCount: z.number().int().min(0).max(6).default(1), maxLatkanCount: z.number().int().min(0).max(6).default(1),
   stitchingChargeInr: z.number().min(0).default(0),
   fabricInfo: z.string().max(300).default(''), embroidery: z.array(z.string()).default([]), careInstructions: z.string().max(600).default(''),
   stitchingInfo: z.string().max(600).default(''), stitchingDays: z.number().int().min(0).max(90).default(7),
@@ -295,7 +295,7 @@ const productSchemaBase = z.object({
   }).default(() => ({ title: '', description: '', keywords: [], ogImage: '' })),
 }).strict();
 
-const withValidProductRanges = <T extends z.ZodTypeAny>(schema: T) => schema.superRefine((value: unknown, ctx) => {
+export const withValidProductRanges = <T extends z.ZodTypeAny>(schema: T) => schema.superRefine((value: unknown, ctx) => {
   const product = value as {
     minFabricCount?: number;
     maxFabricCount?: number;
@@ -316,13 +316,13 @@ const withValidProductRanges = <T extends z.ZodTypeAny>(schema: T) => schema.sup
   }
 });
 
-const productSchema = withValidProductRanges(
+export const productSchema = withValidProductRanges(
   productSchemaBase.extend({
     sellingPriceInr: z.number().min(0),
     images: z.array(z.unknown()).min(1, 'Kam se kam ek image add karein.'),
   }),
 );
-const productPatchSchema = withValidProductRanges(productSchemaBase.partial());
+export const productPatchSchema = withValidProductRanges(productSchemaBase.partial());
 
 function adminId(req: Request): string { return req.auth!.userId; }
 

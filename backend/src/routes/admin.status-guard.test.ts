@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { shouldBlockOrderStatusMutation } from './admin.js';
+import { productSchema, shouldBlockOrderStatusMutation } from './admin.js';
 
 describe('shouldBlockOrderStatusMutation', () => {
   it('allows changes on confirmed orders even when refund status is pending', () => {
@@ -32,5 +32,23 @@ describe('shouldBlockOrderStatusMutation', () => {
       }),
       false,
     );
+  });
+});
+
+describe('productSchema', () => {
+  it('accepts lace and latkan counts of zero', () => {
+    const result = productSchema.safeParse({
+      name: 'Test Product',
+      sellingPriceInr: 1200,
+      images: [{ url: 'https://example.com/image.jpg' }],
+      minFabricCount: 1,
+      maxFabricCount: 2,
+      minLaceCount: 0,
+      maxLaceCount: 0,
+      minLatkanCount: 0,
+      maxLatkanCount: 0,
+    });
+
+    assert.equal(result.success, true, result.success ? 'ok' : String(result.error));
   });
 });
