@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { shouldBlockOrderStatusMutation } from './admin';
+import { shouldBlockOrderStatusMutation } from './admin.js';
 
 describe('shouldBlockOrderStatusMutation', () => {
   it('allows changes on confirmed orders even when refund status is pending', () => {
