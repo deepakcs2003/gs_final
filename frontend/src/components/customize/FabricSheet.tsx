@@ -140,6 +140,9 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
   const productMaxLatkanCount = product.maxLatkanCount ?? 1;
   const laceStepOn = productMaxLaceCount > 0 && availableLaces.length > 0;
   const latkanStepOn = productMaxLatkanCount > 0 && availableLatkans.length > 0;
+  const minFabricRequired = product.minFabricCount ?? 1;
+  const minLaceRequired = product.minLaceCount ?? 0;
+  const minLatkanRequired = product.minLatkanCount ?? 0;
   type StepKind = 'fabric' | 'lace' | 'latkan';
   const stepOrder = useMemo<StepKind[]>(
     () => ['fabric' as const, ...(laceStepOn ? ['lace' as const] : []), ...(latkanStepOn ? ['latkan' as const] : [])],
@@ -328,9 +331,21 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
           <button
             type="button"
             className="btn-primary btn-lg shrink-0 px-7"
-            disabled={step === 'fabric' && selectedFabrics.length < (product.minFabricCount ?? 1)}
+            disabled={step === 'fabric' && selectedFabrics.length < minFabricRequired}
             onClick={() => {
               setWarning('');
+              if (step === 'fabric' && selectedFabrics.length < minFabricRequired) {
+                setWarning(t('Pehle minimum fabric select karein.', 'Please choose the minimum required fabric first.'));
+                return;
+              }
+              if (step === 'lace' && laceStepOn && laceIds.length < minLaceRequired) {
+                setWarning(t('Lace ka minimum count complete nahi hai.', 'Please select the minimum required lace count.'));
+                return;
+              }
+              if (step === 'latkan' && latkanStepOn && latkanIds.length < minLatkanRequired) {
+                setWarning(t('Latkan ka minimum count complete nahi hai.', 'Please select the minimum required latkan count.'));
+                return;
+              }
               if (!isLastStep) {
                 setStepIndex(stepIndex + 1);
                 return;

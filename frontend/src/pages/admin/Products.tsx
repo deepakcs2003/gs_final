@@ -505,12 +505,18 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
               <div className="sm:col-span-2 rounded-xl border border-maroon-100 bg-maroon-50/30 p-4">
                 <h4 className="text-sm font-bold text-maroon-700">Customize options</h4>
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <Field label="Minimum fabric" hint="Default 1, maximum 6"><TextInput type="number" min={1} max={6} value={form.minFabricCount} onChange={(e) => setForm({ ...form, minFabricCount: Number(e.target.value) })} /></Field>
-                  <Field label="Maximum fabric" hint="Default 1, maximum 6"><TextInput type="number" min={form.minFabricCount} max={6} value={form.maxFabricCount} onChange={(e) => setForm({ ...form, maxFabricCount: Number(e.target.value) })} /></Field>
-                  <Field label="Minimum lace" hint="Default 1, 0 se shuru ho sakta hai, maximum 6"><TextInput type="number" min={0} max={6} value={form.minLaceCount} onChange={(e) => setForm({ ...form, minLaceCount: Number(e.target.value) })} /></Field>
-                  <Field label="Maximum lace" hint="Default 1, maximum 6"><TextInput type="number" min={form.minLaceCount} max={6} value={form.maxLaceCount} onChange={(e) => setForm({ ...form, maxLaceCount: Number(e.target.value) })} /></Field>
-                  <Field label="Minimum latkan" hint="Default 1, 0 se shuru ho sakta hai, maximum 6"><TextInput type="number" min={0} max={6} value={form.minLatkanCount} onChange={(e) => setForm({ ...form, minLatkanCount: Number(e.target.value) })} /></Field>
-                  <Field label="Maximum latkan" hint="Default 1, maximum 6"><TextInput type="number" min={form.minLatkanCount} max={6} value={form.maxLatkanCount} onChange={(e) => setForm({ ...form, maxLatkanCount: Number(e.target.value) })} /></Field>
+                  <Field label="Fabric count" hint="At least 1, maximum 6"><TextInput type="number" min={1} max={6} value={form.maxFabricCount} onChange={(e) => {
+                    const next = Math.min(6, Math.max(1, Number(e.target.value) || 1));
+                    setForm({ ...form, minFabricCount: 1, maxFabricCount: next });
+                  }} /></Field>
+                  <Field label="Lace count" hint="0 to 6. 0 = lace step hidden"><TextInput type="number" min={0} max={6} value={form.maxLaceCount} onChange={(e) => {
+                    const next = Math.min(6, Math.max(0, Number(e.target.value) || 0));
+                    setForm({ ...form, minLaceCount: 0, maxLaceCount: next });
+                  }} /></Field>
+                  <Field label="Latkan count" hint="0 to 6. 0 = latkan step hidden"><TextInput type="number" min={0} max={6} value={form.maxLatkanCount} onChange={(e) => {
+                    const next = Math.min(6, Math.max(0, Number(e.target.value) || 0));
+                    setForm({ ...form, minLatkanCount: 0, maxLatkanCount: next });
+                  }} /></Field>
                   <Field label="Stitching charge (INR)"><TextInput type="number" min={0} value={form.stitchingChargeInr} onChange={(e) => setForm({ ...form, stitchingChargeInr: Number(e.target.value) })} /></Field>
                   <Field label="Stitching days" hint="Custom blouse kitne din mein ready hota hai"><TextInput type="number" min={0} max={90} value={form.stitchingDays} onChange={(e) => setForm({ ...form, stitchingDays: Number(e.target.value) })} /></Field>
                   <Field label="Fabric info"><TextInput value={form.fabricInfo} onChange={(e) => setForm({ ...form, fabricInfo: e.target.value })} /></Field>
@@ -518,7 +524,7 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
                   <Field label="Care instructions" className="sm:col-span-2"><TextArea value={form.careInstructions} onChange={(e) => setForm({ ...form, careInstructions: e.target.value })} /></Field>
                 </div>
 
-                <p className="mt-4 rounded-xl border border-maroon-100 bg-white/60 p-3 text-xs font-semibold text-ink-muted">Customer ko catalog ke saare active fabrics, laces aur latkans dikhaye jayenge. Upar diye counts se har blouse ke liye selection limit set karein.</p>
+                <p className="mt-4 rounded-xl border border-maroon-100 bg-white/60 p-3 text-xs font-semibold text-ink-muted">Fabric ka count minimum 1 hoga. Laces aur latkan count 0 se start hoga, aur 0 set karne par customer ko woh step dikhna band ho jayega.</p>
               </div>
             ) : null}
 
