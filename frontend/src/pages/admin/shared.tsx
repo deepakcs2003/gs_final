@@ -12,7 +12,7 @@ export function inr(minor: number) {
 
 /** Simple slugifier for design ids, slugs, etc. */
 export function slugify(input: string): string {
-  return input.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return input.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
 }
 
 /* -------------------------------------------------------------------------- */

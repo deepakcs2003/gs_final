@@ -600,10 +600,16 @@ function ProductActions({
 
   if (product.type === 'CUSTOMIZE') {
     return (
-      <button type="button" onClick={onCustomize} className="btn-accent btn-lg w-full">
-        <Scissors size={18} />
-        Fabric Choose Karein
-      </button>
+      <div className="flex w-full gap-2.5">
+        <button type="button" onClick={onCustomize} className="btn-outline btn-lg flex-1">
+          <ShoppingCart size={18} />
+          Cart
+        </button>
+        <button type="button" onClick={onCustomize} className="btn-primary btn-lg flex-[1.35]">
+          <Scissors size={18} />
+          Buy Now
+        </button>
+      </div>
     );
   }
 

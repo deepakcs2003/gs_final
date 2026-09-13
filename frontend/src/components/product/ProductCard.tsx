@@ -86,6 +86,17 @@ function ProductCardViewInner({ product, currency, eager }: ProductCardProps) {
           <h3 className="line-clamp-2 text-[14px] font-semibold leading-snug text-ink">{product.name}</h3>
         </Link>
 
+        {product.type !== 'SHOWCASE' ? (
+          <div className={clsx(
+            'inline-flex w-fit items-center rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em]',
+            product.type === 'CUSTOMIZE' && 'border-amber-200 bg-amber-50 text-amber-800',
+            product.type === 'READY_MADE' && 'border-emerald-200 bg-emerald-50 text-emerald-700',
+            product.type === 'BOTH' && 'border-violet-200 bg-violet-50 text-violet-700',
+          )}>
+            {product.type === 'READY_MADE' ? 'Ready to Buy' : product.type === 'CUSTOMIZE' ? 'Customize' : 'Ready + Customize'}
+          </div>
+        ) : null}
+
         {product.type === 'SHOWCASE' ? (
           <p className="hint">{product.expectedAvailability || 'Jald aa raha hai'}</p>
         ) : (
@@ -126,10 +137,23 @@ function ProductCardViewInner({ product, currency, eager }: ProductCardProps) {
               </button>
             </div>
           ) : product.type === 'CUSTOMIZE' ? (
-            <button type="button" onClick={() => setFabricOpen(true)} className="btn-accent w-full text-[13px]">
-              <Scissors size={16} />
-              Fabric Choose Karein
-            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setFabricOpen(true)} className="btn-outline px-2 text-[13px]">
+                <ShoppingCart size={16} />
+                Cart
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  track('BUY_NOW', { productId: product.id });
+                  setFabricOpen(true);
+                }}
+                className="btn-primary px-2 text-[13px]"
+              >
+                <Scissors size={16} />
+                Buy Now
+              </button>
+            </div>
           ) : product.type === 'BOTH' ? (
             <div className="space-y-2">
               <div className="grid grid-cols-2 gap-2">

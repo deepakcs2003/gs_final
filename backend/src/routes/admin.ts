@@ -272,11 +272,12 @@ const userAdminSchema = z.object({
 }).strict();
 
 export const productSchemaBase = z.object({
-  designId: z.string().trim().max(24).optional(), slug: z.string().trim().max(60).optional(),
+  designId: z.string().trim().max(24).optional(),
+  slug: z.preprocess((value) => typeof value === 'string' ? value.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) : value, z.string().max(60).optional()),
   name: z.string().trim().max(140).default(''), description: z.string().max(4000).default(''),
   type: z.enum(['READY_MADE', 'CUSTOMIZE', 'BOTH', 'SHOWCASE']).default('CUSTOMIZE'), category: z.string().trim().optional(),
   subCategory: z.string().nullable().optional(), tags: z.array(z.string().max(60)).default([]),
-  mrpInr: z.number().min(0).optional(), sellingPriceInr: z.number().min(0).optional(), codInitialPaymentPercent: z.number().int().min(0).max(100).default(25), images: z.array(z.unknown()).default([]),
+  mrpInr: z.number().min(0).optional(), sellingPriceInr: z.number().min(0).optional(), codInitialPaymentPercent: z.number().int().min(0).max(100).default(0), images: z.array(z.unknown()).default([]),
   videoUrl: z.string().max(500).default(''), colors: z.array(z.unknown()).default([]), sizes: z.array(z.number()).default([]),
   variants: z.array(z.unknown()).default([]), fabricOptions: z.array(z.string()).default([]), laceOptions: z.array(z.string()).default([]),
   latkanOptions: z.array(z.string()).default([]),
@@ -1457,8 +1458,20 @@ router.post('/products/:id/duplicate', adminWriteLimiter, validate({ params: idS
   const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
   const product = await Product.findById(id).lean();
   if (!product) throw notFound('Product nahi mila.');
+
   const { _id, createdAt, updatedAt, publishedAt, ...rest } = product;
-  const copy = await Product.create({ ...rest, designId: `${product.designId}-C`, slug: `${product.slug}-copy`, isActive: false, name: `${product.name} (Copy)`, createdBy: adminId(req) });
+  const designId = await nextDesignId();
+  const slug = await uniqueSlug(product.name);
+
+  const copy = await Product.create({
+    ...rest,
+    designId,
+    slug,
+    isActive: false,
+    name: product.name,
+    createdBy: adminId(req),
+  });
+
   await logAction(req, 'DUPLICATE', 'PRODUCT', String(copy._id), copy.designId);
   res.status(201).json({ product: copy });
 });

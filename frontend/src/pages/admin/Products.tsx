@@ -26,7 +26,7 @@ export interface AdminProduct {
 const emptyProduct = (category = ''): AdminProduct => ({
   _id: '', designId: '', slug: '', name: '', description: '', type: 'READY_MADE', category,
   subCategory: null, tags: [], mrpInr: 0, sellingPriceInr: 0, images: [], videoUrl: '',
-  colors: [], sizes: [], variants: [], fabricOptions: [], laceOptions: [], latkanOptions: [], minFabricCount: 1, maxFabricCount: 1, minLaceCount: 1, maxLaceCount: 1, minLatkanCount: 1, maxLatkanCount: 1, stitchingChargeInr: 0, codInitialPaymentPercent: 25,
+  colors: [], sizes: [], variants: [], fabricOptions: [], laceOptions: [], latkanOptions: [], minFabricCount: 1, maxFabricCount: 1, minLaceCount: 1, maxLaceCount: 1, minLatkanCount: 1, maxLatkanCount: 1, stitchingChargeInr: 0, codInitialPaymentPercent: 0,
   fabricInfo: '', embroidery: [], careInstructions: '', stitchingInfo: '', stitchingDays: 7,
   expectedAvailability: '', comingSoon: false, isActive: true, seo: { title: '', description: '', keywords: [], ogImage: '' },
 });
@@ -62,6 +62,7 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
   const [form, setForm] = useState<AdminProduct | null>(null);
   const [newEditor, setNewEditor] = useState(false);
   const [busy, setBusy] = useState('');
+  const [duplicateLocks, setDuplicateLocks] = useState<Record<string, boolean>>({});
   const [error, setError] = useState('');
   const [qwenBusy, setQwenBusy] = useState(false);
   const [qwenMsg, setQwenMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
@@ -231,13 +232,87 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
     `${item.designId} ${item.name} ${item.slug}`.toLowerCase().includes(query.toLowerCase()),
   ), [items, query, typeFilter, statusFilter]);
 
+  const asId = (value: unknown): string => {
+    if (typeof value === 'string') return value;
+    if (value && typeof value === 'object') {
+      const maybe = value as { _id?: unknown; toString?: () => string };
+      if (typeof maybe._id === 'string') return maybe._id;
+      if (typeof maybe.toString === 'function' && maybe.toString !== Object.prototype.toString) return String(maybe.toString());
+    }
+    return '';
+  };
+
+  const explainApiError = (err: unknown): string => {
+    if (err instanceof ApiError) {
+      if (err.fields && Object.keys(err.fields).length > 0) {
+        return Object.entries(err.fields)
+          .map(([field, msg]) => `${field}: ${msg}`)
+          .join(' • ');
+      }
+      return err.message;
+    }
+    return 'Action complete nahi hua.';
+  };
+
   const run = async (key: string, action: () => Promise<void>) => {
     setBusy(key);
-    try { await action(); } catch (err) { setError(err instanceof ApiError ? err.message : 'Action complete nahi hua.'); } finally { setBusy(''); }
+    try { await action(); } catch (err) { setError(explainApiError(err)); } finally { setBusy(''); }
+  };
+
+  const stripServerFields = (product: AdminProduct): Record<string, unknown> => {
+    const clean = { ...product } as Record<string, unknown>;
+    for (const key of ['_id', 'id', 'discountPercent', 'totalStock', 'averageViewSeconds', 'rating', 'publishedAt', '__v', 'createdAt', 'updatedAt', 'createdBy', 'stats']) {
+      delete clean[key];
+    }
+    return clean;
+  };
+
+  const sanitizeSlug = (value: string): string => slugify(value).slice(0, 60);
+
+  const duplicate = (product: AdminProduct) => {
+    if (duplicateLocks[product._id]) {
+      setError('Ye product abhi duplicate ho raha hai. Thoda wait karke dobara try karein.');
+      return;
+    }
+    setDuplicateLocks((locks) => ({ ...locks, [product._id]: true }));
+    run(`dup-${product._id}`, async () => {
+      const res = await api<{ product: AdminProduct }>(`/admin/products/${product._id}/duplicate`, { method: 'POST' });
+      const categoryValue = res.product.category as { _id?: string } | string | null | undefined;
+      const subCategoryValue = res.product.subCategory as { _id?: string } | string | null | undefined;
+
+      const duplicated: AdminProduct = {
+        ...res.product,
+        category: asId(categoryValue),
+        subCategory: asId(subCategoryValue) || null,
+        images: (res.product.images ?? []).map((img) => ({ ...img })),
+        colors: (res.product.colors ?? []).map((c) => ({ ...c })),
+        variants: (res.product.variants ?? []).map((v) => ({ ...v })),
+        seo: res.product.seo ?? { title: '', description: '', keywords: [], ogImage: '' },
+      };
+
+      setItems((items) => [duplicated, ...items]);
+      setError('Duplicate draft bana diya gaya hai. Ab details edit karke save karein.');
+      openEdit(duplicated);
+    }).finally(() => {
+      setDuplicateLocks((locks) => {
+        const next = { ...locks };
+        delete next[product._id];
+        return next;
+      });
+    });
   };
 
   const save = () => {
     if (!form) return;
+    const readyMadeForm = (form.type === 'READY_MADE' || form.type === 'BOTH') ? withInventory(form, form.colors, form.sizes) : form;
+    if ((readyMadeForm.type === 'READY_MADE' || readyMadeForm.type === 'BOTH') && readyMadeForm.colors.length === 0) {
+      setError('Ready to Buy product ke liye minimum ek color select karna zaroori hai.');
+      return;
+    }
+    if ((readyMadeForm.type === 'READY_MADE' || readyMadeForm.type === 'BOTH') && readyMadeForm.sizes.length === 0) {
+      setError('Ready to Buy product ke liye minimum ek size add karni chahiye.');
+      return;
+    }
     if ((form.type === 'CUSTOMIZE' || form.type === 'BOTH') && (
       form.minFabricCount > form.maxFabricCount || form.minLaceCount > form.maxLaceCount || form.minLatkanCount > form.maxLatkanCount
     )) {
@@ -245,30 +320,28 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
       return;
     }
     void run(form._id || 'new', async () => {
-      // `seo` is editable; the rest are server-managed and would trip the
-      // backend's strict schema (they come back from GET with the doc).
-      const { _id, stats, createdAt, updatedAt, createdBy, ...values } = form;
-      // Mongoose lean docs also carry rating/publishedAt/__v — drop them so the
-      // backend's `.strict()` schemas never see an unknown key on PATCH.
-      const clean = values as Record<string, unknown>;
-      delete clean.rating;
-      delete clean.publishedAt;
-      delete clean.__v;
+      const safeForm = readyMadeForm;
+      const payload = stripServerFields(safeForm) as Record<string, unknown>;
+      const { _id: productId } = safeForm;
+      for (const key of ['discountPercent', 'totalStock', 'averageViewSeconds', 'rating', 'publishedAt', '__v', 'id']) {
+        delete payload[key];
+      }
+      if (typeof payload.slug === 'string') payload.slug = sanitizeSlug(payload.slug);
       const body = {
-        ...values,
-        ...(values.type === 'CUSTOMIZE' || values.type === 'BOTH' ? { fabricOptions: [], laceOptions: [], latkanOptions: [] } : {}),
-        mrpInr: Number(values.mrpInr), sellingPriceInr: Number(values.sellingPriceInr), codInitialPaymentPercent: Number(values.codInitialPaymentPercent),
-        stitchingChargeInr: Number(values.stitchingChargeInr), stitchingDays: Number(values.stitchingDays),
-        minFabricCount: Number(values.minFabricCount), maxFabricCount: Number(values.maxFabricCount),
-        minLaceCount: Number(values.minLaceCount), maxLaceCount: Number(values.maxLaceCount),
-        minLatkanCount: Number(values.minLatkanCount), maxLatkanCount: Number(values.maxLatkanCount),
-        colors: values.colors.filter((c) => c.name),
-        variants: values.variants.map((v) => ({ ...v, size: Number(v.size), stock: Number(v.stock) })),
-        images: values.images.filter((img) => img.url),
-        category: typeof values.category === 'object' ? values.category._id : values.category,
+        ...payload,
+        ...(payload.type === 'CUSTOMIZE' || payload.type === 'BOTH' ? { fabricOptions: [], laceOptions: [], latkanOptions: [] } : {}),
+        mrpInr: Number(payload.mrpInr), sellingPriceInr: Number(payload.sellingPriceInr), codInitialPaymentPercent: Number(payload.codInitialPaymentPercent),
+        stitchingChargeInr: Number(payload.stitchingChargeInr), stitchingDays: Number(payload.stitchingDays),
+        minFabricCount: Number(payload.minFabricCount), maxFabricCount: Number(payload.maxFabricCount),
+        minLaceCount: Number(payload.minLaceCount), maxLaceCount: Number(payload.maxLaceCount),
+        minLatkanCount: Number(payload.minLatkanCount), maxLatkanCount: Number(payload.maxLatkanCount),
+        colors: Array.isArray(payload.colors) ? (payload.colors as Array<{ name: string; slug: string; hex: string }>).filter((c) => c.name) : [],
+        variants: Array.isArray(payload.variants) ? (payload.variants as Array<{ colorSlug: string; size: number; stock: number; sku: string }>).map((v) => ({ ...v, size: Number(v.size), stock: Number(v.stock) })) : [],
+        images: Array.isArray(payload.images) ? (payload.images as Array<{ url: string; alt: string; kind: string }>).filter((img) => img.url) : [],
+        category: typeof payload.category === 'object' && payload.category !== null ? (payload.category as { _id?: string })._id ?? '' : payload.category,
       };
-      if (_id) {
-        const response = await api<{ product: AdminProduct }>(`/admin/products/${_id}`, { method: 'PATCH', body });
+      if (productId) {
+        const response = await api<{ product: AdminProduct }>(`/admin/products/${productId}`, { method: 'PATCH', body });
         setItems((items) => items.map((item) => item._id === response.product._id ? { ...response.product, category: categories.find((c) => c._id === response.product.category) ?? response.product.category } : item));
       } else {
         // Reload the list so the new row shows its auto design ID/slug plus the
@@ -281,10 +354,6 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
     });
   };
 
-  const duplicate = (product: AdminProduct) => run(`dup-${product._id}`, async () => {
-    const res = await api<{ product: AdminProduct }>(`/admin/products/${product._id}/duplicate`, { method: 'POST' });
-    setItems((items) => [res.product, ...items]);
-  });
   const archive = (product: AdminProduct) => run(`arc-${product._id}`, async () => {
     await api(`/admin/products/${product._id}`, { method: 'DELETE' });
     setItems((items) => items.map((item) => item._id === product._id ? { ...item, isActive: false } : item));
@@ -303,8 +372,8 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
     const subCat = product.subCategory as { _id?: string } | string | null | undefined;
     setForm({
       ...product,
-      category: typeof product.category === 'object' ? product.category._id : product.category,
-      subCategory: typeof subCat === 'object' && subCat ? subCat._id ?? null : (typeof subCat === 'string' ? subCat : null),
+      category: asId(product.category),
+      subCategory: typeof subCat === 'string' ? subCat : (subCat && typeof subCat === 'object' ? asId(subCat) : null),
       images: (product.images ?? []).map((img) => ({ ...img })),
       colors: (product.colors ?? []).map((c) => ({ ...c })),
       variants: (product.variants ?? []).map((v) => ({ ...v })),
@@ -329,19 +398,24 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
    * their rows. Only meaningful for READY_MADE/BOTH — other types hold no inventory.
    */
   const withInventory = (current: AdminProduct, colors: AdminProduct['colors'], sizes: number[]): AdminProduct => {
-    if (current.type !== 'READY_MADE' && current.type !== 'BOTH') return { ...current, colors, sizes, variants: [] };
+    const safeColors = colors.length > 0
+      ? colors
+      : (palette.length > 0 ? palette.slice(0, 1).map((c) => ({ name: c.name, slug: slugify(c.name), hex: c.hex })) : [{ name: 'Default', slug: 'default', hex: '#1f2937' }]);
+    const safeSizes = sizes.length > 0 ? sizes : [34, 36, 38, 40, 42];
+
+    if (current.type !== 'READY_MADE' && current.type !== 'BOTH') return { ...current, colors: safeColors, sizes: safeSizes, variants: [] };
     const existing = new Map<string, AdminProduct['variants'][number]>();
     for (const v of current.variants) {
-      if (colors.some((c) => c.slug === v.colorSlug) && sizes.includes(v.size)) existing.set(`${v.colorSlug}|${v.size}`, v);
+      if (safeColors.some((c) => c.slug === v.colorSlug) && safeSizes.includes(v.size)) existing.set(`${v.colorSlug}|${v.size}`, v);
     }
     const variants: AdminProduct['variants'] = [];
-    for (const color of colors) {
-      for (const size of sizes) {
+    for (const color of safeColors) {
+      for (const size of safeSizes) {
         const prior = existing.get(`${color.slug}|${size}`);
         variants.push(prior ?? { colorSlug: color.slug, size, stock: 10, sku: '' });
       }
     }
-    return { ...current, colors, sizes, variants };
+    return { ...current, colors: safeColors, sizes: safeSizes, variants };
   };
 
   /** Maps/unmaps this product to/from a coupon by toggling the coupon's product list. */
@@ -411,7 +485,7 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
             ) : null}
             <div className="mt-3 flex flex-wrap gap-2">
               <BtnOutline className="min-w-0 flex-1 px-3" onClick={() => openEdit(product)}><Pencil size={15} />Edit</BtnOutline>
-              <BtnGhost className="px-3" onClick={() => void duplicate(product)} disabled={busy === `dup-${product._id}`}><Copy size={15} /></BtnGhost>
+              <BtnGhost className="px-3" onClick={() => void duplicate(product)} disabled={busy === `dup-${product._id}` || duplicateLocks[product._id]}><Copy size={15} /></BtnGhost>
               {product.isActive
                 ? <BtnGhost className="px-3" onClick={() => void archive(product)} disabled={busy === `arc-${product._id}`} title="Archive"><Archive size={15} /></BtnGhost>
                 : <BtnGhost className="px-3" onClick={() => void toggleActive(product)} disabled={busy === `tog-${product._id}`}><Check size={15} /></BtnGhost>}
@@ -425,9 +499,14 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
         <Modal open onClose={() => setForm(null)} title={form._id ? 'Edit product' : 'New product'}
           subtitle="Storefront details, pricing, variants aur SEO" maxWidth="sm:max-w-4xl"
           footer={<div className="flex justify-end gap-2"><BtnPrimary onClick={save} disabled={busy === (form._id || 'new')}>{busy === (form._id || 'new') ? 'Saving...' : <><Check size={16} />Save product</>}</BtnPrimary></div>}>
+          {form && !form.isActive ? (
+            <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">
+              Duplicate draft hai. Details edit karke save karein, aur type ko yahan change kar sakte hain.
+            </div>
+          ) : null}
           <form onSubmit={(e) => { e.preventDefault(); save(); }} className="grid gap-4 sm:grid-cols-2">
             <Field label="Design ID" hint="Khaali chhorein — auto generate hoga, e.g. GS-207"><TextInput value={form.designId} onChange={(e) => setForm({ ...form, designId: e.target.value.toUpperCase() })} /></Field>
-            <Field label="Slug" hint="Khaali chhorein — name se auto generate hoga"><TextInput value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} /></Field>
+            <Field label="Slug" hint="Khaali chhorein — name se auto generate hoga"><TextInput value={form.slug} maxLength={60} onChange={(e) => setForm({ ...form, slug: sanitizeSlug(e.target.value) })} /></Field>
             <Field label="Product name" hint="Khaali chhorein to design ID, e.g. GS-207, ban jayega" className="sm:col-span-2"><TextInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
             <Field label="Type"><Select value={form.type} onChange={(e) => {
               const type = e.target.value as AdminProduct['type'];
