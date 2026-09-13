@@ -102,9 +102,10 @@ const schema = z
     GEMINI_API_KEY_2: z.string().default(''),
     GEMINI_API_KEY_3: z.string().default(''),
     GEMINI_API_KEY_4: z.string().default(''),
-    // Free-tier model. gemini-2.5-flash = best quality; gemini-2.5-flash-lite
-    // has much higher free daily limits. Both see up to 8 images per request.
-    GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
+    // Free-tier model. gemini-2.5-flash-lite is the safest default because
+    // gemini-2.5-flash has been retired for new users and quickly hits quota.
+    // Both support image input; lite has much higher free daily limits.
+    GEMINI_MODEL: z.string().default('gemini-2.5-flash-lite'),
     GEMINI_BASE_URL: z.string().url().default('https://generativelanguage.googleapis.com/v1beta'),
 
     WHATSAPP_NUMBER: z.string().regex(/^\d{10,15}$/, 'digits only, with country code').default('919999999999'),

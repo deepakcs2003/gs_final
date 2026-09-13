@@ -552,7 +552,7 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
                 ? t('Kisi bhi lace par tap karein — directly add ho jayegi.', 'Tap any lace to add it.')
                 : t('Kisi bhi lace par tap karein — uska colour chunne ka option khul jayega.', 'Tap any lace to pick its colour.')}
             </p>
-            <div className="rail">
+            <div className="vertical-rail">
               {availableLaces.map((lace) => {
                 const isSelected = laceIds.includes(lace.id);
                 return (
@@ -570,33 +570,35 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
                       }
                     }}
                     className={clsx(
-                      'w-28 shrink-0 overflow-hidden rounded-xl border-2 bg-white text-left transition outline-none',
+                      'w-full overflow-hidden rounded-xl border-2 bg-white text-left transition outline-none',
                       isSelected ? 'border-maroon-600' : 'border-ink-light/20',
                       !lace.inStock && 'opacity-50',
                       lace.inStock && 'cursor-pointer focus-visible:ring-2 focus-visible:ring-maroon-400',
                     )}
                   >
-                    <div className="relative aspect-[4/3]">
-                      <SmartImage src={lace.image} alt={lace.name} sizes="80px" />
-                      {isSelected ? (
-                        <span className="absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-maroon-600 text-white">
-                          <Check size={12} strokeWidth={3} />
-                        </span>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setPreviewImage({ src: lace.image, alt: lace.name });
-                        }}
-                        className="absolute bottom-1.5 right-1.5 rounded-full bg-white/90 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-ink shadow-card"
-                      >
-                        View
-                      </button>
-                    </div>
-                    <div className="p-2">
-                      <p className="truncate text-[11px] font-semibold leading-tight">{lace.name}</p>
-                      <p className={lace.priceMinor === 0 ? 'text-[11px] font-black uppercase tracking-wide text-leaf' : 'text-[11px] font-bold text-maroon-700'}>{moneyLabel(lace.priceMinor, currency)}</p>
+                    <div className="flex gap-3 p-2">
+                      <div className="relative h-20 w-24 shrink-0 overflow-hidden rounded-lg">
+                        <SmartImage src={lace.image} alt={lace.name} sizes="90px" />
+                        {isSelected ? (
+                          <span className="absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-maroon-600 text-white">
+                            <Check size={12} strokeWidth={3} />
+                          </span>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setPreviewImage({ src: lace.image, alt: lace.name });
+                          }}
+                          className="absolute bottom-1.5 right-1.5 rounded-full bg-white/90 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-ink shadow-card"
+                        >
+                          View
+                        </button>
+                      </div>
+                      <div className="min-w-0 flex-1 py-1">
+                        <p className="truncate text-[12px] font-semibold leading-tight">{lace.name}</p>
+                        <p className={lace.priceMinor === 0 ? 'mt-1 text-[11px] font-black uppercase tracking-wide text-leaf' : 'mt-1 text-[11px] font-bold text-maroon-700'}>{moneyLabel(lace.priceMinor, currency)}</p>
+                      </div>
                     </div>
                   </div>
                 );
@@ -617,7 +619,7 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
                 ? t('Kisi bhi latkan par tap karein — directly add ho jayega.', 'Tap any latkan to add it.')
                 : t('Kisi bhi latkan par tap karein — uska colour chunne ka option khul jayega.', 'Tap any latkan to pick its colour.')}
             </p>
-            <div className="rail">
+            <div className="vertical-rail">
               {availableLatkans.map((latkan) => {
                 const isSelected = latkanIds.includes(latkan.id);
                 return (
@@ -635,33 +637,35 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
                       }
                     }}
                     className={clsx(
-                      'w-28 shrink-0 overflow-hidden rounded-xl border-2 bg-white text-left transition outline-none',
+                      'w-full overflow-hidden rounded-xl border-2 bg-white text-left transition outline-none',
                       isSelected ? 'border-maroon-600' : 'border-ink-light/20',
                       !latkan.inStock && 'opacity-50',
                       latkan.inStock && 'cursor-pointer focus-visible:ring-2 focus-visible:ring-maroon-400',
                     )}
                   >
-                    <div className="relative aspect-[4/3]">
-                      <SmartImage src={latkan.image} alt={latkan.name} sizes="80px" />
-                      {isSelected ? (
-                        <span className="absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-maroon-600 text-white">
-                          <Check size={12} strokeWidth={3} />
-                        </span>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setPreviewImage({ src: latkan.image, alt: latkan.name });
-                        }}
-                        className="absolute bottom-1.5 right-1.5 rounded-full bg-white/90 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-ink shadow-card"
-                      >
-                        View
-                      </button>
-                    </div>
-                    <div className="p-2">
-                      <p className="truncate text-[11px] font-semibold leading-tight">{latkan.name}</p>
-                      <p className={latkan.priceMinor === 0 ? 'text-[11px] font-black uppercase tracking-wide text-leaf' : 'text-[11px] font-bold text-maroon-700'}>{moneyLabel(latkan.priceMinor, currency)}</p>
+                    <div className="flex gap-3 p-2">
+                      <div className="relative h-20 w-24 shrink-0 overflow-hidden rounded-lg">
+                        <SmartImage src={latkan.image} alt={latkan.name} sizes="90px" />
+                        {isSelected ? (
+                          <span className="absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-maroon-600 text-white">
+                            <Check size={12} strokeWidth={3} />
+                          </span>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setPreviewImage({ src: latkan.image, alt: latkan.name });
+                          }}
+                          className="absolute bottom-1.5 right-1.5 rounded-full bg-white/90 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-ink shadow-card"
+                        >
+                          View
+                        </button>
+                      </div>
+                      <div className="min-w-0 flex-1 py-1">
+                        <p className="truncate text-[12px] font-semibold leading-tight">{latkan.name}</p>
+                        <p className={latkan.priceMinor === 0 ? 'mt-1 text-[11px] font-black uppercase tracking-wide text-leaf' : 'mt-1 text-[11px] font-bold text-maroon-700'}>{moneyLabel(latkan.priceMinor, currency)}</p>
+                      </div>
                     </div>
                   </div>
                 );

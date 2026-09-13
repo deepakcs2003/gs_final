@@ -512,11 +512,19 @@ interface AiProvider {
 function buildProviders(): AiProvider[] {
   const list: AiProvider[] = [];
   const keys = geminiApiKeys.length > 0 ? geminiApiKeys : env.GEMINI_API_KEY ? [env.GEMINI_API_KEY] : [];
+  const geminiModelFallbacks = Array.from(
+    new Set([
+      env.GEMINI_MODEL?.trim(),
+      'gemini-2.5-flash-lite',
+      'gemini-2.5-flash',
+    ].filter(Boolean) as string[]),
+  );
+
   for (const [index, key] of keys.entries()) {
     list.push({
       kind: 'gemini',
       name: `Gemini (${index + 1})`,
-      models: [env.GEMINI_MODEL.trim() || 'gemini-2.5-flash'],
+      models: geminiModelFallbacks,
       apiKey: key,
     });
   }

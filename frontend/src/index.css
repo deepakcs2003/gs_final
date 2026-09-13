@@ -160,6 +160,17 @@
     @apply snap-start;
   }
 
+  /* Vertical selection list for lace/latkan steps so the buyer scrolls down
+     instead of sliding left-right through a long option strip. */
+  .vertical-rail {
+    @apply flex max-h-[26rem] flex-col gap-3 overflow-y-auto pr-1;
+    scrollbar-width: thin;
+    scroll-snap-type: y proximity;
+  }
+  .vertical-rail > * {
+    @apply snap-start;
+  }
+
   .skeleton {
     @apply relative overflow-hidden bg-maroon-50/70;
   }
