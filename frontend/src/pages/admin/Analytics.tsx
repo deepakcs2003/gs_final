@@ -8,9 +8,17 @@ interface ProductPerf {
   _id: string; designId: string; name: string; type: string; mrpInr: number; sellingPriceInr: number;
   events?: Record<string, number>;
 }
+interface CheckoutSummary {
+  started: number;
+  backedOut: number;
+  cancelled: number;
+  abandoned: number;
+  completed: number;
+}
+
 interface Overview {
   eventBreakdown: CountRow[]; topPages: CountRow[]; topSearches: CountRow[]; sourceBreakdown: CountRow[];
-  deviceBreakdown: CountRow[]; uniqueSessions: number;
+  deviceBreakdown: CountRow[]; uniqueSessions: number; checkoutSummary: CheckoutSummary;
 }
 
 function rangeQuery(range: string): string {
@@ -49,6 +57,7 @@ export function AnalyticsModule() {
   const pageViews = (overview?.eventBreakdown ?? []).find((row) => row._id === 'PAGE_VIEW')?.count ?? 0;
   const searches = (overview?.topSearches ?? []).reduce((sum, row) => sum + row.count, 0);
   const sourceTotal = (overview?.sourceBreakdown ?? []).reduce((sum, row) => sum + row.count, 0) || 1;
+  const checkoutSummary = overview?.checkoutSummary ?? { started: 0, backedOut: 0, cancelled: 0, abandoned: 0, completed: 0 };
 
   return (
     <div className="space-y-5">
@@ -60,11 +69,20 @@ export function AnalyticsModule() {
         {error ? <div className="m-4 rounded-xl border border-alert/30 bg-alert/10 p-4 text-sm font-semibold text-alert">{error}</div> : null}
         {overview ? (
           <>
-            <div className="grid gap-3 px-4 pb-1 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-3 px-4 pb-1 sm:grid-cols-2 xl:grid-cols-5">
               <div className="card p-5"><p className="text-sm text-ink-muted">Unique sessions</p><p className="mt-2 text-2xl font-bold text-maroon-700">{overview.uniqueSessions}</p></div>
               <div className="card p-5"><p className="text-sm text-ink-muted">Events</p><p className="mt-2 text-2xl font-bold text-maroon-700">{totalEvents}</p></div>
               <div className="card p-5"><p className="text-sm text-ink-muted">Page views</p><p className="mt-2 text-2xl font-bold text-maroon-700">{pageViews}</p></div>
               <div className="card p-5"><p className="text-sm text-ink-muted">Searches</p><p className="mt-2 text-2xl font-bold text-maroon-700">{searches}</p></div>
+              <div className="card p-5"><p className="text-sm text-ink-muted">Checkout start</p><p className="mt-2 text-2xl font-bold text-maroon-700">{checkoutSummary.started}</p></div>
+            </div>
+
+            <div className="grid gap-3 px-4 pb-4 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="card p-4"><p className="text-sm text-ink-muted">Completed</p><p className="mt-2 text-2xl font-bold text-leaf">{checkoutSummary.completed}</p></div>
+              <div className="card p-4"><p className="text-sm text-ink-muted">Abandoned</p><p className="mt-2 text-2xl font-bold text-alert">{checkoutSummary.abandoned}</p></div>
+              <div className="card p-4"><p className="text-sm text-ink-muted">Cancelled</p><p className="mt-2 text-2xl font-bold text-marigold-700">{checkoutSummary.cancelled}</p></div>
+              <div className="card p-4"><p className="text-sm text-ink-muted">Backed out</p><p className="mt-2 text-2xl font-bold text-ink">{checkoutSummary.backedOut}</p></div>
+              <div className="card p-4"><p className="text-sm text-ink-muted">Checkout rate</p><p className="mt-2 text-2xl font-bold text-maroon-700">{checkoutSummary.started ? Math.round((checkoutSummary.completed / checkoutSummary.started) * 100) : 0}%</p></div>
             </div>
 
             <div className="grid gap-5 p-4 lg:grid-cols-2">

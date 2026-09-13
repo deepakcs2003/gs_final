@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { User, Mail, Home, Landmark, Building2, Map, Navigation, ShieldCheck, Truck, Banknote, CreditCard, MapPin, Check, AlertTriangle, Tag, X, ShoppingBag, ArrowLeft, QrCode, MessageSquare, ChevronDown, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
@@ -92,9 +92,17 @@ export function CheckoutPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [placing, setPlacing] = useState(false);
   const [itemsOpen, setItemsOpen] = useState(true);
+  const checkoutCompletedRef = useRef(false);
+  const checkoutAbandonTrackedRef = useRef(false);
 
   const currency = quote?.currency ?? config?.currency ?? 'INR';
   const codAllowed = quote?.codAllowed ?? config?.codAllowed ?? false;
+
+  const markCheckoutAbandon = () => {
+    if (checkoutCompletedRef.current || checkoutAbandonTrackedRef.current) return;
+    checkoutAbandonTrackedRef.current = true;
+    track('CHECKOUT_ABANDON', { value: quote?.amounts.totalMinor ?? 0 });
+  };
 
   // Prefill from the customer's saved default address.
   useEffect(() => {
@@ -141,8 +149,21 @@ export function CheckoutPage() {
   // Leaving checkout (browser back, or the back button below) ends a "Buy Now"
   // session, so the item stays in the cart as an ordinary line.
   useEffect(() => {
-    return () => endBuy();
-  }, [endBuy]);
+    const handleBeforeUnload = () => {
+      markCheckoutAbandon();
+    };
+    const handlePageHide = () => {
+      markCheckoutAbandon();
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pagehide', handlePageHide);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handlePageHide);
+      markCheckoutAbandon();
+      endBuy();
+    };
+  }, [endBuy, quote?.amounts.totalMinor]);
 
   if (activeLines.length === 0) {
     return (
@@ -171,6 +192,7 @@ export function CheckoutPage() {
   // Back = the product stays safe in the cart; buy mode ends so the whole
   // cart is visible again on the cart page.
   const onBack = () => {
+    track('CHECKOUT_BACK', { value: quote?.amounts.totalMinor ?? 0 });
     endBuy();
     navigate('/cart');
   };
@@ -214,6 +236,7 @@ export function CheckoutPage() {
   /** Order lagne ke baad cart ka haal: cart checkout = poori cart clear; Buy Now
    *  = sirf khareeda item hataya, baaki saman cart mein waise ka waasa rehta hai. */
   const finishOrder = (orderNumber: string, mobile: string) => {
+    checkoutCompletedRef.current = true;
     if (isBuyNow) {
       removeKeys(buyKeys);
       setAppliedCoupon('');
@@ -311,6 +334,7 @@ export function CheckoutPage() {
       },
       modal: {
         ondismiss: () => {
+          track('CHECKOUT_CANCEL', { value: order.amountMinor ?? 0 });
           toast('Payment cancel ho gaya. Cart safe hai.', 'info');
         },
       },

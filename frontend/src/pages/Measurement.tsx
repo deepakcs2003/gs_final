@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { Check, Ruler, ArrowRight, BookmarkPlus, ZoomIn, ChevronDown, X } from 'lucide-react';
+import { Check, Ruler, ArrowRight, BookmarkPlus, ZoomIn, ChevronDown, X, Sparkles, Info, ClipboardCheck, CircleHelp } from 'lucide-react';
 import clsx from 'clsx';
 import { SmartImage } from '../components/SmartImage';
 import { EmptyState } from '../components/ui';
@@ -189,43 +189,88 @@ export function MeasurementPage() {
         ))}
       </ol>
 
-      <header className="mb-4">
-        <h1 className="section-title">Apna Measurement Dein</h1>
-        <p className="hint mt-1">
-          {line.snapshot.name}
-          {line.snapshot.fabricName ? ` • ${line.snapshot.fabricName}` : ''}
-          {line.snapshot.laceName ? ` • ${line.snapshot.laceName}` : ''}
-          {line.snapshot.latkanName ? ` • ${line.snapshot.latkanName}` : ''}
-        </p>
+      <header className="mb-4 rounded-[26px] border border-maroon-200 bg-gradient-to-br from-maroon-700 via-maroon-600 to-[#6b1226] p-4 text-white shadow-[0_18px_38px_rgba(123,30,59,0.18)]">
+        <div className="flex items-start gap-3">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white/12 ring-1 ring-white/20">
+            <Ruler size={20} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-maroon-100">Step 3 of 4</p>
+            <h1 className="mt-1 font-display text-[28px] font-bold leading-tight">Apna Measurement Dein</h1>
+            <p className="mt-1 text-sm text-maroon-50">
+              {line.snapshot.name}
+              {line.snapshot.fabricName ? ` • ${line.snapshot.fabricName}` : ''}
+              {line.snapshot.laceName ? ` • ${line.snapshot.laceName}` : ''}
+              {line.snapshot.latkanName ? ` • ${line.snapshot.latkanName}` : ''}
+            </p>
+          </div>
+        </div>
       </header>
 
-      {/* Unit toggle (README §21) */}
-      <div className="mb-4 flex items-center gap-2">
-        <span className="text-[13px] font-semibold text-ink-muted">Unit:</span>
-        <div className="inline-flex rounded-xl border border-ink-light/25 bg-white p-1">
-          {(['inch', 'cm'] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              onClick={() => {
-                // Values are re-entered rather than auto-converted: converting a
-                // half-finished form silently changes numbers under the user.
-                if (option !== unit && Object.keys(values).length > 0) {
-                  setValues({});
-                  setErrors({});
-                }
-                setUnit(option);
-              }}
-              className={clsx(
-                'min-h-[36px] rounded-lg px-4 text-sm font-bold transition',
-                unit === option ? 'bg-maroon-600 text-white' : 'text-ink-muted',
-              )}
-            >
-              {option === 'inch' ? 'Inch' : 'CM'}
-            </button>
-          ))}
+      <div className="mb-4 grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="rounded-2xl border border-maroon-100 bg-white p-3.5 shadow-card">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="grid h-8 w-8 place-items-center rounded-full bg-marigold-100 text-marigold-700">
+                <Sparkles size={16} />
+              </span>
+              <h2 className="text-[15px] font-bold text-ink">Progress</h2>
+            </div>
+            <span className="rounded-full bg-maroon-50 px-2.5 py-1 text-[11px] font-bold text-maroon-700">{filledCount}/{fields.length} filled</span>
+          </div>
+          <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-maroon-50">
+            <div className="h-full rounded-full bg-gradient-to-r from-maroon-600 to-marigold-500 transition-all" style={{ width: `${fields.length ? (filledCount / fields.length) * 100 : 0}%` }} />
+          </div>
+          <p className="mt-2 text-sm text-ink-muted">
+            {requiredMissing > 0 ? `${requiredMissing} required fields left` : 'All required measurements are ready'}
+          </p>
         </div>
-        <span className="hint">Darzi ka tape use karein</span>
+
+        <div className="rounded-2xl border border-maroon-100 bg-maroon-50 p-3.5 shadow-card">
+          <div className="flex items-center gap-2">
+            <span className="grid h-8 w-8 place-items-center rounded-full bg-white text-maroon-600">
+              <Info size={16} />
+            </span>
+            <h2 className="text-[15px] font-bold text-ink">Need help?</h2>
+          </div>
+          <p className="mt-3 text-sm leading-relaxed text-ink-muted">
+            Har field ke saamne reference image aur instructions hain. Agar confused ho, image ko bada karke dekh lo.
+          </p>
+        </div>
+      </div>
+
+      {/* Unit toggle (README §21) */}
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-[13px] font-semibold text-ink-muted">Unit:</span>
+          <div className="inline-flex rounded-xl border border-ink-light/25 bg-white p-1">
+            {(['inch', 'cm'] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => {
+                  // Values are re-entered rather than auto-converted: converting a
+                  // half-finished form silently changes numbers under the user.
+                  if (option !== unit && Object.keys(values).length > 0) {
+                    setValues({});
+                    setErrors({});
+                  }
+                  setUnit(option);
+                }}
+                className={clsx(
+                  'min-h-[36px] rounded-lg px-4 text-sm font-bold transition',
+                  unit === option ? 'bg-maroon-600 text-white shadow-sm' : 'text-ink-muted hover:bg-maroon-50',
+                )}
+              >
+                {option === 'inch' ? 'Inch' : 'CM'}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="inline-flex items-center gap-2 rounded-full border border-maroon-100 bg-white px-3 py-1.5 text-[12px] font-semibold text-ink-muted">
+          <ClipboardCheck size={14} className="text-maroon-600" />
+          Darzi tape use karein
+        </div>
       </div>
 
       {/* Saved profiles (README §23) */}
@@ -339,15 +384,20 @@ export function MeasurementPage() {
       </div>
 
       {/* Confirmation (README §74) */}
-      <div className="mt-4 rounded-xl2 border-2 border-marigold-300 bg-marigold-50 p-4">
-        <h2 className="mb-2 font-display text-base font-bold text-ink">Measurement confirm karein</h2>
-        <dl className="mb-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-[14px] sm:grid-cols-3">
+      <div className="mt-4 rounded-2xl border border-marigold-300 bg-gradient-to-br from-marigold-50 to-white p-4 shadow-card">
+        <div className="mb-2 flex items-center gap-2">
+          <span className="grid h-8 w-8 place-items-center rounded-full bg-marigold-200 text-marigold-700">
+            <CircleHelp size={15} />
+          </span>
+          <h2 className="font-display text-base font-bold text-ink">Measurement confirm karein</h2>
+        </div>
+        <dl className="mb-3 grid grid-cols-2 gap-x-4 gap-y-2 text-[14px] sm:grid-cols-3">
           {fields
             .filter((field) => values[field.key])
             .map((field) => (
-              <div key={field.key} className="flex justify-between gap-2 border-b border-marigold-200 pb-1">
-                <dt className="text-ink-muted">{field.label}</dt>
-                <dd className="font-bold text-ink">
+              <div key={field.key} className="rounded-xl border border-marigold-200 bg-white/80 px-2.5 py-2">
+                <dt className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">{field.label}</dt>
+                <dd className="mt-1 font-bold text-ink">
                   {values[field.key]}
                   {unit === 'inch' ? '"' : 'cm'}
                 </dd>
@@ -355,7 +405,7 @@ export function MeasurementPage() {
             ))}
         </dl>
 
-        <label className="flex cursor-pointer items-start gap-3">
+        <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-marigold-200 bg-white/60 p-2.5">
           <input
             type="checkbox"
             checked={confirmed}
@@ -474,7 +524,7 @@ function FieldCard({
   const hasMedia = Boolean(field.gifUrl || field.imageUrl);
 
   return (
-    <div className="card overflow-hidden">
+    <div className="overflow-hidden rounded-2xl border border-maroon-100 bg-white shadow-card transition hover:shadow-[0_12px_28px_rgba(123,30,59,0.08)]">
       <div className="flex gap-3 p-3.5">
         {hasMedia ? (
           <button
@@ -482,10 +532,10 @@ function FieldCard({
             onClick={onZoom}
             aria-label={`${field.label} kaise measure karein — badha kar dekhein`}
             title="Badha kar dekhein"
-            className="group relative h-24 w-20 shrink-0 overflow-hidden rounded-xl bg-maroon-50"
+            className="group relative h-24 w-20 shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-maroon-50 to-maroon-100 ring-1 ring-maroon-100"
           >
             <SmartImage src={field.gifUrl || field.imageUrl} alt={`${field.label} kaise measure karein`} sizes="80px" />
-            <span className="absolute inset-0 grid place-items-center rounded-xl bg-ink/0 text-white opacity-0 transition group-hover:bg-ink/25 group-hover:opacity-100">
+            <span className="absolute inset-0 grid place-items-center rounded-2xl bg-ink/0 text-white opacity-0 transition group-hover:bg-ink/25 group-hover:opacity-100">
               <ZoomIn size={22} />
             </span>
             <span className="absolute bottom-1 right-1 grid h-6 w-6 place-items-center rounded-full bg-white/90 text-maroon-700 shadow-sm">
@@ -493,20 +543,29 @@ function FieldCard({
             </span>
           </button>
         ) : (
-          <div className="grid h-24 w-20 shrink-0 place-items-center rounded-xl bg-maroon-50 text-maroon-300">
+          <div className="grid h-24 w-20 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-maroon-50 to-maroon-100 text-maroon-300 ring-1 ring-maroon-100">
             <Ruler size={26} />
           </div>
         )}
 
         <div className="min-w-0 flex-1">
-          <label htmlFor={`m-${field.key}`} className="block text-[15px] font-bold text-ink">
-            {field.label}
-            {field.required ? <span className="text-alert"> *</span> : null}
-          </label>
+          <div className="flex items-start justify-between gap-2">
+            <label htmlFor={`m-${field.key}`} className="block text-[15px] font-bold text-ink">
+              {field.label}
+              {field.required ? <span className="text-alert"> *</span> : null}
+            </label>
+            <span
+              title={`${field.min} se ${field.max} ${unit} tak sahih hai`}
+              className="inline-flex shrink-0 items-center gap-1 rounded-full border border-marigold-300 bg-marigold-100 px-2.5 py-1 text-[10px] font-bold text-marigold-700"
+            >
+              <Ruler size={11} />
+              {field.min}–{field.max}
+            </span>
+          </div>
           {field.labelHi ? <p className="mt-0.5 text-[12.5px] font-medium text-maroon-700">{field.labelHi}</p> : null}
 
           {field.instruction ? (
-            <div className="mt-1.5 rounded-xl bg-maroon-50/70 px-2.5 py-2">
+            <div className="mt-2 rounded-xl bg-maroon-50/80 px-2.5 py-2 ring-1 ring-maroon-100">
               <p ref={textRef} className={clsx('text-[12.5px] leading-snug text-ink/80', !expanded && 'line-clamp-2')}>
                 {field.instruction}
               </p>
@@ -523,31 +582,26 @@ function FieldCard({
             </div>
           ) : null}
 
-          <div className="mt-2.5 flex items-center gap-2">
-            <input
-              id={`m-${field.key}`}
-              type="number"
-              inputMode="decimal"
-              step="0.5"
-              min={field.min}
-              max={field.max}
-              value={value}
-              onChange={(event) => onChange(event.target.value)}
-              placeholder={String(Math.round((field.min + field.max) / 2))}
-              className={clsx('field w-28 text-center text-lg font-bold', error && 'border-alert')}
-              aria-invalid={Boolean(error)}
-              aria-describedby={error ? `err-${field.key}` : undefined}
-            />
-            <span className="text-sm font-semibold text-ink-muted">{unit}</span>
-
-            <span
-              title={`${field.min} se ${field.max} ${unit} tak sahih hai`}
-              className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full border border-marigold-300 bg-marigold-100 px-2 py-1 text-[11px] font-bold text-marigold-700"
-            >
-              <Ruler size={12} />
-              <span className="hidden sm:inline">Range: </span>
-              {field.min}–{field.max}
-            </span>
+          <div className="mt-3 flex items-center gap-2">
+            <div className="relative w-28">
+              <input
+                id={`m-${field.key}`}
+                type="number"
+                inputMode="decimal"
+                step="0.5"
+                min={field.min}
+                max={field.max}
+                value={value}
+                onChange={(event) => onChange(event.target.value)}
+                placeholder={String(Math.round((field.min + field.max) / 2))}
+                className={clsx('field w-full !pr-10 text-center text-lg font-bold', error && 'border-alert')}
+                aria-invalid={Boolean(error)}
+                aria-describedby={error ? `err-${field.key}` : undefined}
+              />
+              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[12px] font-bold text-ink-muted">
+                {unit}
+              </span>
+            </div>
           </div>
 
           {error ? (

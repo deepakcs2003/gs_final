@@ -2007,15 +2007,26 @@ router.get('/analytics/overview', adminReadLimiter, async (req: Request, res: Re
   const from = req.query.from ? new Date(String(req.query.from)) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const to = req.query.to ? new Date(String(req.query.to)) : new Date();
   const range = { $gte: from, $lte: to };
-  const [eventBreakdown, topPages, topSearches, sourceBreakdown, deviceBreakdown, uniqueSessions] = await Promise.all([
+  const [eventBreakdown, topPages, topSearches, sourceBreakdown, deviceBreakdown, uniqueSessions, checkoutRows] = await Promise.all([
     AnalyticsEvent.aggregate([{ $match: { at: range } }, { $group: { _id: '$type', count: { $sum: 1 } } }, { $sort: { count: -1 } }]),
     AnalyticsEvent.aggregate([{ $match: { at: range, type: 'PAGE_VIEW', path: { $ne: '' } } }, { $group: { _id: '$path', count: { $sum: 1 } } }, { $sort: { count: -1 } }, { $limit: 10 }]),
     AnalyticsEvent.aggregate([{ $match: { at: range, type: 'SEARCH', query: { $ne: '' } } }, { $group: { _id: '$query', count: { $sum: 1 } } }, { $sort: { count: -1 } }, { $limit: 10 }]),
     AnalyticsEvent.aggregate([{ $match: { at: range } }, { $group: { _id: '$source', count: { $sum: 1 } } }, { $sort: { count: -1 } }]),
     AnalyticsEvent.aggregate([{ $match: { at: range } }, { $group: { _id: '$device.type', count: { $sum: 1 } } }, { $sort: { count: -1 } }]),
     AnalyticsEvent.distinct('sessionId', { at: range }),
+    AnalyticsEvent.aggregate([
+      { $match: { at: range, type: { $in: ['CHECKOUT_START', 'CHECKOUT_BACK', 'CHECKOUT_CANCEL', 'CHECKOUT_ABANDON', 'ORDER_PLACED'] } } },
+      { $group: { _id: '$type', count: { $sum: 1 } } },
+    ]),
   ]);
-  res.json({ from, to, eventBreakdown, topPages, topSearches, sourceBreakdown, deviceBreakdown, uniqueSessions: uniqueSessions.length });
+  const checkoutSummary = {
+    started: checkoutRows.find((row) => row._id === 'CHECKOUT_START')?.count ?? 0,
+    backedOut: checkoutRows.find((row) => row._id === 'CHECKOUT_BACK')?.count ?? 0,
+    cancelled: checkoutRows.find((row) => row._id === 'CHECKOUT_CANCEL')?.count ?? 0,
+    abandoned: checkoutRows.find((row) => row._id === 'CHECKOUT_ABANDON')?.count ?? 0,
+    completed: checkoutRows.find((row) => row._id === 'ORDER_PLACED')?.count ?? 0,
+  };
+  res.json({ from, to, eventBreakdown, topPages, topSearches, sourceBreakdown, deviceBreakdown, uniqueSessions: uniqueSessions.length, checkoutSummary });
 });
 
 router.get('/analytics/products', adminReadLimiter, async (req: Request, res: Response) => {
