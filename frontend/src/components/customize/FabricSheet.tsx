@@ -96,6 +96,7 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
   const [latkanColors, setLatkanColors] = useState<Record<string, ColorChoice>>({});
   /** Small popup asking the buyer to pick a colour — opens right on card tap. */
   const [colorSheetFor, setColorSheetFor] = useState<{ kind: 'lace' | 'latkan'; itemId: string } | null>(null);
+  const [previewImage, setPreviewImage] = useState<{ src: string; alt: string } | null>(null);
 
   const { data, isLoading } = useFabrics(
     { colors, materials, embroidery, maxPriceInr, productId: product.id },
@@ -480,20 +481,30 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {fabrics.map((fabric) => {
               const isSelected = fabricIds.includes(fabric.id);
+              const altText = `${fabric.colorName} ${fabric.name}`;
               return (
-                <button
+                <div
                   key={fabric.id}
-                  type="button"
-                  disabled={!fabric.inStock}
-                  onClick={() => toggleFabric(fabric)}
+                  role="button"
+                  tabIndex={fabric.inStock ? 0 : -1}
+                  aria-label={`Select ${altText}`}
+                  onClick={() => fabric.inStock && toggleFabric(fabric)}
+                  onKeyDown={(event) => {
+                    if (!fabric.inStock) return;
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      toggleFabric(fabric);
+                    }
+                  }}
                   className={clsx(
-                    'group relative overflow-hidden rounded-xl2 border-2 bg-white text-left transition',
+                    'group relative overflow-hidden rounded-xl2 border-2 bg-white text-left transition outline-none',
                     isSelected ? 'border-maroon-600 shadow-lift' : 'border-transparent shadow-card',
                     !fabric.inStock && 'opacity-55',
+                    fabric.inStock && 'cursor-pointer focus-visible:ring-2 focus-visible:ring-maroon-400',
                   )}
                 >
                   <div className="relative aspect-[4/3] w-full overflow-hidden">
-                    <SmartImage src={fabric.image} alt={`${fabric.colorName} ${fabric.name}`} sizes="190px" />
+                    <SmartImage src={fabric.image} alt={altText} sizes="190px" />
                     {isSelected ? (
                       <span className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-maroon-600 text-white shadow-lift">
                         <Check size={16} strokeWidth={3} />
@@ -504,6 +515,16 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
                         Out of Stock
                       </span>
                     ) : null}
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setPreviewImage({ src: fabric.image, alt: altText });
+                      }}
+                      className="absolute bottom-2 right-2 rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-ink shadow-card transition hover:bg-white"
+                    >
+                      View
+                    </button>
                   </div>
                   <div className="p-2.5">
                     <p className="truncate text-[13px] font-semibold text-ink">
@@ -513,7 +534,7 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
                       {moneyLabel(fabric.priceMinor, currency)}
                     </p>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
@@ -535,15 +556,24 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
               {availableLaces.map((lace) => {
                 const isSelected = laceIds.includes(lace.id);
                 return (
-                  <button
+                  <div
                     key={lace.id}
-                    type="button"
-                    disabled={!lace.inStock}
-                    onClick={() => toggleSelection('lace', lace.id, isSelected, laceIds, setLaceIds, setLaceColors)}
+                    role="button"
+                    tabIndex={lace.inStock ? 0 : -1}
+                    aria-label={`Select ${lace.name}`}
+                    onClick={() => lace.inStock && toggleSelection('lace', lace.id, isSelected, laceIds, setLaceIds, setLaceColors)}
+                    onKeyDown={(event) => {
+                      if (!lace.inStock) return;
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        toggleSelection('lace', lace.id, isSelected, laceIds, setLaceIds, setLaceColors);
+                      }
+                    }}
                     className={clsx(
-                      'w-28 shrink-0 overflow-hidden rounded-xl border-2 bg-white text-left transition',
+                      'w-28 shrink-0 overflow-hidden rounded-xl border-2 bg-white text-left transition outline-none',
                       isSelected ? 'border-maroon-600' : 'border-ink-light/20',
                       !lace.inStock && 'opacity-50',
+                      lace.inStock && 'cursor-pointer focus-visible:ring-2 focus-visible:ring-maroon-400',
                     )}
                   >
                     <div className="relative aspect-[4/3]">
@@ -553,12 +583,22 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
                           <Check size={12} strokeWidth={3} />
                         </span>
                       ) : null}
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setPreviewImage({ src: lace.image, alt: lace.name });
+                        }}
+                        className="absolute bottom-1.5 right-1.5 rounded-full bg-white/90 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-ink shadow-card"
+                      >
+                        View
+                      </button>
                     </div>
                     <div className="p-2">
                       <p className="truncate text-[11px] font-semibold leading-tight">{lace.name}</p>
                       <p className={lace.priceMinor === 0 ? 'text-[11px] font-black uppercase tracking-wide text-leaf' : 'text-[11px] font-bold text-maroon-700'}>{moneyLabel(lace.priceMinor, currency)}</p>
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -581,15 +621,24 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
               {availableLatkans.map((latkan) => {
                 const isSelected = latkanIds.includes(latkan.id);
                 return (
-                  <button
+                  <div
                     key={latkan.id}
-                    type="button"
-                    disabled={!latkan.inStock}
-                    onClick={() => toggleSelection('latkan', latkan.id, isSelected, latkanIds, setLatkanIds, setLatkanColors)}
+                    role="button"
+                    tabIndex={latkan.inStock ? 0 : -1}
+                    aria-label={`Select ${latkan.name}`}
+                    onClick={() => latkan.inStock && toggleSelection('latkan', latkan.id, isSelected, latkanIds, setLatkanIds, setLatkanColors)}
+                    onKeyDown={(event) => {
+                      if (!latkan.inStock) return;
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        toggleSelection('latkan', latkan.id, isSelected, latkanIds, setLatkanIds, setLatkanColors);
+                      }
+                    }}
                     className={clsx(
-                      'w-28 shrink-0 overflow-hidden rounded-xl border-2 bg-white text-left transition',
+                      'w-28 shrink-0 overflow-hidden rounded-xl border-2 bg-white text-left transition outline-none',
                       isSelected ? 'border-maroon-600' : 'border-ink-light/20',
                       !latkan.inStock && 'opacity-50',
+                      latkan.inStock && 'cursor-pointer focus-visible:ring-2 focus-visible:ring-maroon-400',
                     )}
                   >
                     <div className="relative aspect-[4/3]">
@@ -599,12 +648,22 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
                           <Check size={12} strokeWidth={3} />
                         </span>
                       ) : null}
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setPreviewImage({ src: latkan.image, alt: latkan.name });
+                        }}
+                        className="absolute bottom-1.5 right-1.5 rounded-full bg-white/90 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-ink shadow-card"
+                      >
+                        View
+                      </button>
                     </div>
                     <div className="p-2">
                       <p className="truncate text-[11px] font-semibold leading-tight">{latkan.name}</p>
                       <p className={latkan.priceMinor === 0 ? 'text-[11px] font-black uppercase tracking-wide text-leaf' : 'text-[11px] font-bold text-maroon-700'}>{moneyLabel(latkan.priceMinor, currency)}</p>
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -632,6 +691,31 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
               }
               onDone={() => setColorSheetFor(null)}
             />,
+            document.body,
+          )
+        : null}
+
+      {previewImage
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[80] grid place-items-center bg-ink/70 p-4"
+              role="dialog"
+              aria-modal="true"
+              aria-label={`${previewImage.alt} — full size preview`}
+              onClick={() => setPreviewImage(null)}
+            >
+              <div className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white p-2 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+                <div className="overflow-hidden rounded-xl bg-maroon-50">
+                  <img src={previewImage.src} alt={previewImage.alt} className="mx-auto max-h-[75vh] w-full object-contain" />
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-3 px-1">
+                  <p className="min-w-0 truncate text-sm font-bold text-ink">{previewImage.alt}</p>
+                  <button type="button" onClick={() => setPreviewImage(null)} className="btn-outline shrink-0 px-3 py-2 text-[12px]">
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>,
             document.body,
           )
         : null}

@@ -41,11 +41,61 @@ const SORTS = {
   newest: { field: 'publishedAt', direction: -1 as SortDirection },
   price_asc: { field: 'sellingPriceInr', direction: 1 as SortDirection },
   price_desc: { field: 'sellingPriceInr', direction: -1 as SortDirection },
-  popular: { field: 'stats.views', direction: -1 as SortDirection },
+  popular: { field: 'score', direction: -1 as SortDirection },
+  recommended: { field: 'score', direction: -1 as SortDirection },
   most_viewed: { field: 'stats.views', direction: -1 as SortDirection },
   most_liked: { field: 'stats.wishlists', direction: -1 as SortDirection },
   best_rated: { field: 'rating.average', direction: -1 as SortDirection },
 } as const;
+
+function productStat(product: Record<string, unknown>, key: string): number {
+  const stats = (product.stats as Record<string, unknown> | undefined) ?? {};
+  const value = stats[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function safeDate(product: Record<string, unknown>, key: string): Date {
+  const value = product[key];
+  if (value instanceof Date) return value;
+  if (typeof value === 'string' || typeof value === 'number') {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+  return new Date();
+}
+
+function computeProductRankScore(product: Record<string, unknown>): number {
+  const views = productStat(product, 'views');
+  const wishlists = productStat(product, 'wishlists');
+  const cartAdds = productStat(product, 'cartAdds');
+  const orders = productStat(product, 'orders');
+  const ageDays = Math.max(1, (Date.now() - safeDate(product, 'publishedAt').getTime()) / 86_400_000);
+  const freshness = 1 / (1 + Math.sqrt(ageDays));
+  const popularity = Math.log1p(views) + 0.8 * Math.log1p(wishlists) + 0.7 * Math.log1p(cartAdds) + 1.5 * Math.log1p(orders);
+  const conversion = Math.log1p(orders) + 0.5 * Math.log1p(cartAdds);
+  const rating = typeof product.rating === 'object' && product.rating !== null ? Number((product.rating as Record<string, unknown>).average ?? 0) : 0;
+  return popularity * 1.3 + conversion * 4 + freshness * 5 + rating * 2;
+}
+
+function computeRecommendationScore(product: Record<string, unknown>, currentProduct: Record<string, unknown>): number {
+  const categoryMatch = product.category && currentProduct.category && String(product.category) === String(currentProduct.category) ? 1 : 0;
+  const typeMatch = product.type && currentProduct.type && String(product.type) === String(currentProduct.type) ? 1 : 0;
+  const currentTags = Array.isArray(currentProduct.tags) ? currentProduct.tags.map((tag) => String(tag).toLowerCase()) : [];
+  const productTags = Array.isArray(product.tags) ? product.tags.map((tag) => String(tag).toLowerCase()) : [];
+  const sharedTags = currentTags.length > 0 ? productTags.filter((tag) => currentTags.includes(tag)).length : 0;
+
+  const currentColors = Array.isArray(currentProduct.colors) ? currentProduct.colors.map((color) => String((color as Record<string, unknown>).slug ?? '')).filter(Boolean) : [];
+  const productColors = Array.isArray(product.colors) ? product.colors.map((color) => String((color as Record<string, unknown>).slug ?? '')).filter(Boolean) : [];
+  const sharedColors = currentColors.length > 0 ? productColors.filter((color) => currentColors.includes(color)).length : 0;
+
+  const similarity = categoryMatch * 6 + typeMatch * 3 + sharedTags * 2 + sharedColors * 1.5;
+  const popularity = Math.log1p(productStat(product, 'views') + 0.6 * productStat(product, 'wishlists') + 0.7 * productStat(product, 'cartAdds') + 1.5 * productStat(product, 'orders'));
+  const conversion = Math.log1p(productStat(product, 'orders') + 0.5 * productStat(product, 'cartAdds'));
+  const ageDays = Math.max(1, (Date.now() - safeDate(product, 'publishedAt').getTime()) / 86_400_000);
+  const freshness = 1 / (1 + Math.sqrt(ageDays));
+
+  return 0.6 * similarity + 0.25 * popularity + 0.1 * conversion + 0.05 * freshness;
+}
 
 const listQuerySchema = z
   .object({
@@ -138,15 +188,60 @@ router.get('/products', readLimiter, validate({ query: listQuerySchema }), async
 
   const { field, direction } = SORTS[query.sort];
   const filter = await buildProductFilter(query);
-
   const cursor = decodeCursor(query.cursor);
-  const finalFilter = cursor ? { $and: [filter, cursorFilter(field, direction, cursor)] } : filter;
 
-  // Fetch one extra row to learn whether another page exists, without a count().
-  const docs = await Product.find(finalFilter)
-    .sort({ [field]: direction, _id: direction })
-    .limit(query.limit + 1)
-    .lean();
+  let docs: any[];
+  if (query.sort === 'popular' || query.sort === 'recommended') {
+    const weightedPipeline: PipelineStage[] = [
+      { $match: filter },
+      {
+        $addFields: {
+          score: {
+            $add: [
+              { $multiply: [0.35, { $ln: { $add: [{ $ifNull: ['$stats.views', 0] }, 1] } }] },
+              { $multiply: [0.2, { $ln: { $add: [{ $ifNull: ['$stats.wishlists', 0] }, 1] } }] },
+              { $multiply: [0.2, { $ln: { $add: [{ $ifNull: ['$stats.cartAdds', 0] }, 1] } }] },
+              { $multiply: [0.2, { $ln: { $add: [{ $ifNull: ['$stats.orders', 0] }, 1] } }] },
+              {
+                $multiply: [
+                  0.05,
+                  {
+                    $divide: [
+                      1,
+                      {
+                        $add: [
+                          1,
+                          {
+                            $divide: [
+                              { $subtract: ['$$NOW', { $ifNull: ['$publishedAt', '$createdAt'] }] },
+                              86_400_000,
+                            ],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    ];
+
+    if (cursor) {
+      weightedPipeline.push({ $match: cursorFilter('score', direction, cursor) });
+    }
+
+    weightedPipeline.push({ $sort: { score: direction, _id: direction } }, { $limit: query.limit + 1 });
+    docs = await Product.aggregate(weightedPipeline);
+  } else {
+    const finalFilter = cursor ? { $and: [filter, cursorFilter(field, direction, cursor)] } : filter;
+    docs = await Product.find(finalFilter)
+      .sort({ [field]: direction, _id: direction })
+      .limit(query.limit + 1)
+      .lean();
+  }
 
   const hasMore = docs.length > query.limit;
   const page = hasMore ? docs.slice(0, query.limit) : docs;
@@ -266,13 +361,11 @@ router.get(
     const settings = await getSettings();
     const fxRate = geo.currency === 'INR' ? 1 : settings.usdRateInr;
 
-    const product = await Product.findOne({ slug, isActive: true }).select('category type colors tags _id').lean();
+    const product = await Product.findOne({ slug, isActive: true }).select('category type colors tags _id stats publishedAt').lean();
     if (!product) throw notFound('Yeh design nahi mila.');
 
     const colorSlugs = (product.colors ?? []).map((c) => c.slug);
 
-    // Rank by how much a candidate shares with this design, so "You may also
-    // like" is genuinely similar rather than just the newest thing in stock.
     const pipeline: PipelineStage[] = [
       {
         $match: {
@@ -289,18 +382,69 @@ router.get(
         $addFields: {
           similarity: {
             $add: [
-              { $cond: [{ $eq: ['$category', product.category] }, 3, 0] },
-              { $cond: [{ $eq: ['$type', product.type] }, 2, 0] },
-              { $size: { $setIntersection: ['$tags', product.tags ?? []] } },
+              { $cond: [{ $eq: ['$category', product.category] }, 6, 0] },
+              { $cond: [{ $eq: ['$type', product.type] }, 3, 0] },
+              { $multiply: [{ $size: { $setIntersection: ['$tags', product.tags ?? []] } }, 2] },
+              {
+                $multiply: [
+                  {
+                    $size: {
+                      $setIntersection: [
+                        { $map: { input: '$colors', as: 'color', in: '$$color.slug' } },
+                        colorSlugs,
+                      ],
+                    },
+                  },
+                  1.5,
+                ],
+              },
             ],
           },
         },
       },
       { $sort: { similarity: -1, 'stats.views': -1, _id: -1 } },
-      { $limit: 12 },
+      { $limit: 20 },
     ];
 
-    const docs = await Product.aggregate(pipeline);
+    let docs = await Product.aggregate(pipeline);
+    docs = docs
+      .map((doc) => ({ ...doc, recommendationScore: computeRecommendationScore(doc, product) }))
+      .sort((a, b) => Number(b.recommendationScore) - Number(a.recommendationScore) || Number(b['stats.views'] ?? 0) - Number(a['stats.views'] ?? 0))
+      .slice(0, 8);
+
+    if (docs.length < 6) {
+      const fallback = await Product.aggregate([
+        {
+          $match: {
+            _id: { $ne: product._id },
+            isActive: true,
+          },
+        },
+        {
+          $addFields: {
+            popularityScore: {
+              $add: [
+                { $multiply: [1.2, { $ln: { $add: [{ $ifNull: ['$stats.views', 0] }, 1] } }] },
+                { $multiply: [0.9, { $ln: { $add: [{ $ifNull: ['$stats.wishlists', 0] }, 1] } }] },
+                { $multiply: [0.8, { $ln: { $add: [{ $ifNull: ['$stats.cartAdds', 0] }, 1] } }] },
+                { $multiply: [1.4, { $ln: { $add: [{ $ifNull: ['$stats.orders', 0] }, 1] } }] },
+              ],
+            },
+          },
+        },
+        { $sort: { popularityScore: -1, 'stats.orders': -1, 'stats.views': -1, _id: -1 } },
+        { $limit: 12 },
+      ]);
+
+      const seen = new Set(docs.map((doc) => String(doc._id)));
+      for (const doc of fallback) {
+        if (seen.has(String(doc._id))) continue;
+        docs.push({ ...doc, recommendationScore: computeRecommendationScore(doc, product) });
+        seen.add(String(doc._id));
+        if (docs.length >= 8) break;
+      }
+    }
+
     res.json({ items: docs.map((doc) => presentProductCard(doc, geo.currency, fxRate)) });
   },
 );
