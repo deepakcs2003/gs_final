@@ -10,7 +10,7 @@ import { useCart } from '../../store/cart';
 import { useUi, useWishlist } from '../../store/ui';
 import { useProductCouponOffers } from '../../hooks/queries';
 import { track } from '../../lib/analytics';
-import { getBestCouponForProduct } from '../../lib/coupons';
+import { getBestCouponForProduct, getProductSignal } from '../../lib/coupons';
 import { ProductCard as ProductCardType } from '../../lib/types';
 import type { Currency } from '../../lib/format';
 
@@ -44,6 +44,7 @@ function ProductCardViewInner({ product, currency, eager }: ProductCardProps) {
   const href = `/blouse/${product.slug}`;
   const soldOut = (product.type === 'READY_MADE' || product.type === 'BOTH') && !product.inStock;
   const couponOffer = couponData?.items ? getBestCouponForProduct(product.id, product.price.priceMinor, couponData.items) : null;
+  const productSignal = getProductSignal(product.id);
 
   return (
     <article className="group card flex flex-col overflow-hidden">
@@ -91,13 +92,22 @@ function ProductCardViewInner({ product, currency, eager }: ProductCardProps) {
         </Link>
 
         {product.type !== 'SHOWCASE' ? (
-          <div className={clsx(
-            'inline-flex w-fit items-center rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em]',
-            product.type === 'CUSTOMIZE' && 'border-amber-200 bg-amber-50 text-amber-800',
-            product.type === 'READY_MADE' && 'border-emerald-200 bg-emerald-50 text-emerald-700',
-            product.type === 'BOTH' && 'border-violet-200 bg-violet-50 text-violet-700',
-          )}>
-            {product.type === 'READY_MADE' ? 'Ready to Buy' : product.type === 'CUSTOMIZE' ? 'Customize' : 'Ready + Customize'}
+          <div className="flex min-w-0 flex-nowrap items-center gap-1.5 overflow-hidden whitespace-nowrap">
+            <div className={clsx(
+              'inline-flex shrink-0 items-center rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em]',
+              product.type === 'CUSTOMIZE' && 'border-amber-200 bg-amber-50 text-amber-800',
+              product.type === 'READY_MADE' && 'border-emerald-200 bg-emerald-50 text-emerald-700',
+              product.type === 'BOTH' && 'border-violet-200 bg-violet-50 text-violet-700',
+            )}>
+              {product.type === 'READY_MADE' ? 'Ready to Buy' : product.type === 'CUSTOMIZE' ? 'Customize' : 'Ready + Customize'}
+            </div>
+
+            <div className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-1.5 py-1 text-[10px] font-semibold text-amber-800">
+              <span className="text-amber-500">★</span>
+              <span>{productSignal.rating.toFixed(1)}</span>
+            </div>
+
+            <div className="shrink-0 text-[10px] font-medium text-ink-muted">{productSignal.salesCount} sold</div>
           </div>
         ) : null}
 

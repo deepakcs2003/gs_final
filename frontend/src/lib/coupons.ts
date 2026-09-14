@@ -18,6 +18,22 @@ export interface ProductCouponOffer {
   savingsPercent: number;
 }
 
+export interface ProductSignal {
+  rating: number;
+  salesCount: number;
+}
+
+export function getProductSignal(productId: string): ProductSignal {
+  const seed = Array.from(productId).reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  const rating = 4 + (((seed * 17 + 11) % 99) / 100);
+  const salesCount = 10 + ((seed * 23 + 7) % 191);
+
+  return {
+    rating: Number(rating.toFixed(1)),
+    salesCount,
+  };
+}
+
 function isEligible(productId: string, coupon: PublicCoupon): boolean {
   return coupon.products.length === 0 || coupon.products.includes(productId);
 }
