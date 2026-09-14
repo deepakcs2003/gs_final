@@ -234,7 +234,6 @@ export function Price({
           <span className="font-bold text-leaf">{formatMoney(couponOffer.finalPriceMinor, currency)}</span>
           <span>with</span>
           <span className="rounded-full bg-leaf/10 px-1.5 py-0.5 font-bold text-leaf">{couponOffer.code}</span>
-          {couponOffer.description ? <span className="text-ink-muted">• {couponOffer.description}</span> : null}
         </span>
       ) : null}
     </span>

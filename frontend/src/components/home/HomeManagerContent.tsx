@@ -6,8 +6,8 @@ import { Badge, Price } from '../ui';
 import { SmartImage } from '../SmartImage';
 import { useBanners, useConfig, useHomeSections, useProductCouponOffers } from '../../hooks/queries';
 import { getBestCouponForProduct } from '../../lib/coupons';
+import { formatMoney, type Currency } from '../../lib/format';
 import type { HomeBanner, BannerPosition, HomeSectionProduct, HomepageSection } from '../../lib/types';
-import type { Currency } from '../../lib/format';
 
 /**
  * The admin-managed part of the homepage (README §85.10–85.13).
@@ -329,7 +329,7 @@ function SectionProductTile({
             />
             {couponOffer ? (
               <p className="text-[10px] font-medium text-leaf">
-                Get at {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(couponOffer.finalPriceMinor / 100)} with {couponOffer.code}
+                Get at {formatMoney(couponOffer.finalPriceMinor, currency)} with {couponOffer.code}
               </p>
             ) : null}
           </div>
