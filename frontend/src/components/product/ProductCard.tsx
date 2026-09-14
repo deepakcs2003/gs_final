@@ -47,8 +47,8 @@ function ProductCardViewInner({ product, currency, eager }: ProductCardProps) {
   const productSignal = getProductSignal(product.id);
 
   return (
-    <article className="group card flex flex-col overflow-hidden">
-      <div className="relative">
+    <article className="group card flex min-w-0 flex-col overflow-hidden">
+      <div className="relative min-w-0">
         <Link to={href} className="block aspect-[3/4] overflow-hidden bg-maroon-50" aria-label={product.name}>
           <SmartImage
             src={product.image}
@@ -86,15 +86,15 @@ function ProductCardViewInner({ product, currency, eager }: ProductCardProps) {
         </button>
       </div>
 
-      <div className="flex flex-1 flex-col gap-2 p-3">
-        <Link to={href} className="min-h-[38px]">
-          <h3 className="line-clamp-2 text-[14px] font-semibold leading-snug text-ink">{product.name}</h3>
+      <div className="flex min-w-0 flex-1 flex-col gap-2 p-3">
+        <Link to={href} className="min-h-[38px] min-w-0">
+          <h3 className="line-clamp-2 text-[13.5px] font-semibold leading-snug text-ink sm:text-[14px]">{product.name}</h3>
         </Link>
 
         {product.type !== 'SHOWCASE' ? (
-          <div className="flex min-w-0 flex-nowrap items-center gap-1.5 overflow-hidden whitespace-nowrap">
+          <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1.5">
             <div className={clsx(
-              'inline-flex shrink-0 items-center rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em]',
+              'inline-flex shrink-0 items-center rounded-full border px-2 py-1 text-[9.5px] font-semibold uppercase tracking-[0.08em] sm:text-[10px]',
               product.type === 'CUSTOMIZE' && 'border-amber-200 bg-amber-50 text-amber-800',
               product.type === 'READY_MADE' && 'border-emerald-200 bg-emerald-50 text-emerald-700',
               product.type === 'BOTH' && 'border-violet-200 bg-violet-50 text-violet-700',
@@ -102,12 +102,12 @@ function ProductCardViewInner({ product, currency, eager }: ProductCardProps) {
               {product.type === 'READY_MADE' ? 'Ready to Buy' : product.type === 'CUSTOMIZE' ? 'Customize' : 'Ready + Customize'}
             </div>
 
-            <div className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-1.5 py-1 text-[10px] font-semibold text-amber-800">
+            <div className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-1.5 py-1 text-[9.5px] font-semibold text-amber-800 sm:text-[10px]">
               <span className="text-amber-500">★</span>
               <span>{productSignal.rating.toFixed(1)}</span>
             </div>
 
-            <div className="shrink-0 text-[10px] font-medium text-ink-muted">{productSignal.salesCount} sold</div>
+            <div className="shrink-0 text-[9.5px] font-medium text-ink-muted sm:text-[10px]">{productSignal.salesCount} sold</div>
           </div>
         ) : null}
 

@@ -206,8 +206,8 @@ export function Price({
   const isFree = price.priceMinor === 0;
 
   return (
-    <span className="flex min-w-0 flex-col items-start gap-1">
-      <span className="flex min-w-0 flex-nowrap items-baseline gap-x-1.5 overflow-hidden whitespace-nowrap">
+    <span className="flex w-full min-w-0 flex-col items-start gap-1">
+      <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
         {isFree ? (
           <span className={clsx('font-black uppercase tracking-wide text-leaf', sizes.main)}>FREE</span>
         ) : (
@@ -226,11 +226,11 @@ export function Price({
       </span>
 
       {couponOffer && hasRealDiscount ? (
-        <span className={clsx('inline-flex min-w-0 flex-nowrap items-center gap-1 overflow-hidden whitespace-nowrap text-[11px] font-semibold text-leaf', sizes.rest)}>
-          <span className="shrink-0">Get at</span>
-          <span className="shrink-0 font-bold text-leaf">{formatMoney(couponOffer.finalPriceMinor, currency)}</span>
-          <span className="shrink-0">with</span>
-          <span className="shrink-0 rounded-full bg-leaf/10 px-1.5 py-0.5 font-bold text-leaf">{couponOffer.code}</span>
+        <span className={clsx('inline-flex min-w-0 max-w-full flex-wrap items-center gap-1 text-[11px] font-semibold text-leaf', sizes.rest)}>
+          <span>Get at</span>
+          <span className="font-bold text-leaf">{formatMoney(couponOffer.finalPriceMinor, currency)}</span>
+          <span>with</span>
+          <span className="rounded-full bg-leaf/10 px-1.5 py-0.5 font-bold text-leaf">{couponOffer.code}</span>
         </span>
       ) : null}
     </span>
