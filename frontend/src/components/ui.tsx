@@ -197,16 +197,13 @@ export function Price({
     lg: { main: 'text-2xl', rest: 'text-sm' },
   }[size];
 
-  const effectivePrice = couponOffer
-    ? {
-        priceMinor: couponOffer.finalPriceMinor,
-        mrpMinor: price.mrpMinor,
-        discountPercent: Math.max(price.discountPercent, couponOffer.savingsPercent),
-      }
-    : price;
+  const hasRealDiscount = couponOffer ? couponOffer.finalPriceMinor < price.priceMinor : false;
 
+  // Main row always shows the product's REAL selling price + MRP + % OFF.
+  // The coupon (e.g. "Get at ₹749 with INSTA25") is its own separate line below
+  // and must NEVER overwrite the selling price.
   // Zero-priced products read as FREE everywhere — never ₹0 (global rule).
-  const isFree = effectivePrice.priceMinor === 0;
+  const isFree = price.priceMinor === 0;
 
   return (
     <span className="flex flex-col items-start gap-1">
@@ -215,20 +212,20 @@ export function Price({
           <span className={clsx('font-black uppercase tracking-wide text-leaf', sizes.main)}>FREE</span>
         ) : (
           <>
-            <span className={clsx('font-bold text-ink', sizes.main)}>{formatMoney(effectivePrice.priceMinor, currency)}</span>
-            {effectivePrice.discountPercent > 0 ? (
+            <span className={clsx('font-bold text-ink', sizes.main)}>{formatMoney(price.priceMinor, currency)}</span>
+            {price.discountPercent > 0 ? (
               <>
                 <span className={clsx('text-ink-light line-through', sizes.rest)}>
-                  {formatMoney(effectivePrice.mrpMinor, currency)}
+                  {formatMoney(price.mrpMinor, currency)}
                 </span>
-                <span className={clsx('font-bold text-leaf', sizes.rest)}>{effectivePrice.discountPercent}% OFF</span>
+                <span className={clsx('font-bold text-leaf', sizes.rest)}>{price.discountPercent}% OFF</span>
               </>
             ) : null}
           </>
         )}
       </span>
 
-      {couponOffer ? (
+      {couponOffer && hasRealDiscount ? (
         <span className={clsx('inline-flex flex-wrap items-center gap-1 text-[11px] font-semibold text-leaf', sizes.rest)}>
           <span>Get at</span>
           <span className="font-bold text-leaf">{formatMoney(couponOffer.finalPriceMinor, currency)}</span>

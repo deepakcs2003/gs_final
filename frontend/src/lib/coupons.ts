@@ -23,17 +23,19 @@ function isEligible(productId: string, coupon: PublicCoupon): boolean {
 }
 
 export function getBestCouponForProduct(productId: string, productPriceMinor: number, coupons: PublicCoupon[]): ProductCouponOffer | null {
-  if (productPriceMinor <= 0) return null;
+  if (!Number.isFinite(productPriceMinor) || productPriceMinor <= 0) return null;
 
   let best: ProductCouponOffer | null = null;
 
   for (const coupon of coupons) {
     if (!isEligible(productId, coupon)) continue;
+    if (!Number.isFinite(coupon.valueInr) || coupon.valueInr <= 0) continue;
     if (productPriceMinor < coupon.minOrderInr * 100) continue;
 
     let discountMinor = 0;
     if (coupon.type === 'PERCENT') {
-      const raw = Math.floor((productPriceMinor * Math.min(coupon.valueInr, 100)) / 100);
+      const percentValue = Math.min(Math.max(coupon.valueInr, 0), 100);
+      const raw = Math.floor((productPriceMinor * percentValue) / 100);
       const cap = coupon.maxDiscountInr > 0 ? coupon.maxDiscountInr * 100 : productPriceMinor;
       discountMinor = Math.min(raw, cap, productPriceMinor);
     } else {
