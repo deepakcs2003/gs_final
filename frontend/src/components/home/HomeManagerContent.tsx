@@ -4,7 +4,8 @@ import { ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react';
 import clsx from 'clsx';
 import { Badge, Price } from '../ui';
 import { SmartImage } from '../SmartImage';
-import { useBanners, useConfig, useHomeSections } from '../../hooks/queries';
+import { useBanners, useConfig, useHomeSections, useProductCouponOffers } from '../../hooks/queries';
+import { getBestCouponForProduct } from '../../lib/coupons';
 import type { HomeBanner, BannerPosition, HomeSectionProduct, HomepageSection } from '../../lib/types';
 import type { Currency } from '../../lib/format';
 
@@ -288,8 +289,10 @@ function SectionProductTile({
   currency: Currency;
   eager?: boolean;
 }) {
+  const { data: couponData } = useProductCouponOffers([product.id]);
   const discountPercent =
     product.mrpMinor > product.priceMinor ? Math.round(((product.mrpMinor - product.priceMinor) / product.mrpMinor) * 100) : 0;
+  const couponOffer = couponData?.items ? getBestCouponForProduct(product.id, product.priceMinor, couponData.items) : null;
 
   return (
     <Link to={`/blouse/${product.slug}`} className="group card flex flex-col overflow-hidden">
@@ -317,11 +320,19 @@ function SectionProductTile({
         {product.type === 'SHOWCASE' ? (
           <p className="hint">Jald aa raha hai</p>
         ) : (
-          <Price
-            price={{ priceMinor: product.priceMinor, mrpMinor: product.mrpMinor, discountPercent }}
-            currency={currency}
-            size="sm"
-          />
+          <div className="space-y-1">
+            <Price
+              price={{ priceMinor: product.priceMinor, mrpMinor: product.mrpMinor, discountPercent }}
+              currency={currency}
+              size="sm"
+              couponOffer={couponOffer ? { code: couponOffer.code, description: couponOffer.description, finalPriceMinor: couponOffer.finalPriceMinor, discountMinor: couponOffer.discountMinor, savingsPercent: couponOffer.savingsPercent } : undefined}
+            />
+            {couponOffer ? (
+              <p className="text-[10px] font-medium text-leaf">
+                Get at {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(couponOffer.finalPriceMinor / 100)} with {couponOffer.code}
+              </p>
+            ) : null}
+          </div>
         )}
       </div>
     </Link>

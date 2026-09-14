@@ -27,6 +27,7 @@ import type {
   SiteConfig,
 } from '../lib/types';
 import { buyModeLines, toApiLines, useCart } from '../store/cart';
+import type { PublicCoupon } from '../lib/coupons';
 
 /* -------------------------------------------------------------------------- */
 /* Site config + session                                                       */
@@ -432,6 +433,19 @@ export function useAvailableCoupons() {
       }),
     enabled: activeLines.length > 0,
     staleTime: 0,
+    retry: 1,
+  });
+}
+
+export function useProductCouponOffers(productIds: string[]) {
+  const ids = useMemo(() => [...new Set((productIds ?? []).filter(Boolean))], [productIds]);
+
+  return useQuery({
+    queryKey: ['product-coupons', ids],
+    queryFn: () =>
+      api<{ items: PublicCoupon[] }>(`/coupons/public?${new URLSearchParams({ productIds: ids.join(',') }).toString()}`),
+    enabled: ids.length > 0,
+    staleTime: 60 * 1000,
     retry: 1,
   });
 }

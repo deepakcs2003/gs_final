@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { Types, type PipelineStage } from 'mongoose';
 import { z } from 'zod';
 import { Category, Fabric, Lace, Latkan, Product } from '../models/catalog.js';
+import { Coupon } from '../models/commerce.js';
 import { validate } from '../middleware/validate.js';
 import { readLimiter, searchLimiter } from '../middleware/rateLimit.js';
 import { resolveGeo } from '../services/geo.js';
@@ -179,6 +180,59 @@ function sortValueOf(product: Record<string, unknown>, field: string): number | 
 /* -------------------------------------------------------------------------- */
 /* GET /api/products                                                           */
 /* -------------------------------------------------------------------------- */
+
+const publicCouponsQuerySchema = z
+  .object({
+    productIds: z
+      .string()
+      .trim()
+      .max(400)
+      .optional()
+      .transform((raw) =>
+        (raw ?? '')
+          .split(',')
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0)
+          .slice(0, 50),
+      ),
+  })
+  .strict();
+
+router.get('/coupons/public', readLimiter, validate({ query: publicCouponsQuerySchema }), async (req: Request, res: Response) => {
+  const { productIds } = (req as Request & { validated: { query: { productIds: string[] } } }).validated.query;
+  const now = new Date();
+  const ids = productIds.map((entry) => entry.toString());
+
+  const items = await Coupon.find({
+    isActive: true,
+    ...(ids.length > 0 ? { $or: [{ products: { $size: 0 } }, { products: { $in: ids } }] } : { products: { $size: 0 } }),
+  }).lean();
+
+  const valid = items
+    .filter((coupon) => {
+      if (!coupon) return false;
+      if (coupon.startsAt && coupon.startsAt > now) return false;
+      if (coupon.expiresAt && coupon.expiresAt < now) return false;
+      if (coupon.usageLimit > 0 && coupon.usedCount >= coupon.usageLimit) return false;
+      return true;
+    })
+    .map((coupon) => ({
+      code: coupon.code,
+      description: coupon.description ?? '',
+      type: coupon.type,
+      valueInr: coupon.value,
+      minOrderInr: coupon.minOrderInr ?? 0,
+      maxDiscountInr: coupon.maxDiscountInr ?? 0,
+      products: (coupon.products ?? []).map((id) => String(id)),
+    }))
+    .sort((a, b) => {
+      const aDiscount = a.type === 'PERCENT' ? Math.min(a.valueInr, 100) : a.valueInr;
+      const bDiscount = b.type === 'PERCENT' ? Math.min(b.valueInr, 100) : b.valueInr;
+      return bDiscount - aDiscount;
+    });
+
+  res.json({ items: valid });
+});
 
 router.get('/products', readLimiter, validate({ query: listQuerySchema }), async (req: Request, res: Response) => {
   const query = (req as Request & { validated: { query: ListQuery } }).validated.query;

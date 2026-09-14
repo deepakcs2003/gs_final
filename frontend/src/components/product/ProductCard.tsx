@@ -8,7 +8,9 @@ import { VariantPicker } from './VariantPicker';
 import { FabricSheet } from '../customize/FabricSheet';
 import { useCart } from '../../store/cart';
 import { useUi, useWishlist } from '../../store/ui';
+import { useProductCouponOffers } from '../../hooks/queries';
 import { track } from '../../lib/analytics';
+import { getBestCouponForProduct } from '../../lib/coupons';
 import { ProductCard as ProductCardType } from '../../lib/types';
 import type { Currency } from '../../lib/format';
 
@@ -37,9 +39,11 @@ function ProductCardViewInner({ product, currency, eager }: ProductCardProps) {
 
   const [picker, setPicker] = useState<null | 'cart' | 'buy'>(null);
   const [fabricOpen, setFabricOpen] = useState(false);
+  const { data: couponData } = useProductCouponOffers([product.id]);
 
   const href = `/blouse/${product.slug}`;
   const soldOut = (product.type === 'READY_MADE' || product.type === 'BOTH') && !product.inStock;
+  const couponOffer = couponData?.items ? getBestCouponForProduct(product.id, product.price.priceMinor, couponData.items) : null;
 
   return (
     <article className="group card flex flex-col overflow-hidden">
@@ -100,7 +104,13 @@ function ProductCardViewInner({ product, currency, eager }: ProductCardProps) {
         {product.type === 'SHOWCASE' ? (
           <p className="hint">{product.expectedAvailability || 'Jald aa raha hai'}</p>
         ) : (
-          <Price price={product.price} currency={currency} />
+          <div className="space-y-1">
+            <Price
+              price={product.price}
+              currency={currency}
+              couponOffer={couponOffer ? { code: couponOffer.code, description: couponOffer.description, finalPriceMinor: couponOffer.finalPriceMinor, discountMinor: couponOffer.discountMinor, savingsPercent: couponOffer.savingsPercent } : undefined}
+            />
+          </div>
         )}
 
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">

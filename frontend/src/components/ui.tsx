@@ -184,10 +184,12 @@ export function Price({
   price,
   currency,
   size = 'md',
+  couponOffer,
 }: {
   price: { priceMinor: number; mrpMinor: number; discountPercent: number };
   currency: Currency;
   size?: 'sm' | 'md' | 'lg';
+  couponOffer?: { code: string; description: string; finalPriceMinor: number; discountMinor: number; savingsPercent: number };
 }) {
   const sizes = {
     sm: { main: 'text-[15px]', rest: 'text-[11px]' },
@@ -195,26 +197,46 @@ export function Price({
     lg: { main: 'text-2xl', rest: 'text-sm' },
   }[size];
 
+  const effectivePrice = couponOffer
+    ? {
+        priceMinor: couponOffer.finalPriceMinor,
+        mrpMinor: price.mrpMinor,
+        discountPercent: Math.max(price.discountPercent, couponOffer.savingsPercent),
+      }
+    : price;
+
   // Zero-priced products read as FREE everywhere — never ₹0 (global rule).
-  const isFree = price.priceMinor === 0;
+  const isFree = effectivePrice.priceMinor === 0;
 
   return (
-    <span className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-      {isFree ? (
-        <span className={clsx('font-black uppercase tracking-wide text-leaf', sizes.main)}>FREE</span>
-      ) : (
-        <>
-          <span className={clsx('font-bold text-ink', sizes.main)}>{formatMoney(price.priceMinor, currency)}</span>
-          {price.discountPercent > 0 ? (
-            <>
-              <span className={clsx('text-ink-light line-through', sizes.rest)}>
-                {formatMoney(price.mrpMinor, currency)}
-              </span>
-              <span className={clsx('font-bold text-leaf', sizes.rest)}>{price.discountPercent}% OFF</span>
-            </>
-          ) : null}
-        </>
-      )}
+    <span className="flex flex-col items-start gap-1">
+      <span className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+        {isFree ? (
+          <span className={clsx('font-black uppercase tracking-wide text-leaf', sizes.main)}>FREE</span>
+        ) : (
+          <>
+            <span className={clsx('font-bold text-ink', sizes.main)}>{formatMoney(effectivePrice.priceMinor, currency)}</span>
+            {effectivePrice.discountPercent > 0 ? (
+              <>
+                <span className={clsx('text-ink-light line-through', sizes.rest)}>
+                  {formatMoney(effectivePrice.mrpMinor, currency)}
+                </span>
+                <span className={clsx('font-bold text-leaf', sizes.rest)}>{effectivePrice.discountPercent}% OFF</span>
+              </>
+            ) : null}
+          </>
+        )}
+      </span>
+
+      {couponOffer ? (
+        <span className={clsx('inline-flex flex-wrap items-center gap-1 text-[11px] font-semibold text-leaf', sizes.rest)}>
+          <span>Get at</span>
+          <span className="font-bold text-leaf">{formatMoney(couponOffer.finalPriceMinor, currency)}</span>
+          <span>with</span>
+          <span className="rounded-full bg-leaf/10 px-1.5 py-0.5 font-bold text-leaf">{couponOffer.code}</span>
+          {couponOffer.description ? <span className="text-ink-muted">• {couponOffer.description}</span> : null}
+        </span>
+      ) : null}
     </span>
   );
 }

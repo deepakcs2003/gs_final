@@ -8,12 +8,13 @@ import { ProductCardView } from '../components/product/ProductCard';
 import { FabricSheet } from '../components/customize/FabricSheet';
 import { Badge, EmptyState, Price, Stars } from '../components/ui';
 import { FloatingActions } from '../components/layout/FloatingActions';
-import { useConfig, useProduct, useReviews, useSimilarProducts } from '../hooks/queries';
+import { useConfig, useProduct, useProductCouponOffers, useReviews, useSimilarProducts } from '../hooks/queries';
 import { useCart } from '../store/cart';
 import { useRecentlyViewed, useUi, useWishlist } from '../store/ui';
 import { track, trackProductView } from '../lib/analytics';
 import { api } from '../lib/api';
-import { formatDate, whatsappEnquiryUrl } from '../lib/format';
+import { getBestCouponForProduct } from '../lib/coupons';
+import { formatDate, formatMoney, whatsappEnquiryUrl } from '../lib/format';
 
 const IMAGE_KIND_LABEL: Record<string, string> = {
   front: 'Front',
@@ -33,6 +34,7 @@ export function ProductDetailPage() {
   const { data: product, isLoading, isError } = useProduct(slug);
   const { data: similar } = useSimilarProducts(slug);
   const { data: reviews } = useReviews(product?.id);
+  const { data: couponData } = useProductCouponOffers(product ? [product.id] : []);
 
   const addToCart = useCart((state) => state.add);
   const startBuy = useCart((state) => state.startBuy);
@@ -104,6 +106,7 @@ export function ProductDetailPage() {
   const selectedStatus = size !== null ? sizeStatus.get(size) : undefined;
   const readyToOrder =
     (product.type === 'READY_MADE' || product.type === 'BOTH') && Boolean(activeColor) && size !== null && selectedStatus?.available;
+  const couponOffer = couponData?.items ? getBestCouponForProduct(product.id, product.price.priceMinor, couponData.items) : null;
   const productUrl = `${window.location.origin}/blouse/${product.slug}`;
 
   const onShare = async () => {
@@ -276,7 +279,21 @@ export function ProductDetailPage() {
 
           {product.type !== 'SHOWCASE' ? (
             <div className="mt-3">
-              <Price price={product.price} currency={currency} size="lg" />
+              <Price
+                price={product.price}
+                currency={currency}
+                size="lg"
+                couponOffer={couponOffer ? { code: couponOffer.code, description: couponOffer.description, finalPriceMinor: couponOffer.finalPriceMinor, discountMinor: couponOffer.discountMinor, savingsPercent: couponOffer.savingsPercent } : undefined}
+              />
+              {couponOffer ? (
+                <div className="mt-2 rounded-lg border border-leaf/20 bg-leaf/5 px-2.5 py-1.5 text-[12px] text-leaf">
+                  <span className="font-bold">Get at</span>{' '}
+                  {formatMoney(couponOffer.finalPriceMinor, currency)}{' '}
+                  <span className="font-bold">with</span>{' '}
+                  {couponOffer.code}
+                  {couponOffer.description ? ` • ${couponOffer.description}` : ''}
+                </div>
+              ) : null}
               <p className="hint mt-1">
                 {currency === 'INR' ? 'Sab taxes included' : 'Delivery charge payment ke time add hoga'}
               </p>
