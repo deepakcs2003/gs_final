@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Heart, Share2, MessageCircle, ShoppingCart, Scissors, ChevronDown, Truck, Ruler } from 'lucide-react';
+import { Heart, Share2, MessageCircle, Scissors, ChevronDown, Truck, Ruler } from 'lucide-react';
 import clsx from 'clsx';
 import { ZoomableImage } from '../components/product/ZoomableImage';
 import { SmartImage } from '../components/SmartImage';
@@ -48,6 +48,8 @@ export function ProductDetailPage() {
   const [size, setSize] = useState<number | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [fabricOpen, setFabricOpen] = useState(false);
+  const [buyNowRequested, setBuyNowRequested] = useState(false);
+  const sizePickerRef = useRef<HTMLElement | null>(null);
   const touchStartX = useRef<number | null>(null);
 
   const currency = config?.currency ?? 'INR';
@@ -104,8 +106,6 @@ export function ProductDetailPage() {
   }
 
   const selectedStatus = size !== null ? sizeStatus.get(size) : undefined;
-  const readyToOrder =
-    (product.type === 'READY_MADE' || product.type === 'BOTH') && Boolean(activeColor) && size !== null && selectedStatus?.available;
   const couponOffer = couponData?.items ? getBestCouponForProduct(product.id, product.price.priceMinor, couponData.items) : null;
   const productUrl = `${window.location.origin}/blouse/${product.slug}`;
 
@@ -145,7 +145,11 @@ export function ProductDetailPage() {
   };
 
   const addReadyMade = (thenCheckout: boolean) => {
-    if (size === null) return;
+    if (size === null) {
+      setBuyNowRequested(true);
+      sizePickerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
     const key = addToCart({ product, colorSlug: activeColor, size, quantity });
     if (thenCheckout) {
       track('BUY_NOW', { productId: product.id });
@@ -339,7 +343,10 @@ export function ProductDetailPage() {
                 </div>
               </section>
 
-              <section>
+              <section
+                ref={sizePickerRef}
+                className={clsx('rounded-xl p-1 transition', buyNowRequested && size === null && 'bg-maroon-50 ring-2 ring-maroon-200')}
+              >
                 <h2 className="label">Size</h2>
                 <div className="flex flex-wrap gap-2.5">
                   {product.sizes.map((value) => {
@@ -351,7 +358,10 @@ export function ProductDetailPage() {
                         type="button"
                         disabled={unavailable}
                         aria-pressed={size === value}
-                        onClick={() => setSize(value)}
+                        onClick={() => {
+                          setSize(value);
+                          setBuyNowRequested(false);
+                        }}
                         className={clsx(
                           'relative h-12 min-w-[56px] rounded-xl border-2 text-base font-bold transition',
                           unavailable && 'cursor-not-allowed border-ink-light/20 bg-maroon-50/40 text-ink-light',
@@ -437,8 +447,6 @@ export function ProductDetailPage() {
           <div className="mt-6 hidden gap-3 lg:flex">
             <ProductActions
               product={product}
-              readyToOrder={Boolean(readyToOrder)}
-              onAddToCart={() => addReadyMade(false)}
               onBuyNow={() => addReadyMade(true)}
               onCustomize={() => setFabricOpen(true)}
             />
@@ -550,8 +558,6 @@ export function ProductDetailPage() {
         <div className="flex gap-2.5">
           <ProductActions
             product={product}
-            readyToOrder={Boolean(readyToOrder)}
-            onAddToCart={() => addReadyMade(false)}
             onBuyNow={() => addReadyMade(true)}
             onCustomize={() => setFabricOpen(true)}
           />
@@ -596,14 +602,10 @@ export function ProductDetailPage() {
 
 function ProductActions({
   product,
-  readyToOrder,
-  onAddToCart,
   onBuyNow,
   onCustomize,
 }: {
   product: { type: string };
-  readyToOrder: boolean;
-  onAddToCart: () => void;
   onBuyNow: () => void;
   onCustomize: () => void;
 }) {
@@ -618,11 +620,7 @@ function ProductActions({
   if (product.type === 'CUSTOMIZE') {
     return (
       <div className="flex w-full gap-2.5">
-        <button type="button" onClick={onCustomize} className="btn-outline btn-lg flex-1">
-          <ShoppingCart size={18} />
-          Cart
-        </button>
-        <button type="button" onClick={onCustomize} className="btn-primary btn-lg flex-[1.35]">
+        <button type="button" onClick={onCustomize} className="btn-primary btn-lg w-full">
           <Scissors size={18} />
           Buy Now
         </button>
@@ -633,15 +631,9 @@ function ProductActions({
   if (product.type === 'BOTH') {
     return (
       <div className="flex w-full flex-col gap-2.5">
-        <div className="flex gap-2.5">
-          <button type="button" onClick={onAddToCart} disabled={!readyToOrder} className="btn-outline btn-lg flex-1">
-            <ShoppingCart size={18} />
-            Cart
-          </button>
-          <button type="button" onClick={onBuyNow} disabled={!readyToOrder} className="btn-primary btn-lg flex-[1.4]">
-            {readyToOrder ? 'Buy Now' : 'Size choose karein'}
-          </button>
-        </div>
+        <button type="button" onClick={onBuyNow} className="btn-primary btn-lg w-full">
+          Buy Now
+        </button>
         <button type="button" onClick={onCustomize} className="btn-accent btn-lg w-full">
           <Scissors size={18} />
           Custom banwayein
@@ -651,15 +643,9 @@ function ProductActions({
   }
 
   return (
-    <>
-      <button type="button" onClick={onAddToCart} disabled={!readyToOrder} className="btn-outline btn-lg flex-1">
-        <ShoppingCart size={18} />
-        Cart
-      </button>
-      <button type="button" onClick={onBuyNow} disabled={!readyToOrder} className="btn-primary btn-lg flex-[1.4]">
-        {readyToOrder ? 'Buy Now' : 'Size choose karein'}
-      </button>
-    </>
+    <button type="button" onClick={onBuyNow} className="btn-primary btn-lg w-full">
+      Buy Now
+    </button>
   );
 }
 
