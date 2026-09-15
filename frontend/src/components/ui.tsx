@@ -198,16 +198,8 @@ export function Price({
   }[size];
 
   const hasRealDiscount = couponOffer ? couponOffer.finalPriceMinor < price.priceMinor : false;
-  const effectivePrice = couponOffer && hasRealDiscount
-    ? {
-        priceMinor: couponOffer.finalPriceMinor,
-        mrpMinor: price.mrpMinor,
-        discountPercent: Math.max(price.discountPercent, couponOffer.savingsPercent),
-      }
-    : price;
-
   // Zero-priced products read as FREE everywhere — never ₹0 (global rule).
-  const isFree = effectivePrice.priceMinor === 0;
+  const isFree = price.priceMinor === 0;
 
   return (
     <span className="flex flex-col items-start gap-1">
@@ -216,13 +208,13 @@ export function Price({
           <span className={clsx('font-black uppercase tracking-wide text-leaf', sizes.main)}>FREE</span>
         ) : (
           <>
-            <span className={clsx('font-bold text-ink', sizes.main)}>{formatMoney(effectivePrice.priceMinor, currency)}</span>
-            {effectivePrice.discountPercent > 0 ? (
+            <span className={clsx('font-bold text-ink', sizes.main)}>{formatMoney(price.priceMinor, currency)}</span>
+            {price.discountPercent > 0 ? (
               <>
                 <span className={clsx('ml-1.5 text-ink-light line-through', sizes.rest)}>
-                  {formatMoney(effectivePrice.mrpMinor, currency)}
+                  {formatMoney(price.mrpMinor, currency)}
                 </span>
-                <span className={clsx('ml-1.5 font-bold text-leaf', sizes.rest)}>{effectivePrice.discountPercent}% OFF</span>
+                <span className={clsx('ml-1.5 font-bold text-leaf', sizes.rest)}>{price.discountPercent}% OFF</span>
               </>
             ) : null}
           </>
