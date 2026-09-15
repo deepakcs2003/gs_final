@@ -16,9 +16,9 @@ const roleHints: Record<Role, string> = {
 
 interface StaffUser { _id: string; name: string; mobile: string; email: string; adminRoles: Role[]; isBlocked: boolean; lastLoginAt: string | null; createdAt: string }
 
-interface StaffForm { _id: string; name: string; mobile: string; roles: Role[] }
+interface StaffForm { _id: string; name: string; mobile: string; email: string; roles: Role[] }
 
-const emptyForm = (): StaffForm => ({ _id: '', name: '', mobile: '', roles: ['ORDER_MANAGER'] });
+const emptyForm = (): StaffForm => ({ _id: '', name: '', mobile: '', email: '', roles: ['ORDER_MANAGER'] });
 
 export function AdminUsersModule() {
   const [items, setItems] = useState<StaffUser[]>([]);
@@ -36,9 +36,18 @@ export function AdminUsersModule() {
 
   const save = () => {
     if (!form || form.roles.length === 0) { setError('Kam se kam ek role to chahiye.'); return; }
+    if (!form._id && !form.mobile.trim() && !form.email.trim()) {
+      setError('Mobile number ya email — kam se kam ek zaroori hai.');
+      return;
+    }
+    setError('');
     void setBusy(form._id || 'new');
-    const { _id, ...values } = form;
-    void api(`/admin/admin-users${_id ? `/${_id}` : ''}`, { method: _id ? 'PATCH' : 'POST', body: values })
+    // Edit only touches name + roles. Mobile and email decide who can log in as
+    // this staff member, so they are set once at creation and never patched.
+    const body = form._id
+      ? { name: form.name, roles: form.roles }
+      : { name: form.name, mobile: form.mobile.trim(), email: form.email.trim(), roles: form.roles };
+    void api(`/admin/admin-users${form._id ? `/${form._id}` : ''}`, { method: form._id ? 'PATCH' : 'POST', body })
       .then(() => { setForm(null); load(); })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Save nahi hua.'))
       .finally(() => setBusy(''));
@@ -83,7 +92,7 @@ export function AdminUsersModule() {
               <div className="mt-3 flex flex-wrap gap-1">{staff.adminRoles.map((role) => <Badge key={role} label={role} />)}</div>
               <p className="mt-3 border-t border-maroon-50 pt-3 text-xs text-ink-muted">Last login: {staff.lastLoginAt ? new Date(staff.lastLoginAt).toLocaleString('en-IN') : 'Never'}</p>
               <div className="mt-2 flex justify-end gap-1.5">
-                <BtnGhost className="min-h-9 px-2.5" onClick={() => setForm({ _id: staff._id, name: staff.name ?? '', mobile: staff.mobile, roles: staff.adminRoles })}><Pencil size={14} /></BtnGhost>
+                <BtnGhost className="min-h-9 px-2.5" onClick={() => setForm({ _id: staff._id, name: staff.name ?? '', mobile: staff.mobile ?? '', email: staff.email ?? '', roles: staff.adminRoles })}><Pencil size={14} /></BtnGhost>
                 <BtnGhost className="min-h-9 px-2.5" disabled={busy === staff._id} onClick={() => toggleBlock(staff)}>{staff.isBlocked ? 'Unblock' : 'Block'}</BtnGhost>
                 <BtnGhost className="min-h-9 px-2.5 text-alert" disabled={busy === staff._id} onClick={() => remove(staff)}><Trash2 size={14} /></BtnGhost>
               </div>
@@ -96,9 +105,15 @@ export function AdminUsersModule() {
           footer={<div className="flex justify-end"><BtnPrimary onClick={save} disabled={busy === (form._id || 'new')}>{busy === (form._id || 'new') ? 'Saving...' : <><Check size={15} />Save</>}</BtnPrimary></div>}>
           <form onSubmit={(e) => { e.preventDefault(); save(); }} className="grid gap-4">
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Mobile number" hint="Is number se staff login karega"><TextInput required value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} /></Field>
-              <Field label="Name" hint="Optional"><TextInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+              <Field label="Mobile number" hint={form._id ? 'Add ke baad change nahi hota' : 'Is number par OTP se login karega'}>
+                <TextInput type="tel" inputMode="tel" autoComplete="off" disabled={Boolean(form._id)} value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} />
+              </Field>
+              <Field label="Email id" hint={form._id ? 'Add ke baad change nahi hota' : 'Is email se Google login karega'}>
+                <TextInput type="email" autoComplete="off" disabled={Boolean(form._id)} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+              </Field>
             </div>
+            {form._id ? null : <p className="hint -mt-2">Mobile ya email — kam se kam ek bharein. Dono bhi de sakte hain.</p>}
+            <Field label="Name" hint="Optional"><TextInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
             <Field label="Roles" hint="Kam se kam ek role zaroori hai">
               <div className="mt-2 space-y-2 rounded-xl border border-maroon-100 p-4">
                 {ROLES.map((role) => (

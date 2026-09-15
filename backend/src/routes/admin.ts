@@ -18,6 +18,7 @@ import { computeEstimate, detectComplexity, complexitySpecialization, dailyCapac
 import { createRefund, fetchRefund, refundLifecycle } from '../services/payment/razorpay.js';
 import { notifyOrderCancellation } from '../services/notifications.js';
 import { pushToShiprocket, releaseStockForOrder } from './orders.js';
+import { mobileSchema } from './auth.js';
 import { uploadImage, MAX_UPLOAD_BYTES } from '../services/media/cloudinary.js';
 import { generateLatkanSuggestion, generateFabricSuggestion, generateLaceSuggestion, generateProductSuggestions } from '../services/ai/qwen.js';
 import { env, integrations, shiprocketMock, whatsapp } from '../config/env.js';
@@ -265,11 +266,23 @@ const homepageSectionSchema = z.object({
   buttonLink: z.string().max(300).default('/'),
 }).strict();
 
+/**
+ * Staff are identified by mobile (OTP login) or email (Google login), so either
+ * one is enough — but at least one is required, otherwise the account would
+ * have no way to sign in and claim its roles. Blank strings from the form are
+ * treated as "not supplied" rather than as an invalid value.
+ */
+const blankToUndefined = (value: unknown) => (typeof value === 'string' && value.trim() === '' ? undefined : value);
+
 const userAdminSchema = z.object({
-  mobile: z.string().trim().min(10).max(20),
+  mobile: z.preprocess(blankToUndefined, mobileSchema.optional()),
+  email: z.preprocess(blankToUndefined, z.string().trim().toLowerCase().email().max(160).optional()),
   name: z.string().trim().max(80).default(''),
   roles: z.array(z.enum([...ADMIN_ROLES] as [AdminRole, ...AdminRole[]])).min(1),
-}).strict();
+}).strict().refine(
+  (body) => Boolean(body.mobile || body.email),
+  { message: 'Mobile number ya email — kam se kam ek zaroori hai.', path: ['mobile'] },
+);
 
 export const productSchemaBase = z.object({
   designId: z.string().trim().max(24).optional(),
@@ -2394,13 +2407,37 @@ router.post('/admin-users', adminWriteLimiter, validate({ body: userAdminSchema 
   const body = (req as ValidatedRequest<z.infer<typeof userAdminSchema>>).validated.body;
   const me = await User.findById(adminId(req)).lean();
   if (!me?.adminRoles?.includes('SUPER_ADMIN')) throw forbidden('Sirf Super Admin staff add kar sakta hai.');
-  let user = await User.findOne({ mobile: body.mobile });
-  if (!user) {
-    user = await User.create({ mobile: body.mobile, mobileVerified: true, name: body.name });
+
+  // Both identities are looked up together. Two hits means the mobile and the
+  // email belong to different people — promoting either would be a guess, so we
+  // stop instead of silently merging two accounts.
+  const identity = [
+    ...(body.mobile ? [{ mobile: body.mobile }] : []),
+    ...(body.email ? [{ email: body.email }] : []),
+  ];
+  const matches = await User.find({ $or: identity }).limit(2);
+  if (matches.length > 1) {
+    throw conflict('Yeh mobile aur email do alag accounts ke hain. Ek hi identity se add karein.');
+  }
+
+  let user = matches[0];
+  if (user) {
+    // An existing account keeps the identity it already logs in with; only a
+    // missing one is filled in. Overwriting would hand the account to someone else.
+    if (body.mobile && !user.mobile) { user.mobile = body.mobile; user.mobileVerified = true; }
+    if (body.email && !user.email) user.email = body.email;
+    if (body.name && !user.name) user.name = body.name;
+  } else {
+    // emailVerified stays false — only a real Google sign-in proves the address.
+    user = new User({
+      ...(body.mobile ? { mobile: body.mobile, mobileVerified: true } : {}),
+      ...(body.email ? { email: body.email } : {}),
+      name: body.name,
+    });
   }
   user.adminRoles = body.roles as AdminRole[];
   await user.save();
-  await logAction(req, 'ASSIGN_ROLES', 'ADMIN_USER', String(user._id), `${body.mobile}: ${body.roles.join(', ')}`);
+  await logAction(req, 'ASSIGN_ROLES', 'ADMIN_USER', String(user._id), `${body.mobile ?? body.email}: ${body.roles.join(', ')}`);
   res.status(201).json({ user });
 });
 
