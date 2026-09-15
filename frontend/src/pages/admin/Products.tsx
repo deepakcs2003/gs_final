@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from '../../lib/api';
 import { Badge, BtnGhost, BtnOutline, BtnPrimary, Checkbox, ColorPaletteSelect, Field, ImagePicker, Modal, PaletteColor, Select, StringListEditor, TextArea, TextInput, Toolbar, Toggle, inr, slugify } from './shared';
-import { Archive, Copy, Plus, Pencil, X, Check, Sparkles } from 'lucide-react';
+import { Archive, BarChart3, Copy, Eye, Heart, MessageCircle, MousePointerClick, Pencil, Plus, ShoppingCart, X, Check, Sparkles } from 'lucide-react';
 import { cloudinarySrc } from '../../lib/image';
 
 export interface AdminCategory { _id: string; name: string; slug: string }
@@ -60,6 +60,7 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
   const [typeFilter, setTypeFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [form, setForm] = useState<AdminProduct | null>(null);
+  const [statsProduct, setStatsProduct] = useState<AdminProduct | null>(null);
   const [newEditor, setNewEditor] = useState(false);
   const [busy, setBusy] = useState('');
   const [duplicateLocks, setDuplicateLocks] = useState<Record<string, boolean>>({});
@@ -449,16 +450,17 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
       {error ? <div className="m-4 rounded-xl border border-alert/30 bg-alert/10 p-4 text-sm font-semibold text-alert">{error}</div> : null}
       <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
         {filtered.map((product) => (
-          <article key={product._id} className={`rounded-xl border p-4 ${product.isActive ? 'border-maroon-100 bg-white' : 'border-dashed border-ink-light/40 bg-ink-light/5 opacity-60'}`}>
-            <div className="admin-row-stack items-start gap-3">
+          <article key={product._id} className={`rounded-xl border p-4 shadow-card transition hover:border-maroon-200 ${product.isActive ? 'border-maroon-100 bg-white' : 'border-dashed border-ink-light/40 bg-ink-light/5 opacity-60'}`}>
+            <div className="admin-row-stack items-start gap-3.5">
               {product.images?.[0]?.url ? (
-                <img src={cloudinarySrc(product.images[0].url, 160)} alt={product.name} loading="lazy" className="h-14 w-14 shrink-0 rounded-lg border border-maroon-100 object-cover" />
+                <img src={cloudinarySrc(product.images[0].url, 240)} alt={product.name} loading="lazy" className="h-20 w-20 shrink-0 rounded-xl border border-maroon-100 object-cover sm:h-24 sm:w-24" />
               ) : (
-                <div className="grid h-14 w-14 shrink-0 place-items-center rounded-lg border border-dashed border-ink-light/40 bg-maroon-50/40 text-[10px] font-semibold text-ink-light">No img</div>
+                <div className="grid h-20 w-20 shrink-0 place-items-center rounded-xl border border-dashed border-ink-light/40 bg-maroon-50/40 text-[10px] font-semibold text-ink-light sm:h-24 sm:w-24">No image</div>
               )}
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs font-bold tracking-wider text-maroon-600">{product.designId}</p>
-                <h4 className="admin-text-wrap mt-0.5 font-semibold">{product.name}</h4>
+                <h4 className="admin-text-wrap mt-1 font-display text-lg font-bold leading-tight">{product.name}</h4>
+                <p className="mt-1 truncate text-xs text-ink-muted">/{product.slug}</p>
               </div>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -480,11 +482,17 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
             {product.type === 'SHOWCASE' && product.sellingPriceInr <= 0
               ? <p className="mt-3 text-lg font-bold">Price on request</p>
               : <p className="mt-3 text-lg font-bold">{inr(product.sellingPriceInr * 100)} <span className="text-sm font-normal text-ink-light line-through">{inr(product.mrpInr * 100)}</span></p>}
+            <div className="mt-3 grid grid-cols-3 gap-2 rounded-xl bg-maroon-50/45 p-2.5 text-center">
+              <StatMini icon={<Eye size={14} />} label="Views" value={product.stats?.views ?? 0} />
+              <StatMini icon={<ShoppingCart size={14} />} label="Cart" value={product.stats?.cartAdds ?? 0} />
+              <StatMini icon={<Heart size={14} />} label="Wishlist" value={product.stats?.wishlists ?? 0} />
+            </div>
             {(product.colors?.length ?? 0) > 0 ? (
               <div className="mt-2 flex flex-wrap gap-1.5">{product.colors.map((c) => <span key={c.slug} title={c.name} className="h-4 w-4 rounded-full border border-ink-light/40" style={{ backgroundColor: c.hex }} />)}</div>
             ) : null}
             <div className="mt-3 flex flex-wrap gap-2">
               <BtnOutline className="min-w-0 flex-1 px-3" onClick={() => openEdit(product)}><Pencil size={15} />Edit</BtnOutline>
+              <BtnGhost className="px-3" onClick={() => setStatsProduct(product)} title="View product stats"><BarChart3 size={15} /><span className="hidden sm:inline">Stats</span></BtnGhost>
               <BtnGhost className="px-3" onClick={() => void duplicate(product)} disabled={busy === `dup-${product._id}` || duplicateLocks[product._id]}><Copy size={15} /></BtnGhost>
               {product.isActive
                 ? <BtnGhost className="px-3" onClick={() => void archive(product)} disabled={busy === `arc-${product._id}`} title="Archive"><Archive size={15} /></BtnGhost>
@@ -684,6 +692,39 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
           </form>
         </Modal>
       ) : null}
+
+      {statsProduct ? <ProductStatsModal product={statsProduct} onClose={() => setStatsProduct(null)} /> : null}
     </section>
   );
+}
+
+function StatMini({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
+  return <div className="min-w-0"><div className="flex items-center justify-center gap-1 text-maroon-600">{icon}<span className="text-sm font-bold text-ink">{value.toLocaleString('en-IN')}</span></div><p className="mt-0.5 truncate text-[10px] font-semibold uppercase tracking-wide text-ink-muted">{label}</p></div>;
+}
+
+function ProductStatsModal({ product, onClose }: { product: AdminProduct; onClose: () => void }) {
+  const stats = product.stats ?? {};
+  const averageViewSeconds = stats.viewSessions ? Math.round((stats.totalViewMs ?? 0) / stats.viewSessions / 1000) : 0;
+  const entries = [
+    ['Views', stats.views, Eye], ['Unique views', stats.uniqueViews, Eye], ['Clicks', stats.clicks, MousePointerClick],
+    ['Total view time', formatViewTime(stats.totalViewMs ?? 0), BarChart3], ['View sessions', stats.viewSessions, BarChart3], ['Average view time', `${averageViewSeconds}s`, BarChart3],
+    ['Zooms', stats.zooms, Eye], ['Wishlists', stats.wishlists, Heart], ['Cart adds', stats.cartAdds, ShoppingCart],
+    ['Buy nows', stats.buyNows, ShoppingCart], ['Orders', stats.orders, ShoppingCart], ['WhatsApp enquiries', stats.whatsappEnquiries, MessageCircle], ['Shares', stats.shares, MousePointerClick],
+  ] as const;
+
+  return <Modal open onClose={onClose} title="Product performance" subtitle={`${product.designId} · ${product.name}`} maxWidth="sm:max-w-2xl">
+    <div className="mb-4 flex items-center gap-3 rounded-xl bg-maroon-50/50 p-3">
+      {product.images?.[0]?.url ? <img src={cloudinarySrc(product.images[0].url, 120)} alt="" className="h-14 w-14 rounded-lg object-cover" /> : <div className="grid h-14 w-14 place-items-center rounded-lg bg-white text-xs text-ink-muted">No image</div>}
+      <div className="min-w-0"><p className="truncate font-bold text-ink">{product.name}</p><p className="text-xs text-ink-muted">All-time counters for this product</p></div>
+    </div>
+    <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+      {entries.map(([label, value, Icon]) => <div key={label} className="rounded-xl border border-maroon-100 bg-white p-3 shadow-sm"><Icon size={16} className="text-maroon-600" /><p className="mt-2 text-xl font-bold text-ink">{typeof value === 'number' ? value.toLocaleString('en-IN') : value}</p><p className="mt-0.5 text-xs font-semibold text-ink-muted">{label}</p></div>)}
+    </div>
+  </Modal>;
+}
+
+function formatViewTime(milliseconds: number) {
+  const seconds = Math.max(0, Math.round(milliseconds / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }

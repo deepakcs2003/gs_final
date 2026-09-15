@@ -322,16 +322,11 @@ function SectionProductTile({
         ) : (
           <div className="space-y-1">
             <Price
-              price={{ priceMinor: product.priceMinor, mrpMinor: product.mrpMinor, discountPercent }}
+              price={{ priceMinor: product.priceMinor, mrpMinor: product.mrpMinor, discountPercent: product.discountPercent }}
               currency={currency}
               size="sm"
-              couponOffer={couponOffer ? { code: couponOffer.code, description: couponOffer.description, finalPriceMinor: couponOffer.finalPriceMinor, discountMinor: couponOffer.discountMinor, savingsPercent: couponOffer.savingsPercent } : undefined}
+              couponOffer={couponOffer ? { code: couponOffer.code, description: couponOffer.description, finalPriceMinor: couponOffer.finalPriceMinor, discountMinor: couponOffer.discountMinor, savingsPercent: couponOffer.savingsPercent, savingsPercent: couponOffer.savingsPercent } : undefined}
             />
-            {couponOffer ? (
-              <p className="text-[10px] font-medium text-leaf">
-                Get at {formatMoney(couponOffer.finalPriceMinor, currency)} with {couponOffer.code}
-              </p>
-            ) : null}
           </div>
         )}
       </div>

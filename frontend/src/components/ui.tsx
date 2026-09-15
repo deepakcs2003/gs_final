@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+﻿import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Star, Check, AlertCircle, Info } from 'lucide-react';
 import clsx from 'clsx';
@@ -6,7 +6,7 @@ import { useUi } from '../store/ui';
 import { formatMoney, type Currency } from '../lib/format';
 
 /* -------------------------------------------------------------------------- */
-/* Sheet — bottom sheet on phones, centred dialog on wide screens              */
+/* Sheet â€” bottom sheet on phones, centred dialog on wide screens              */
 /* -------------------------------------------------------------------------- */
 
 interface SheetProps {
@@ -28,7 +28,7 @@ export function Sheet({ open, onClose, title, subtitle, children, footer, maxWid
   useEffect(() => {
     if (!open) return undefined;
 
-    // Locking the body prevents the page behind scrolling under the sheet —
+    // Locking the body prevents the page behind scrolling under the sheet â€”
     // the single most common annoyance with mobile overlays.
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -70,7 +70,7 @@ export function Sheet({ open, onClose, title, subtitle, children, footer, maxWid
           maxWidth,
         )}
       >
-        {/* Drag affordance — signals "swipe/tap to dismiss" without words. */}
+        {/* Drag affordance â€” signals "swipe/tap to dismiss" without words. */}
         <div className="mx-auto mt-2.5 h-1.5 w-10 rounded-full bg-ink-light/30 sm:hidden" />
 
         <header className="flex items-start justify-between gap-3 px-5 pb-3 pt-4">
@@ -192,33 +192,37 @@ export function Price({
   couponOffer?: { code: string; description: string; finalPriceMinor: number; discountMinor: number; savingsPercent: number };
 }) {
   const sizes = {
-    sm: { main: 'text-[15px]', rest: 'text-[11px]' },
-    md: { main: 'text-[17px]', rest: 'text-xs' },
-    lg: { main: 'text-2xl', rest: 'text-sm' },
+    sm: { main: 'text-[clamp(12px,3.4vw,15px)]', rest: 'text-[clamp(8px,2.2vw,11px)]' },
+    md: { main: 'text-[clamp(13px,3.8vw,17px)]', rest: 'text-[clamp(8.5px,2.4vw,12px)]' },
+    lg: { main: 'text-[clamp(18px,5vw,24px)]', rest: 'text-[clamp(10px,2.8vw,14px)]' },
   }[size];
 
   const hasRealDiscount = couponOffer ? couponOffer.finalPriceMinor < price.priceMinor : false;
+  const effectivePrice = couponOffer && hasRealDiscount
+    ? {
+        priceMinor: couponOffer.finalPriceMinor,
+        mrpMinor: price.mrpMinor,
+        discountPercent: Math.max(price.discountPercent, couponOffer.savingsPercent),
+      }
+    : price;
 
-  // Main row always shows the product's REAL selling price + MRP + % OFF.
-  // The coupon (e.g. "Get at ₹749 with INSTA25") is its own separate line below
-  // and must NEVER overwrite the selling price.
   // Zero-priced products read as FREE everywhere — never ₹0 (global rule).
-  const isFree = price.priceMinor === 0;
+  const isFree = effectivePrice.priceMinor === 0;
 
   return (
-    <span className="flex w-full min-w-0 flex-col items-start gap-1">
-      <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+    <span className="flex flex-col items-start gap-1">
+      <span className="flex items-baseline whitespace-nowrap">
         {isFree ? (
           <span className={clsx('font-black uppercase tracking-wide text-leaf', sizes.main)}>FREE</span>
         ) : (
           <>
-            <span className={clsx('font-bold text-ink', sizes.main)}>{formatMoney(price.priceMinor, currency)}</span>
-            {price.discountPercent > 0 ? (
+            <span className={clsx('font-bold text-ink', sizes.main)}>{formatMoney(effectivePrice.priceMinor, currency)}</span>
+            {effectivePrice.discountPercent > 0 ? (
               <>
-                <span className={clsx('text-ink-light line-through', sizes.rest)}>
-                  {formatMoney(price.mrpMinor, currency)}
+                <span className={clsx('ml-1.5 text-ink-light line-through', sizes.rest)}>
+                  {formatMoney(effectivePrice.mrpMinor, currency)}
                 </span>
-                <span className={clsx('font-bold text-leaf', sizes.rest)}>{price.discountPercent}% OFF</span>
+                <span className={clsx('ml-1.5 font-bold text-leaf', sizes.rest)}>{effectivePrice.discountPercent}% OFF</span>
               </>
             ) : null}
           </>
@@ -226,11 +230,11 @@ export function Price({
       </span>
 
       {couponOffer && hasRealDiscount ? (
-        <span className={clsx('inline-flex min-w-0 max-w-full flex-wrap items-center gap-1 text-[11px] font-semibold text-leaf', sizes.rest)}>
+        <span className={clsx('inline-flex items-center whitespace-nowrap text-[clamp(9px,2.3vw,11px)] font-semibold text-leaf', sizes.rest)}>
           <span>Get at</span>
-          <span className="font-bold text-leaf">{formatMoney(couponOffer.finalPriceMinor, currency)}</span>
-          <span>with</span>
-          <span className="rounded-full bg-leaf/10 px-1.5 py-0.5 font-bold text-leaf">{couponOffer.code}</span>
+          <span className="ml-1 font-bold text-leaf">{formatMoney(couponOffer.finalPriceMinor, currency)}</span>
+          <span className="ml-1">with</span>
+          <span className="ml-1 rounded-full bg-leaf/10 px-1.5 py-0.5 font-bold text-leaf">{couponOffer.code}</span>
         </span>
       ) : null}
     </span>
