@@ -30,8 +30,12 @@ const BCRYPT_COST = 12;
  * Mobile numbers are normalised to digits with a country code so the same
  * person always maps to the same account. Bare 10-digit input is assumed to be
  * Indian, which is the overwhelming majority of this shop's customers.
+ *
+ * Exported because the admin "add staff" form must store the number in exactly
+ * the shape login looks it up by — otherwise a staff member could be created
+ * that no OTP would ever match.
  */
-const mobileSchema = z
+export const mobileSchema = z
   .string()
   .trim()
   .max(20)
