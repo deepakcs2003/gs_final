@@ -448,9 +448,9 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
         ))}
       </div>
       {error ? <div className="m-4 rounded-xl border border-alert/30 bg-alert/10 p-4 text-sm font-semibold text-alert">{error}</div> : null}
-      <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid min-w-0 gap-3 overflow-hidden p-4 sm:grid-cols-2 xl:grid-cols-3">
         {filtered.map((product) => (
-          <article key={product._id} className={`rounded-xl border p-4 shadow-card transition hover:border-maroon-200 ${product.isActive ? 'border-maroon-100 bg-white' : 'border-dashed border-ink-light/40 bg-ink-light/5 opacity-60'}`}>
+          <article key={product._id} className={`min-w-0 overflow-hidden rounded-xl border p-4 shadow-card transition hover:border-maroon-200 ${product.isActive ? 'border-maroon-100 bg-white' : 'border-dashed border-ink-light/40 bg-ink-light/5 opacity-60'}`}>
             <div className="admin-row-stack items-start gap-3.5">
               {product.images?.[0]?.url ? (
                 <img src={cloudinarySrc(product.images[0].url, 240)} alt={product.name} loading="lazy" className="h-20 w-20 shrink-0 rounded-xl border border-maroon-100 object-cover sm:h-24 sm:w-24" />
@@ -459,8 +459,8 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
               )}
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs font-bold tracking-wider text-maroon-600">{product.designId}</p>
-                <h4 className="admin-text-wrap mt-1 font-display text-lg font-bold leading-tight">{product.name}</h4>
-                <p className="mt-1 truncate text-xs text-ink-muted">/{product.slug}</p>
+                <h4 className="admin-text-wrap mt-1 line-clamp-2 font-display text-lg font-bold leading-tight">{product.name}</h4>
+                <p className="mt-1 max-w-full truncate text-xs text-ink-muted">/{product.slug}</p>
               </div>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -490,13 +490,13 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
             {(product.colors?.length ?? 0) > 0 ? (
               <div className="mt-2 flex flex-wrap gap-1.5">{product.colors.map((c) => <span key={c.slug} title={c.name} className="h-4 w-4 rounded-full border border-ink-light/40" style={{ backgroundColor: c.hex }} />)}</div>
             ) : null}
-            <div className="mt-3 flex flex-wrap gap-2">
-              <BtnOutline className="min-w-0 flex-1 px-3" onClick={() => openEdit(product)}><Pencil size={15} />Edit</BtnOutline>
-              <BtnGhost className="px-3" onClick={() => setStatsProduct(product)} title="View product stats"><BarChart3 size={15} /><span className="hidden sm:inline">Stats</span></BtnGhost>
-              <BtnGhost className="px-3" onClick={() => void duplicate(product)} disabled={busy === `dup-${product._id}` || duplicateLocks[product._id]}><Copy size={15} /></BtnGhost>
+            <div className="mt-3 grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-2">
+              <BtnOutline className="min-w-0 px-2 sm:px-3" onClick={() => openEdit(product)}><Pencil size={15} /><span className="truncate">Edit</span></BtnOutline>
+              <BtnGhost className="min-w-0 px-2 sm:px-3" onClick={() => setStatsProduct(product)} title="View product stats"><BarChart3 size={15} /><span className="hidden sm:inline">Stats</span></BtnGhost>
+              <BtnGhost className="min-w-0 px-2 sm:px-3" onClick={() => void duplicate(product)} disabled={busy === `dup-${product._id}` || duplicateLocks[product._id]} title="Duplicate"><Copy size={15} /></BtnGhost>
               {product.isActive
-                ? <BtnGhost className="px-3" onClick={() => void archive(product)} disabled={busy === `arc-${product._id}`} title="Archive"><Archive size={15} /></BtnGhost>
-                : <BtnGhost className="px-3" onClick={() => void toggleActive(product)} disabled={busy === `tog-${product._id}`}><Check size={15} /></BtnGhost>}
+                ? <BtnGhost className="min-w-0 px-2 sm:px-3" onClick={() => void archive(product)} disabled={busy === `arc-${product._id}`} title="Archive"><Archive size={15} /></BtnGhost>
+                : <BtnGhost className="min-w-0 px-2 sm:px-3" onClick={() => void toggleActive(product)} disabled={busy === `tog-${product._id}`} title="Activate"><Check size={15} /></BtnGhost>}
             </div>
           </article>
         ))}
