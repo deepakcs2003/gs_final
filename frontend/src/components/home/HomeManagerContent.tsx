@@ -6,7 +6,7 @@ import { Badge, Price } from '../ui';
 import { SmartImage } from '../SmartImage';
 import { useBanners, useConfig, useHomeSections, useProductCouponOffers } from '../../hooks/queries';
 import { getBestCouponForProduct } from '../../lib/coupons';
-import { formatMoney, type Currency } from '../../lib/format';
+import { type Currency } from '../../lib/format';
 import type { HomeBanner, BannerPosition, HomeSectionProduct, HomepageSection } from '../../lib/types';
 
 /**
@@ -322,10 +322,10 @@ function SectionProductTile({
         ) : (
           <div className="space-y-1">
             <Price
-              price={{ priceMinor: product.priceMinor, mrpMinor: product.mrpMinor, discountPercent: product.discountPercent }}
+              price={{ priceMinor: product.priceMinor, mrpMinor: product.mrpMinor, discountPercent }}
               currency={currency}
               size="sm"
-              couponOffer={couponOffer ? { code: couponOffer.code, description: couponOffer.description, finalPriceMinor: couponOffer.finalPriceMinor, discountMinor: couponOffer.discountMinor, savingsPercent: couponOffer.savingsPercent, savingsPercent: couponOffer.savingsPercent } : undefined}
+              couponOffer={couponOffer ? { code: couponOffer.code, description: couponOffer.description, finalPriceMinor: couponOffer.finalPriceMinor, discountMinor: couponOffer.discountMinor, savingsPercent: couponOffer.savingsPercent } : undefined}
             />
           </div>
         )}
