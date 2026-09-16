@@ -56,7 +56,7 @@ export function OurWorkModule() {
     setBusy(true);
     setError('');
     try {
-      const { _id, ...payload } = form;
+      const { _id } = form;
       const images = form.images.map(({ url, publicId, width, height }, order) => ({
         url,
         publicId: publicId ?? '',
@@ -64,9 +64,25 @@ export function OurWorkModule() {
         height: height ?? 0,
         order,
       }));
+      const payload = {
+        title: form.title,
+        description: form.description,
+        customerName: form.customerName,
+        rating: form.rating,
+        feedback: form.feedback,
+        images,
+        enquiryEnabled: form.enquiryEnabled,
+        enquiryLabel: form.enquiryLabel,
+        status: form.status,
+        isPublished: form.isPublished,
+        isDemo: form.isDemo,
+        aiGenerated: form.aiGenerated,
+        source: form.source,
+        sortOrder: form.sortOrder,
+      };
       await api(_id ? `/admin/our-work/${_id}` : '/admin/our-work', {
         method: _id ? 'PATCH' : 'POST',
-        body: { ...payload, images },
+        body: payload,
       });
       setForm(null);
       load();
