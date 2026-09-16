@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, Image as ImageIcon, Pencil, Sparkles, Trash2, Upload, X } from 'lucide-react';
+import { Check, Image as ImageIcon, Pencil, RotateCcw, RotateCw, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import { api, ApiError, uploadImages, type UploadedFile } from '../../lib/api';
 import { Badge, BtnGhost, BtnPrimary, Field, Modal, TextArea, TextInput, Toolbar } from './shared';
 
@@ -28,6 +28,37 @@ type Suggestion = {
   customerNames?: string | null;
 };
 
+type CropJob = { file: File; previewUrl: string };
+
+function makeCroppedFile(job: CropJob, rotation: number, zoom: number): Promise<File> {
+  return new Promise((resolve, reject) => {
+    const image = new window.Image();
+    image.onload = () => {
+      const angle = ((rotation % 360) + 360) % 360;
+      const radians = angle * Math.PI / 180;
+      const rotatedWidth = angle === 90 || angle === 270 ? image.naturalHeight : image.naturalWidth;
+      const rotatedHeight = angle === 90 || angle === 270 ? image.naturalWidth : image.naturalHeight;
+      const cropWidth = Math.min(rotatedWidth, rotatedHeight * 0.8) / zoom;
+      const cropHeight = cropWidth * 1.25;
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(cropWidth);
+      canvas.height = Math.round(cropHeight);
+      const context = canvas.getContext('2d');
+      if (!context) { reject(new Error('Image editor unavailable.')); return; }
+      context.translate(canvas.width / 2, canvas.height / 2);
+      context.rotate(radians);
+      const scale = Math.max(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight) * zoom;
+      context.drawImage(image, -image.naturalWidth * scale / 2, -image.naturalHeight * scale / 2, image.naturalWidth * scale, image.naturalHeight * scale);
+      canvas.toBlob((blob) => {
+        if (!blob) { reject(new Error('Image crop nahi hua.')); return; }
+        resolve(new File([blob], job.file.name.replace(/\.[^.]+$/, '') + '-edited.jpg', { type: 'image/jpeg' }));
+      }, 'image/jpeg', 0.92);
+    };
+    image.onerror = () => reject(new Error('Image load nahi hui.'));
+    image.src = job.previewUrl;
+  });
+}
+
 const emptyWork = (): WorkItem => ({
   _id: '', title: '', description: '', customerName: '', rating: null, feedback: '', images: [],
   enquiryEnabled: true, enquiryLabel: 'Enquire Now', status: 'APPROVED', isPublished: false,
@@ -39,6 +70,10 @@ export function OurWorkModule() {
   const [form, setForm] = useState<WorkItem | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [cropQueue, setCropQueue] = useState<CropJob[]>([]);
+  const [cropJob, setCropJob] = useState<CropJob | null>(null);
+  const [cropRotation, setCropRotation] = useState(0);
+  const [cropZoom, setCropZoom] = useState(1);
 
   const load = () => {
     void api<{ items: WorkItem[] }>('/admin/our-work')
@@ -100,12 +135,37 @@ export function OurWorkModule() {
 
   const addImages = async (files: FileList | null) => {
     if (!files || !form) return;
+    const jobs = Array.from(files).map((file) => ({ file, previewUrl: URL.createObjectURL(file) }));
+    setCropQueue(jobs.slice(1));
+    setCropJob(jobs[0] ?? null);
+    setCropRotation(0);
+    setCropZoom(1);
+  };
+
+  const closeCropEditor = () => {
+    if (cropJob) URL.revokeObjectURL(cropJob.previewUrl);
+    cropQueue.forEach((job) => URL.revokeObjectURL(job.previewUrl));
+    setCropJob(null);
+    setCropQueue([]);
+  };
+
+  const useCroppedImage = async () => {
+    if (!cropJob || !form) return;
     setBusy(true);
+    setError('');
     try {
-      const uploaded = await uploadImages(Array.from(files));
+      const editedFile = await makeCroppedFile(cropJob, cropRotation, cropZoom);
+      const uploaded = await uploadImages([editedFile]);
       setForm({ ...form, images: [...form.images, ...uploaded] });
+      URL.revokeObjectURL(cropJob.previewUrl);
+      const [nextJob, ...remaining] = cropQueue;
+      setCropQueue(remaining);
+      setCropJob(nextJob ?? null);
+      setCropRotation(0);
+      setCropZoom(1);
+      if (!nextJob) setCropQueue([]);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Upload nahi hua.');
+      setError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : 'Image upload nahi hua.');
     } finally {
       setBusy(false);
     }
@@ -186,7 +246,7 @@ export function OurWorkModule() {
       </div>
 
       {form ? (
-        <Modal open onClose={() => setForm(null)} title={form._id ? 'Edit Our Work' : 'New Our Work'} subtitle="Customer name aur feedback mix-language (Hindi, English, Marathi/other Indian languages) mein ho sakte hain." maxWidth="sm:max-w-2xl" footer={<div className="flex justify-end gap-2"><BtnGhost onClick={() => setForm(null)}>Cancel</BtnGhost><BtnPrimary disabled={busy} onClick={() => void save()}><Check size={16} />{busy ? 'Saving...' : 'Save'}</BtnPrimary></div>}>
+        <Modal open onClose={() => { closeCropEditor(); setForm(null); }} title={form._id ? 'Edit Our Work' : 'New Our Work'} subtitle="Customer name aur feedback mix-language (Hindi, English, Marathi/other Indian languages) mein ho sakte hain." maxWidth="sm:max-w-2xl" footer={<div className="flex justify-end gap-2"><BtnGhost onClick={() => setForm(null)}>Cancel</BtnGhost><BtnPrimary disabled={busy} onClick={() => void save()}><Check size={16} />{busy ? 'Saving...' : 'Save'}</BtnPrimary></div>}>
           <div className="space-y-4 pb-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Title / design name"><TextInput value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
@@ -200,7 +260,7 @@ export function OurWorkModule() {
             <Field label="Feedback / WhatsApp messages"><TextArea value={form.feedback} placeholder="Example: Bahut sundar hai || Looks beautiful || Khup chan aahe || So pretty || Amazing work ||" onChange={(e) => setForm({ ...form, feedback: e.target.value })} /></Field>
 
             <div className="flex flex-wrap gap-2">
-              <label className="btn-outline cursor-pointer"><Upload size={16} />Upload images<input type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif" className="sr-only" onChange={(e) => void addImages(e.target.files)} /></label>
+              <label className="btn-outline cursor-pointer"><Upload size={16} />Upload & edit images<input type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif" className="sr-only" onChange={(e) => { void addImages(e.target.files); e.target.value = ''; }} /></label>
               <BtnPrimary onClick={() => void generate()} disabled={busy}><Sparkles size={16} />Fill from photos</BtnPrimary>
             </div>
 
@@ -229,6 +289,28 @@ export function OurWorkModule() {
             </div>
           </div>
         </Modal>
+      ) : null}
+
+      {cropJob ? (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-ink/70 p-3" role="dialog" aria-modal="true" aria-label="Edit image">
+          <div className="max-h-[94vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl sm:p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-maroon-600">Image editor</p><h2 className="mt-1 font-display text-2xl font-bold">Crop & rotate</h2><p className="mt-1 text-sm text-ink-muted">Frame ke andar ka area upload hoga.</p></div>
+              <button type="button" className="btn-ghost shrink-0" aria-label="Close image editor" onClick={closeCropEditor}><X size={20} /></button>
+            </div>
+            <div className="relative mx-auto mt-5 aspect-[4/5] max-h-[55vh] overflow-hidden rounded-xl bg-ink/10">
+              <img src={cropJob.previewUrl} alt="Crop preview" className="absolute inset-0 h-full w-full object-contain transition-transform" style={{ transform: `rotate(${cropRotation}deg) scale(${cropZoom})` }} />
+              <div className="pointer-events-none absolute inset-0 border-2 border-white/90 shadow-[0_0_0_9999px_rgba(20,12,15,0.38)]" />
+            </div>
+            <div className="mt-5 flex items-center justify-center gap-3">
+              <button type="button" className="btn-outline" onClick={() => setCropRotation((value) => value - 90)} title="Rotate left"><RotateCcw size={17} />Left</button>
+              <button type="button" className="btn-outline" onClick={() => setCropRotation((value) => value + 90)} title="Rotate right"><RotateCw size={17} />Right</button>
+            </div>
+            <label className="mt-5 block text-sm font-semibold text-ink">Zoom <span className="font-normal text-ink-muted">{cropZoom.toFixed(1)}x</span><input className="mt-2 w-full accent-maroon-700" type="range" min="1" max="3" step="0.1" value={cropZoom} onChange={(event) => setCropZoom(Number(event.target.value))} /></label>
+            {cropQueue.length ? <p className="mt-3 text-center text-xs font-semibold text-ink-muted">{cropQueue.length} aur image{cropQueue.length === 1 ? '' : 's'} baaki</p> : null}
+            <div className="mt-5 flex justify-end gap-2"><BtnGhost onClick={closeCropEditor}>Cancel</BtnGhost><BtnPrimary disabled={busy} onClick={() => void useCroppedImage()}>{busy ? 'Uploading...' : 'Use image'}</BtnPrimary></div>
+          </div>
+        </div>
       ) : null}
     </section>
   );
