@@ -102,12 +102,18 @@ export function OurWorkModule() {
         body: { imageUrls: form.images.map((image) => image.url) },
       });
       const suggestion = result.suggestion;
+      const customerNames = suggestion.customerNames
+        ?.split(',')
+        .map((name) => name.trim())
+        .filter(Boolean)
+        .join(', ');
+
       setForm({
         ...form,
         title: suggestion.title ?? form.title,
         description: suggestion.description ?? form.description,
         feedback: suggestion.feedback ?? form.feedback,
-        customerName: suggestion.customerNames ?? form.customerName,
+        customerName: customerNames || form.customerName,
         source: 'WHATSAPP_MESSAGE',
         isDemo: false,
         aiGenerated: false,
@@ -151,18 +157,18 @@ export function OurWorkModule() {
       </div>
 
       {form ? (
-        <Modal open onClose={() => setForm(null)} title={form._id ? 'Edit Our Work' : 'New Our Work'} subtitle="WhatsApp messages ko customer names ke saath comma se alag likhein." maxWidth="sm:max-w-2xl" footer={<div className="flex justify-end gap-2"><BtnGhost onClick={() => setForm(null)}>Cancel</BtnGhost><BtnPrimary disabled={busy} onClick={() => void save()}><Check size={16} />{busy ? 'Saving...' : 'Save'}</BtnPrimary></div>}>
+        <Modal open onClose={() => setForm(null)} title={form._id ? 'Edit Our Work' : 'New Our Work'} subtitle="Customer name aur feedback mix-language (Hindi, English, Marathi/other Indian languages) mein ho sakte hain." maxWidth="sm:max-w-2xl" footer={<div className="flex justify-end gap-2"><BtnGhost onClick={() => setForm(null)}>Cancel</BtnGhost><BtnPrimary disabled={busy} onClick={() => void save()}><Check size={16} />{busy ? 'Saving...' : 'Save'}</BtnPrimary></div>}>
           <div className="space-y-4 pb-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Title / design name"><TextInput value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
-              <Field label="Customer name"><TextInput value={form.customerName} onChange={(e) => setForm({ ...form, customerName: e.target.value })} /></Field>
+              <Field label="Customer name"><TextInput value={form.customerName} placeholder="Aarohi, Riya, Sneha, Anaya, Kunal, Shreya" onChange={(e) => setForm({ ...form, customerName: e.target.value })} /></Field>
             </div>
             <Field label="Description"><TextArea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Rating (1-10)"><TextInput type="number" min="1" max="10" value={form.rating ?? ''} onChange={(e) => setForm({ ...form, rating: e.target.value ? Number(e.target.value) : null })} /></Field>
               <Field label="Enquiry button text"><TextInput value={form.enquiryLabel} onChange={(e) => setForm({ ...form, enquiryLabel: e.target.value })} /></Field>
             </div>
-            <Field label="Feedback / WhatsApp messages"><TextArea value={form.feedback} placeholder="Har message alag line ya || se likhein" onChange={(e) => setForm({ ...form, feedback: e.target.value })} /></Field>
+            <Field label="Feedback / WhatsApp messages"><TextArea value={form.feedback} placeholder="Example: Bahut sundar hai || Looks beautiful || Khup chan aahe || So pretty || Amazing work ||" onChange={(e) => setForm({ ...form, feedback: e.target.value })} /></Field>
 
             <div className="flex flex-wrap gap-2">
               <label className="btn-outline cursor-pointer"><Upload size={16} />Upload images<input type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif" className="sr-only" onChange={(e) => void addImages(e.target.files)} /></label>
