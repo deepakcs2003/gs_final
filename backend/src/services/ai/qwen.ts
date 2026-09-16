@@ -118,11 +118,11 @@ export type QwenSuggestion = z.infer<typeof qwenSuggestionSchema>;
 
 export const ourWorkSuggestionSchema = z.object({
   title: z.string().trim().max(140).nullable().optional(),
-  description: z.string().trim().max(4000).nullable().optional(),
-  demoFeedback: z.string().trim().max(2000).nullable().optional(),
-  dummyName: z.string().trim().max(80).nullable().optional(),
+  description: z.string().trim().max(180).nullable().optional(),
+  feedback: z.string().trim().max(2000).nullable().optional(),
+  customerNames: z.string().trim().max(200).nullable().optional(),
 });
-const OUR_WORK_PROMPT = `You are assisting an Indian blouse gallery. Analyze the uploaded blouse/work photos and return ONLY JSON with title, description, demoFeedback, dummyName. All text must be clearly suitable as DEMO/AI-GENERATED placeholder content, never a claim about a real customer or real review. Do not invent a real person's identity, rating, order, or factual customer experience. Keep title short, description factual and visible, demoFeedback explicitly prefixed "Demo/AI generated: ", and dummyName explicitly prefixed "Demo customer: ". Use null when unsure.`;
+const OUR_WORK_PROMPT = `You are helping an Indian blouse gallery prepare a compact WhatsApp message display for an admin to review. Analyze the uploaded work photos and return ONLY JSON with title, description, feedback, customerNames. Keep the title short. Keep description factual, visible, and to 1-2 short lines. Create exactly three short customer names in one comma-separated string, and exactly three short WhatsApp-style feedback messages in the same order separated by " || ". Make the messages sound natural and varied: one Hindi/Hinglish, one English, and one Marathi or another Indian language. Each message must be one short line, maximum 90 characters. Do not include ratings, orders, promises, or invented specific facts. Do not add labels such as AI, demo, sample, or generated. Use null only when the photos do not support a field.`;
 
 const PROMPT = `You are a careful catalogue assistant for an Indian ethnic-wear store.
 

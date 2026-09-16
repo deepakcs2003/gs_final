@@ -23,7 +23,7 @@ const ourWorkSchema = new Schema(
     enquiryLabel: { type: String, default: 'Enquire Now', maxlength: 40 },
     status: { type: String, enum: ['PENDING', 'APPROVED', 'REJECTED'], default: 'PENDING', index: true },
     isPublished: { type: Boolean, default: false, index: true },
-    source: { type: String, enum: ['ADMIN', 'CUSTOMER'], default: 'ADMIN' },
+    source: { type: String, enum: ['ADMIN', 'CUSTOMER', 'WHATSAPP_MESSAGE'], default: 'ADMIN' },
     isDemo: { type: Boolean, default: false },
     aiGenerated: { type: Boolean, default: false },
     sortOrder: { type: Number, default: 0, min: 0, max: 10000 },

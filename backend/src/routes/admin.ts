@@ -70,7 +70,7 @@ const ourWorkSchema = z.object({
   feedback: z.string().max(2000).default(''), images: z.array(ourWorkImageSchema).min(1).max(10),
   enquiryEnabled: z.boolean().default(true), enquiryLabel: z.string().max(40).default('Enquire Now'),
   status: z.enum(['PENDING', 'APPROVED', 'REJECTED']).default('APPROVED'), isPublished: z.boolean().default(false),
-  source: z.enum(['ADMIN', 'CUSTOMER']).default('ADMIN'), isDemo: z.boolean().default(false), aiGenerated: z.boolean().default(false),
+  source: z.enum(['ADMIN', 'CUSTOMER', 'WHATSAPP_MESSAGE']).default('ADMIN'), isDemo: z.boolean().default(false), aiGenerated: z.boolean().default(false),
   sortOrder: z.number().int().min(0).max(10000).default(0),
 }).strict();
 const settingSchema = z.object({ value: z.unknown() }).strict();

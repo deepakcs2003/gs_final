@@ -17,17 +17,15 @@ interface WorkItem {
   isPublished: boolean;
   isDemo: boolean;
   aiGenerated: boolean;
-  source: 'ADMIN' | 'CUSTOMER';
+  source: 'ADMIN' | 'CUSTOMER' | 'WHATSAPP_MESSAGE';
   sortOrder: number;
 }
 
 type Suggestion = {
   title?: string | null;
   description?: string | null;
-  demoFeedback?: string | null;
-  dummyName?: string | null;
-  isDemo: boolean;
-  aiGenerated: boolean;
+  feedback?: string | null;
+  customerNames?: string | null;
 };
 
 const emptyWork = (): WorkItem => ({
@@ -94,7 +92,7 @@ export function OurWorkModule() {
 
   const generate = async () => {
     if (!form?.images.length) {
-      setError('AI ke liye pehle images upload karein.');
+      setError('Pehle images upload karein.');
       return;
     }
     setBusy(true);
@@ -108,13 +106,14 @@ export function OurWorkModule() {
         ...form,
         title: suggestion.title ?? form.title,
         description: suggestion.description ?? form.description,
-        feedback: suggestion.demoFeedback ?? form.feedback,
-        customerName: suggestion.dummyName ?? form.customerName,
-        isDemo: true,
-        aiGenerated: true,
+        feedback: suggestion.feedback ?? form.feedback,
+        customerName: suggestion.customerNames ?? form.customerName,
+        source: 'WHATSAPP_MESSAGE',
+        isDemo: false,
+        aiGenerated: false,
       });
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'AI suggestion nahi aayi.');
+      setError(e instanceof ApiError ? e.message : 'Photos se details nahi aa paayi.');
     } finally {
       setBusy(false);
     }
@@ -139,9 +138,9 @@ export function OurWorkModule() {
                 <h4 className="font-semibold">{item.title || 'Untitled work'}</h4>
                 <Badge label={item.status} />
                 {item.isPublished ? <Badge label="PUBLISHED" /> : null}
-                {item.isDemo || item.aiGenerated ? <Badge label="AI DEMO" /> : null}
+                {item.source === 'WHATSAPP_MESSAGE' ? <Badge label="WHATSAPP MESSAGE" /> : null}
               </div>
-              <p className="mt-1 text-xs text-ink-muted">{item.source === 'CUSTOMER' ? 'Customer submission' : 'Admin entry'}{item.customerName ? ` · ${item.customerName}` : ''}{item.rating ? ` · ${item.rating}/10` : ''}</p>
+              <p className="mt-1 text-xs text-ink-muted">{item.source === 'CUSTOMER' ? 'Customer submission' : item.source === 'WHATSAPP_MESSAGE' ? 'WhatsApp message' : 'Admin entry'}{item.customerName ? ` · ${item.customerName}` : ''}{item.rating ? ` · ${item.rating}/10` : ''}</p>
             </div>
             <div className="flex items-start gap-1">
               <BtnGhost onClick={() => setForm(item)} title="Edit"><Pencil size={17} /></BtnGhost>
@@ -152,7 +151,7 @@ export function OurWorkModule() {
       </div>
 
       {form ? (
-        <Modal open onClose={() => setForm(null)} title={form._id ? 'Edit Our Work' : 'New Our Work'} subtitle="Real reviews manually verify karein. AI text ko demo label ke saath hi rakhein." maxWidth="sm:max-w-2xl" footer={<div className="flex justify-end gap-2"><BtnGhost onClick={() => setForm(null)}>Cancel</BtnGhost><BtnPrimary disabled={busy} onClick={() => void save()}><Check size={16} />{busy ? 'Saving...' : 'Save'}</BtnPrimary></div>}>
+        <Modal open onClose={() => setForm(null)} title={form._id ? 'Edit Our Work' : 'New Our Work'} subtitle="WhatsApp messages ko customer names ke saath comma se alag likhein." maxWidth="sm:max-w-2xl" footer={<div className="flex justify-end gap-2"><BtnGhost onClick={() => setForm(null)}>Cancel</BtnGhost><BtnPrimary disabled={busy} onClick={() => void save()}><Check size={16} />{busy ? 'Saving...' : 'Save'}</BtnPrimary></div>}>
           <div className="space-y-4 pb-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Title / design name"><TextInput value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
@@ -163,11 +162,11 @@ export function OurWorkModule() {
               <Field label="Rating (1-10)"><TextInput type="number" min="1" max="10" value={form.rating ?? ''} onChange={(e) => setForm({ ...form, rating: e.target.value ? Number(e.target.value) : null })} /></Field>
               <Field label="Enquiry button text"><TextInput value={form.enquiryLabel} onChange={(e) => setForm({ ...form, enquiryLabel: e.target.value })} /></Field>
             </div>
-            <Field label="Feedback / message"><TextArea value={form.feedback} onChange={(e) => setForm({ ...form, feedback: e.target.value })} /></Field>
+            <Field label="Feedback / WhatsApp messages"><TextArea value={form.feedback} placeholder="Har message alag line ya || se likhein" onChange={(e) => setForm({ ...form, feedback: e.target.value })} /></Field>
 
             <div className="flex flex-wrap gap-2">
               <label className="btn-outline cursor-pointer"><Upload size={16} />Upload images<input type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif" className="sr-only" onChange={(e) => void addImages(e.target.files)} /></label>
-              <BtnPrimary onClick={() => void generate()} disabled={busy}><Sparkles size={16} />Generate with AI</BtnPrimary>
+              <BtnPrimary onClick={() => void generate()} disabled={busy}><Sparkles size={16} />Fill from photos</BtnPrimary>
             </div>
 
             <div>
@@ -188,7 +187,7 @@ export function OurWorkModule() {
               </div>
             </div>
 
-            {form.isDemo || form.aiGenerated ? <p className="rounded-lg bg-marigold-100 p-3 text-xs font-semibold">Demo/AI generated content. Real customer review nahi hai; save se pehle manually review/edit karein.</p> : null}
+            {form.source === 'WHATSAPP_MESSAGE' ? <p className="rounded-lg bg-leaf/10 p-3 text-xs font-semibold text-leaf">Source: WhatsApp message</p> : null}
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.isPublished} onChange={(e) => setForm({ ...form, isPublished: e.target.checked, status: e.target.checked ? 'APPROVED' : form.status })} />Published and approved</label>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.enquiryEnabled} onChange={(e) => setForm({ ...form, enquiryEnabled: e.target.checked })} />Show WhatsApp enquiry</label>
