@@ -19,7 +19,7 @@ const PRIMARY_LINKS = [
   { to: '/', label: 'Home', end: true },
   { to: '/ready-to-buy', label: 'Ready to Buy' },
   { to: '/customize', label: 'Customize' },
-  { to: '/showcase', label: 'New Designs' },
+  { to: '/our-work', label: 'Our Work' },
 ];
 
 const MENU_LINKS = [

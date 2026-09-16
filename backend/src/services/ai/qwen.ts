@@ -116,6 +116,14 @@ export const qwenSuggestionSchema = z
 
 export type QwenSuggestion = z.infer<typeof qwenSuggestionSchema>;
 
+export const ourWorkSuggestionSchema = z.object({
+  title: z.string().trim().max(140).nullable().optional(),
+  description: z.string().trim().max(4000).nullable().optional(),
+  demoFeedback: z.string().trim().max(2000).nullable().optional(),
+  dummyName: z.string().trim().max(80).nullable().optional(),
+});
+const OUR_WORK_PROMPT = `You are assisting an Indian blouse gallery. Analyze the uploaded blouse/work photos and return ONLY JSON with title, description, demoFeedback, dummyName. All text must be clearly suitable as DEMO/AI-GENERATED placeholder content, never a claim about a real customer or real review. Do not invent a real person's identity, rating, order, or factual customer experience. Keep title short, description factual and visible, demoFeedback explicitly prefixed "Demo/AI generated: ", and dummyName explicitly prefixed "Demo customer: ". Use null when unsure.`;
+
 const PROMPT = `You are a careful catalogue assistant for an Indian ethnic-wear store.
 
 You will receive several photographs of ONE blouse. The FIRST image is the main/front shot; the following images are additional views (back, sleeve, neckline, close-ups, etc.). Look at the WHOLE set and combine what is visible across them. Return ONLY a JSON object with these keys, and put null for anything you cannot confidently determine from the images:
@@ -773,6 +781,10 @@ export async function generateProductSuggestions(imageUrls: string[]): Promise<Q
         }
       : null,
   };
+}
+
+export async function generateOurWorkSuggestions(imageUrls: string[]): Promise<z.infer<typeof ourWorkSuggestionSchema>> {
+  return generateStructured({ imageUrls, prompt: OUR_WORK_PROMPT, schema: ourWorkSuggestionSchema, nodeName: 'our-work' });
 }
 
 export async function generateFabricSuggestion(imageUrl: string): Promise<z.infer<typeof fabricSuggestionSchema>> {

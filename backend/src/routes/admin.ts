@@ -20,7 +20,7 @@ import { notifyOrderCancellation } from '../services/notifications.js';
 import { pushToShiprocket, releaseStockForOrder } from './orders.js';
 import { mobileSchema } from './auth.js';
 import { uploadImage, MAX_UPLOAD_BYTES } from '../services/media/cloudinary.js';
-import { generateLatkanSuggestion, generateFabricSuggestion, generateLaceSuggestion, generateProductSuggestions } from '../services/ai/qwen.js';
+import { generateLatkanSuggestion, generateFabricSuggestion, generateLaceSuggestion, generateProductSuggestions, generateOurWorkSuggestions } from '../services/ai/qwen.js';
 import { env, integrations, shiprocketMock, whatsapp } from '../config/env.js';
 import {
   applyTrackingToOrder,
@@ -39,6 +39,7 @@ import {
   type ShiprocketSettings,
 } from '../services/shipping/shiprocket-settings.js';
 import { MessageLog, WaCampaign } from '../models/whatsapp.js';
+import { OurWork } from '../models/our-work.js';
 import { MESSAGE_TYPES } from '../services/whatsapp/constants.js';
 import { getWhatsAppSettings, updateWhatsAppSettings } from '../services/whatsapp/settings.js';
 import { TEMPLATE_REGISTRY, buildComponents } from '../services/whatsapp/templates.js';
@@ -62,6 +63,16 @@ const idSchema = z.object({ id: z.string().trim().min(1).max(80) }).strict();
 const orderNumberSchema = z.object({ orderNumber: z.string().trim().min(6).max(30) }).strict();
 const statusSchema = z.object({ status: z.enum([...ORDER_STATUSES] as [OrderStatus, ...OrderStatus[]]), note: z.string().trim().max(200).default('') }).strict();
 const reviewStatusSchema = z.object({ status: z.enum(['PENDING', 'APPROVED', 'REJECTED']) }).strict();
+const ourWorkImageSchema = z.object({ url: z.string().url().max(500), publicId: z.string().max(300).default(''), width: z.number().int().min(0).default(0), height: z.number().int().min(0).default(0), order: z.number().int().min(0).max(1000).default(0) }).strict();
+const ourWorkSchema = z.object({
+  title: z.string().trim().max(140).default(''), description: z.string().max(4000).default(''),
+  customerName: z.string().trim().max(80).default(''), rating: z.number().int().min(1).max(10).nullable().default(null),
+  feedback: z.string().max(2000).default(''), images: z.array(ourWorkImageSchema).min(1).max(10),
+  enquiryEnabled: z.boolean().default(true), enquiryLabel: z.string().max(40).default('Enquire Now'),
+  status: z.enum(['PENDING', 'APPROVED', 'REJECTED']).default('APPROVED'), isPublished: z.boolean().default(false),
+  source: z.enum(['ADMIN', 'CUSTOMER']).default('ADMIN'), isDemo: z.boolean().default(false), aiGenerated: z.boolean().default(false),
+  sortOrder: z.number().int().min(0).max(10000).default(0),
+}).strict();
 const settingSchema = z.object({ value: z.unknown() }).strict();
 
 const tailorSchema = z
@@ -377,6 +388,47 @@ function validateBody<T>(req: Request, schema: z.ZodType<T>): T {
 }
 
 router.use(requireAdmin());
+
+/* ========================================================================== */
+/* Our Work gallery                                                           */
+/* ========================================================================== */
+
+router.get('/our-work', adminReadLimiter, async (req: Request, res: Response) => {
+  const status = ['PENDING', 'APPROVED', 'REJECTED'].includes(String(req.query.status)) ? String(req.query.status) : undefined;
+  const filter = status ? { status } : {};
+  res.json({ items: await OurWork.find(filter).sort({ sortOrder: 1, createdAt: -1 }).lean() });
+});
+
+router.post('/our-work', adminWriteLimiter, validate({ body: ourWorkSchema }), async (req: Request, res: Response) => {
+  const body = (req as ValidatedRequest<z.infer<typeof ourWorkSchema>>).validated.body;
+  const work = await OurWork.create({ ...body, createdBy: adminId(req), status: body.status ?? 'APPROVED' });
+  await logAction(req, 'CREATE', 'OUR_WORK', String(work._id), body.title || 'gallery entry');
+  res.status(201).json({ item: work });
+});
+
+router.patch('/our-work/:id', adminWriteLimiter, validate({ params: idSchema, body: ourWorkSchema.partial() }), async (req: Request, res: Response) => {
+  const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
+  const body = (req as ValidatedRequest<Record<string, unknown>>).validated.body;
+  const work = await OurWork.findByIdAndUpdate(id, { $set: body }, { new: true, runValidators: true });
+  if (!work) throw notFound('Our Work entry nahi mila.');
+  await logAction(req, 'UPDATE', 'OUR_WORK', id, String(work.title || 'gallery entry'));
+  res.json({ item: work });
+});
+
+router.delete('/our-work/:id', adminWriteLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
+  const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
+  const work = await OurWork.findByIdAndDelete(id);
+  if (!work) throw notFound('Our Work entry nahi mila.');
+  await logAction(req, 'DELETE', 'OUR_WORK', id, String(work.title || 'gallery entry'));
+  res.json({ ok: true });
+});
+
+router.post('/our-work/generate-with-qwen', adminWriteLimiter, validate({ body: z.object({ imageUrls: z.array(z.string().url().max(500)).min(1).max(10) }).strict() }), async (req: Request, res: Response) => {
+  const { imageUrls } = (req as ValidatedRequest<{ imageUrls: string[] }>).validated.body;
+  const suggestion = await generateOurWorkSuggestions(imageUrls);
+  await logAction(req, 'GENERATE_WITH_QWEN', 'OUR_WORK', 'preview', `Suggested from ${imageUrls.length} image(s)`);
+  res.json({ suggestion: { ...suggestion, isDemo: true, aiGenerated: true } });
+});
 
 /* ========================================================================== */
 /* Image upload — Cloudinary (admin ImagePicker)                              */
@@ -2033,9 +2085,10 @@ router.get('/analytics/overview', adminReadLimiter, async (req: Request, res: Re
   const from = req.query.from ? new Date(String(req.query.from)) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const to = req.query.to ? new Date(String(req.query.to)) : new Date();
   const range = { $gte: from, $lte: to };
-  const [eventBreakdown, topPages, topSearches, sourceBreakdown, deviceBreakdown, uniqueSessions, checkoutRows] = await Promise.all([
+  const [eventBreakdown, topPages, ourWorkVisits, topSearches, sourceBreakdown, deviceBreakdown, uniqueSessions, checkoutRows] = await Promise.all([
     AnalyticsEvent.aggregate([{ $match: { at: range } }, { $group: { _id: '$type', count: { $sum: 1 } } }, { $sort: { count: -1 } }]),
     AnalyticsEvent.aggregate([{ $match: { at: range, type: 'PAGE_VIEW', path: { $ne: '' } } }, { $group: { _id: '$path', count: { $sum: 1 } } }, { $sort: { count: -1 } }, { $limit: 10 }]),
+    AnalyticsEvent.countDocuments({ at: range, type: 'PAGE_VIEW', path: { $in: ['/our-work', '/showcase'] } }),
     AnalyticsEvent.aggregate([{ $match: { at: range, type: 'SEARCH', query: { $ne: '' } } }, { $group: { _id: '$query', count: { $sum: 1 } } }, { $sort: { count: -1 } }, { $limit: 10 }]),
     AnalyticsEvent.aggregate([{ $match: { at: range } }, { $group: { _id: '$source', count: { $sum: 1 } } }, { $sort: { count: -1 } }]),
     AnalyticsEvent.aggregate([{ $match: { at: range } }, { $group: { _id: '$device.type', count: { $sum: 1 } } }, { $sort: { count: -1 } }]),
@@ -2052,7 +2105,7 @@ router.get('/analytics/overview', adminReadLimiter, async (req: Request, res: Re
     abandoned: checkoutRows.find((row) => row._id === 'CHECKOUT_ABANDON')?.count ?? 0,
     completed: checkoutRows.find((row) => row._id === 'ORDER_PLACED')?.count ?? 0,
   };
-  res.json({ from, to, eventBreakdown, topPages, topSearches, sourceBreakdown, deviceBreakdown, uniqueSessions: uniqueSessions.length, checkoutSummary });
+  res.json({ from, to, eventBreakdown, topPages, topSearches, sourceBreakdown, deviceBreakdown, uniqueSessions: uniqueSessions.length, ourWorkVisits, checkoutSummary });
 });
 
 router.get('/analytics/products', adminReadLimiter, async (req: Request, res: Response) => {

@@ -23,6 +23,7 @@ import waWebhookRouter from './routes/waWebhook.js';
 import whatsappRouter from './routes/whatsapp.js';
 import miscRouter from './routes/misc.js';
 import adminRouter from './routes/admin.js';
+import ourWorkRouter from './routes/ourWork.js';
 
 export function createApp(): Express {
   const app = express();
@@ -150,6 +151,7 @@ export function createApp(): Express {
 
   app.use('/api/auth', authRouter);
   app.use('/api/admin', adminRouter);
+  app.use('/api', ourWorkRouter);
   app.use('/api/whatsapp', whatsappRouter);
   app.use('/api/cart', cartRouter);
   app.use('/api/measurements', measurementsRouter);

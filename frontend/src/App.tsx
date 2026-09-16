@@ -22,6 +22,7 @@ import { WishlistPage } from './pages/Wishlist';
 import { OrdersPage } from './pages/Orders';
 import { AboutPage, ContactPage, FaqPage, PolicyPage, NotFoundPage, ManagedPageView } from './pages/Static';
 import { AdminPage } from './pages/Admin';
+import { OurWorkPage } from './pages/OurWork';
 
 /** Scrolls to the top on navigation and records the page view. */
 function RouteEffects() {
@@ -59,8 +60,9 @@ export function App() {
           <Route path="/ready-to-buy/:category" element={<ListingPage type="READY_MADE" />} />
           <Route path="/customize" element={<ListingPage type="CUSTOMIZE" />} />
           <Route path="/customize/:category" element={<ListingPage type="CUSTOMIZE" />} />
-          <Route path="/showcase" element={<ListingPage type="SHOWCASE" />} />
-          <Route path="/showcase/:category" element={<ListingPage type="SHOWCASE" />} />
+          <Route path="/our-work" element={<OurWorkPage />} />
+          <Route path="/showcase" element={<OurWorkPage />} />
+          <Route path="/showcase/:category" element={<OurWorkPage />} />
 
           <Route path="/blouse/:slug" element={<ProductDetailPage />} />
 

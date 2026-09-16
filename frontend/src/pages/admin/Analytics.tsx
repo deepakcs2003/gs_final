@@ -18,7 +18,7 @@ interface CheckoutSummary {
 
 interface Overview {
   eventBreakdown: CountRow[]; topPages: CountRow[]; topSearches: CountRow[]; sourceBreakdown: CountRow[];
-  deviceBreakdown: CountRow[]; uniqueSessions: number; checkoutSummary: CheckoutSummary;
+  deviceBreakdown: CountRow[]; uniqueSessions: number; ourWorkVisits: number; checkoutSummary: CheckoutSummary;
 }
 
 function rangeQuery(range: string): string {
@@ -75,6 +75,7 @@ export function AnalyticsModule() {
               <div className="card p-5"><p className="text-sm text-ink-muted">Page views</p><p className="mt-2 text-2xl font-bold text-maroon-700">{pageViews}</p></div>
               <div className="card p-5"><p className="text-sm text-ink-muted">Searches</p><p className="mt-2 text-2xl font-bold text-maroon-700">{searches}</p></div>
               <div className="card p-5"><p className="text-sm text-ink-muted">Checkout start</p><p className="mt-2 text-2xl font-bold text-maroon-700">{checkoutSummary.started}</p></div>
+              <div className="card p-5"><p className="text-sm text-ink-muted">Our Work visits</p><p className="mt-2 text-2xl font-bold text-maroon-700">{overview.ourWorkVisits}</p></div>
             </div>
 
             <div className="grid gap-3 px-4 pb-4 sm:grid-cols-2 xl:grid-cols-5">

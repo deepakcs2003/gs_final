@@ -29,6 +29,7 @@ import { SettingsModule } from './admin/Settings';
 import { ActivityModule } from './admin/Activity';
 import { CommunicationsModule } from './admin/Communications';
 import { BackupModule } from './admin/Backup';
+import { OurWorkModule } from './admin/OurWork';
 
 const nav = {
   overview: { label: 'Overview', icon: LayoutDashboard },
@@ -43,6 +44,7 @@ const nav = {
   coupons: { label: 'Coupons & offers', icon: CreditCard },
   homepage: { label: 'Homepage sections', icon: GalleryHorizontalEnd },
   banners: { label: 'Banners', icon: Image },
+  'our-work': { label: 'Our Work / Hamara Kaam', icon: GalleryHorizontalEnd },
   analytics: { label: 'Analytics', icon: BarChart3 },
   communications: { label: 'Communications', icon: MessageCircle },
   notifications: { label: 'WhatsApp enquiries', icon: LifeBuoy },
@@ -65,7 +67,7 @@ const bottomNavItems = [
 
 const navGroups: Array<{ label: string; items: Array<keyof typeof nav> }> = [
   { label: 'Command centre', items: ['overview', 'orders', 'tailors', 'customers', 'inventory', 'measurements', 'reviews'] },
-  { label: 'Store & catalogue', items: ['products', 'catalog', 'coupons', 'homepage', 'banners'] },
+  { label: 'Store & catalogue', items: ['products', 'catalog', 'coupons', 'homepage', 'banners', 'our-work'] },
   { label: 'Growth', items: ['analytics', 'communications', 'notifications', 'seo'] },
   { label: 'Governance', items: ['shipping', 'payments', 'content', 'admin-users', 'settings', 'activity', 'backup'] },
 ];
@@ -83,6 +85,7 @@ const modules: Record<string, ComponentType<Record<string, unknown>>> = {
   coupons: CouponsModule,
   homepage: HomepageModule,
   banners: BannersModule,
+  'our-work': OurWorkModule,
   analytics: AnalyticsModule,
   communications: CommunicationsModule,
   notifications: EnquiriesModule,

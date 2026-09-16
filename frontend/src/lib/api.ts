@@ -183,3 +183,16 @@ export async function uploadImages(files: File[]): Promise<UploadedFile[]> {
 
   return payload.files ?? [];
 }
+
+export async function uploadOurWorkImages(files: File[]): Promise<UploadedFile[]> {
+  if (files.length === 0) return [];
+  const form = new FormData();
+  for (const file of files) form.append('files', file);
+  const headers: Record<string, string> = { 'X-Session-Id': getSessionId() };
+  const csrf = readCookie(CSRF_COOKIE);
+  if (csrf) headers['X-CSRF-Token'] = csrf;
+  const response = await fetch('/api/our-work/upload', { method: 'POST', headers, credentials: 'include', body: form });
+  const payload = await response.json() as { files?: UploadedFile[]; error?: { message?: string } };
+  if (!response.ok) throw new ApiError(response.status, 'UPLOAD_FAILED', payload.error?.message ?? 'Image upload nahi hua.');
+  return payload.files ?? [];
+}

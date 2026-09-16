@@ -5,7 +5,7 @@ import { useConfig } from '../../hooks/queries';
 const SHOP_LINKS = [
   { to: '/ready-to-buy', label: 'Ready to Buy' },
   { to: '/customize', label: 'Customize with Measurement' },
-  { to: '/showcase', label: 'Upcoming Designs' },
+  { to: '/our-work', label: 'Our Work / Hamara Kaam' },
   { to: '/wishlist', label: 'Wishlist' },
 ];
 

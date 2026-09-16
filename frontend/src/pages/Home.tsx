@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Scissors, ShoppingBag, Sparkles } from 'lucide-react';
+import { Scissors, ShoppingBag, GalleryHorizontalEnd } from 'lucide-react';
 import { ProductCardView } from '../components/product/ProductCard';
 import { HomeBannerRail } from '../components/home/HomeManagerContent';
 import { InfiniteSentinel } from '../components/InfiniteSentinel';
@@ -31,10 +31,10 @@ const SECTIONS = [
     className: 'bg-maroon-600 text-white',
   },
   {
-    to: '/showcase',
-    title: 'Upcoming',
-    subtitle: 'Jald aa raha',
-    icon: Sparkles,
+    to: '/our-work',
+    title: 'Our Work',
+    subtitle: 'Hamara Kaam',
+    icon: GalleryHorizontalEnd,
     className: 'bg-white text-maroon-700 border-2 border-maroon-200',
   },
 ];

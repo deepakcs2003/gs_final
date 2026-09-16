@@ -436,7 +436,7 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
       <Toolbar title="Product catalogue" count={filtered.length} searchPlaceholder="Search design, name or slug"
         query={query} onQuery={setQuery} onAdd={openNew} addLabel="New product" />
       <div className="flex flex-wrap gap-2 border-b border-maroon-100 px-5 py-3">
-        {['ALL', 'READY_MADE', 'CUSTOMIZE', 'BOTH', 'SHOWCASE'].map((type) => (
+        {['ALL', 'READY_MADE', 'CUSTOMIZE', 'BOTH'].map((type) => (
           <button key={type} onClick={() => setTypeFilter(type)}
             className={`chip whitespace-nowrap ${typeFilter === type ? 'chip-active' : ''}`}>{type === 'BOTH' ? 'Ready + Custom' : type.replace('_', ' ')}</button>
         ))}
@@ -522,7 +522,7 @@ export function ProductsModule({ initialProductId }: { initialProductId?: string
               const next = { ...form, type, fabricOptions: type === 'CUSTOMIZE' ? [] : form.fabricOptions };
               setForm(type === 'READY_MADE' || type === 'BOTH' ? withInventory(next, next.colors, next.sizes) : { ...next, variants: [] });
             }}>
-              <option value="READY_MADE">Ready to Buy</option><option value="CUSTOMIZE">Customize</option><option value="BOTH">Ready + Customize</option><option value="SHOWCASE">Showcase / Upcoming</option>
+              <option value="READY_MADE">Ready to Buy</option><option value="CUSTOMIZE">Customize</option><option value="BOTH">Ready + Customize</option>
             </Select></Field>
             <Field label="Category" hint="Khaali chhorne par pehli category lega"><Select value={typeof form.category === 'string' ? form.category : ''} onChange={(e) => setForm({ ...form, category: e.target.value, subCategory: null })}>
               <option value="">Select category</option>{categories.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}

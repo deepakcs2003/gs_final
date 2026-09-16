@@ -14,7 +14,7 @@ import clsx from 'clsx';
 const SECTIONS = [
   { to: '/ready-to-buy', label: 'Ready to Buy', short: 'Ready', icon: ShoppingBag },
   { to: '/customize', label: 'Customize', short: 'Customize', icon: Scissors },
-  { to: '/showcase', label: 'New Designs', short: 'New', icon: Sparkles },
+  { to: '/our-work', label: 'Our Work', short: 'Work', icon: Sparkles },
 ] as const;
 
 export function SectionTabs() {
