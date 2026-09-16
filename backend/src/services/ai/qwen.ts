@@ -122,7 +122,29 @@ export const ourWorkSuggestionSchema = z.object({
   feedback: z.string().trim().max(2000).nullable().optional(),
   customerNames: z.string().trim().max(200).nullable().optional(),
 });
-const OUR_WORK_PROMPT = `You are helping an Indian blouse gallery prepare a compact WhatsApp-style review display for an admin to review. Analyze the uploaded work photos and return ONLY JSON with title, description, feedback, customerNames. Keep the title short. Keep description factual, visible, and to 1-2 short lines. Generate customer names as a comma-separated string with a RANDOM count between 2 and 12, usually 4-7 names. IMPORTANT: use only Indian WOMEN'S names, never men’s names. Prefer realistic Indian female names, especially Hindi/Hinglish names, but mix in English and other popular Indian languages such as Marathi, Gujarati, Tamil, Telugu, Bengali, Kannada, Punjabi, Malayalam, or other regional languages. Keep names short, natural, feminine, and not too formal. Bias strongly toward Hindi/Hinglish (around 55-70% of names), then English (15-25%), then other Indian languages (15-25%). Make the names feel random and varied, not repetitive. For feedback, create a RANDOM count of short WhatsApp-style review lines in the same order, separated by " || ". The total feedback count should usually be 3-8 lines, with 55-70% Hindi/Hinglish, 15-25% English, and 15-25% other Indian languages. Keep each line tiny and natural, max 70 characters, like real quick customer notes. Use small phrases, warm and casual feedback, not long reviews. Mix languages naturally and randomly; do not keep all lines in one language. Do not include ratings, orders, promises, or invented specific facts. Do not add labels such as AI, demo, sample, or generated. Use null only when the photos do not support a field.`;
+const INDIAN_WOMEN_NAMES = [
+  // North and Hindi belt
+  'Aarohi', 'Aashi', 'Aastha', 'Ananya', 'Anika', 'Anjali', 'Anushka', 'Apoorva', 'Avni', 'Bhavna',
+  'Chahat', 'Charu', 'Diya', 'Divya', 'Esha', 'Gauri', 'Ishita', 'Jahnavi', 'Kajal', 'Kavya',
+  'Kiran', 'Komal', 'Kritika', 'Lavanya', 'Madhavi', 'Mahima', 'Mansi', 'Meena', 'Meera', 'Muskan',
+  'Naina', 'Navya', 'Neha', 'Nidhi', 'Nikita', 'Pallavi', 'Pari', 'Pihu', 'Prachi', 'Pragya',
+  'Preeti', 'Priya', 'Radhika', 'Rashi', 'Reena', 'Rhea', 'Riya', 'Sakshi', 'Saloni', 'Shalini',
+  'Shreya', 'Simran', 'Sneha', 'Sonali', 'Swati', 'Tanisha', 'Tanya', 'Trisha', 'Vani', 'Vidhi',
+  // West and central India
+  'Aditi', 'Amruta', 'Apeksha', 'Bhakti', 'Diksha', 'Harshada', 'Hetal', 'Ira', 'Jigna', 'Jyoti',
+  'Kashish', 'Khushi', 'Mitali', 'Mokshada', 'Mrunal', 'Nandini', 'Nimisha', 'Pooja', 'Rutuja', 'Sakina',
+  'Sonal', 'Tejal', 'Vaishnavi', 'Zoya',
+  // South India
+  'Akshara', 'Amritha', 'Anagha', 'Ananya', 'Aparna', 'Archana', 'Bhavana', 'Deepa', 'Harini', 'Keerthi',
+  'Lakshmi', 'Malavika', 'Manya', 'Mahalakshmi', 'Nandita', 'Nivedita', 'Pavithra', 'Pooja', 'Ramya', 'Revathi',
+  'Sahana', 'Sanjana', 'Shilpa', 'Shruthi', 'Sindhu', 'Sowmya', 'Swetha', 'Tejaswini', 'Varsha', 'Yamuna',
+  // East and Northeast India
+  'Aindrila', 'Arpita', 'Brishti', 'Debolina', 'Ishani', 'Koyel', 'Laboni', 'Madhumita', 'Moumita', 'Mrittika',
+  'Rimjhim', 'Roshni', 'Sampa', 'Sanchari', 'Saswati', 'Sharmila', 'Srabani', 'Tanushree', 'Tiyasha', 'Madhurima',
+  'Anwesha', 'Dikshita', 'Junali', 'Lopamudra', 'Madhurima', 'Mitali', 'Monalisa', 'Priyanka', 'Rupali', 'Udita',
+];
+
+const OUR_WORK_PROMPT = `You are helping an Indian blouse gallery prepare a compact WhatsApp-style review display for an admin to review. Analyze the uploaded work photos and return ONLY JSON with title, description, feedback, customerNames. Keep the title short. Keep description factual, visible, and to 1-2 short lines. Generate customerNames as a comma-separated string with 2-7 Indian WOMEN'S names only, never men's names. Names should represent all Indian regions: Hindi/North, Marathi/Gujarati/West, Tamil/Telugu/Kannada/Malayalam/South, Bengali/Odia/Assamese/East and Northeast. Prefer a natural random mix with a mild Hindi/North majority, not the same common names every time. For feedback, create 3-8 short WhatsApp-style review lines separated by " || ", with a Hindi/Hinglish majority and some English and regional Indian languages. Keep each line natural and max 70 characters. Do not include ratings, orders, promises, invented facts, or labels such as AI, demo, sample, or generated. Use null only when photos do not support a field.`;
 
 const PROMPT = `You are a careful catalogue assistant for an Indian ethnic-wear store.
 
@@ -783,8 +805,31 @@ export async function generateProductSuggestions(imageUrls: string[]): Promise<Q
   };
 }
 
-export async function generateOurWorkSuggestions(imageUrls: string[]): Promise<z.infer<typeof ourWorkSuggestionSchema>> {
-  return generateStructured({ imageUrls, prompt: OUR_WORK_PROMPT, schema: ourWorkSuggestionSchema, nodeName: 'our-work' });
+function nameKey(value: string): string {
+  return value.trim().toLocaleLowerCase('en-IN').replace(/[^a-z\u0900-\u097f]/g, '');
+}
+
+function pickFreshWomenNames(usedNames: string[]): string {
+  const used = new Set(usedNames.flatMap((value) => value.split(',')).map(nameKey).filter(Boolean));
+  const available = Array.from(new Set(INDIAN_WOMEN_NAMES)).filter((name) => !used.has(nameKey(name)));
+  const pool = available.length >= 2 ? available : Array.from(new Set(INDIAN_WOMEN_NAMES));
+  const count = Math.min(pool.length, 2 + Math.floor(Math.random() * 6));
+  const shuffled = [...pool];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    const current = shuffled[index];
+    const replacement = shuffled[swapIndex];
+    if (current !== undefined && replacement !== undefined) {
+      shuffled[index] = replacement;
+      shuffled[swapIndex] = current;
+    }
+  }
+  return shuffled.slice(0, count).join(', ');
+}
+
+export async function generateOurWorkSuggestions(imageUrls: string[], usedNames: string[] = []): Promise<z.infer<typeof ourWorkSuggestionSchema>> {
+  const suggestion = await generateStructured({ imageUrls, prompt: OUR_WORK_PROMPT, schema: ourWorkSuggestionSchema, nodeName: 'our-work' });
+  return { ...suggestion, customerNames: pickFreshWomenNames(usedNames) };
 }
 
 export async function generateFabricSuggestion(imageUrl: string): Promise<z.infer<typeof fabricSuggestionSchema>> {

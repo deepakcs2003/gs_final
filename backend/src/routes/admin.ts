@@ -425,7 +425,12 @@ router.delete('/our-work/:id', adminWriteLimiter, validate({ params: idSchema })
 
 router.post('/our-work/generate-with-qwen', adminWriteLimiter, validate({ body: z.object({ imageUrls: z.array(z.string().url().max(500)).min(1).max(10) }).strict() }), async (req: Request, res: Response) => {
   const { imageUrls } = (req as ValidatedRequest<{ imageUrls: string[] }>).validated.body;
-  const suggestion = await generateOurWorkSuggestions(imageUrls);
+  const recentWorks = await OurWork.find({ customerName: { $exists: true, $nin: ['', null] } })
+    .sort({ createdAt: -1 })
+    .limit(100)
+    .select({ customerName: 1, _id: 0 })
+    .lean();
+  const suggestion = await generateOurWorkSuggestions(imageUrls, recentWorks.map((work) => work.customerName).filter((name): name is string => Boolean(name)));
   await logAction(req, 'GENERATE_WITH_QWEN', 'OUR_WORK', 'preview', `Suggested from ${imageUrls.length} image(s)`);
   res.json({ suggestion: { ...suggestion, source: 'WHATSAPP_MESSAGE', isDemo: false, aiGenerated: false } });
 });

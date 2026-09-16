@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { Check, Image as ImageIcon, Pencil, RotateCcw, RotateCw, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import { api, ApiError, uploadImages, type UploadedFile } from '../../lib/api';
 import { Badge, BtnGhost, BtnPrimary, Field, Modal, TextArea, TextInput, Toolbar } from './shared';
@@ -29,8 +29,9 @@ type Suggestion = {
 };
 
 type CropJob = { file: File; previewUrl: string };
+type CropPan = { x: number; y: number };
 
-function makeCroppedFile(job: CropJob, rotation: number, zoom: number): Promise<File> {
+function makeCroppedFile(job: CropJob, rotation: number, zoom: number, pan: CropPan): Promise<File> {
   return new Promise((resolve, reject) => {
     const image = new window.Image();
     image.onload = () => {
@@ -38,17 +39,20 @@ function makeCroppedFile(job: CropJob, rotation: number, zoom: number): Promise<
       const radians = angle * Math.PI / 180;
       const rotatedWidth = angle === 90 || angle === 270 ? image.naturalHeight : image.naturalWidth;
       const rotatedHeight = angle === 90 || angle === 270 ? image.naturalWidth : image.naturalHeight;
-      const cropWidth = Math.min(rotatedWidth, rotatedHeight * 0.8) / zoom;
-      const cropHeight = cropWidth * 1.25;
+      const outputWidth = 1200;
+      const outputHeight = 1500;
+      const previewWidth = 800;
+      const previewHeight = 1000;
       const canvas = document.createElement('canvas');
-      canvas.width = Math.round(cropWidth);
-      canvas.height = Math.round(cropHeight);
+      canvas.width = outputWidth;
+      canvas.height = outputHeight;
       const context = canvas.getContext('2d');
       if (!context) { reject(new Error('Image editor unavailable.')); return; }
-      context.translate(canvas.width / 2, canvas.height / 2);
+      const scale = Math.max(outputWidth / rotatedWidth, outputHeight / rotatedHeight) * zoom;
+      context.translate(outputWidth / 2 + pan.x * outputWidth / previewWidth, outputHeight / 2 + pan.y * outputHeight / previewHeight);
       context.rotate(radians);
-      const scale = Math.max(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight) * zoom;
-      context.drawImage(image, -image.naturalWidth * scale / 2, -image.naturalHeight * scale / 2, image.naturalWidth * scale, image.naturalHeight * scale);
+      context.scale(scale, scale);
+      context.drawImage(image, -image.naturalWidth / 2, -image.naturalHeight / 2, image.naturalWidth, image.naturalHeight);
       canvas.toBlob((blob) => {
         if (!blob) { reject(new Error('Image crop nahi hua.')); return; }
         resolve(new File([blob], job.file.name.replace(/\.[^.]+$/, '') + '-edited.jpg', { type: 'image/jpeg' }));
@@ -74,6 +78,9 @@ export function OurWorkModule() {
   const [cropJob, setCropJob] = useState<CropJob | null>(null);
   const [cropRotation, setCropRotation] = useState(0);
   const [cropZoom, setCropZoom] = useState(1);
+  const [cropPan, setCropPan] = useState<CropPan>({ x: 0, y: 0 });
+  const [cropImageSize, setCropImageSize] = useState({ width: 1, height: 1 });
+  const cropDrag = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
 
   const load = () => {
     void api<{ items: WorkItem[] }>('/admin/our-work')
@@ -140,6 +147,8 @@ export function OurWorkModule() {
     setCropJob(jobs[0] ?? null);
     setCropRotation(0);
     setCropZoom(1);
+    setCropPan({ x: 0, y: 0 });
+    setCropImageSize({ width: 1, height: 1 });
   };
 
   const closeCropEditor = () => {
@@ -154,7 +163,7 @@ export function OurWorkModule() {
     setBusy(true);
     setError('');
     try {
-      const editedFile = await makeCroppedFile(cropJob, cropRotation, cropZoom);
+      const editedFile = await makeCroppedFile(cropJob, cropRotation, cropZoom, cropPan);
       const uploaded = await uploadImages([editedFile]);
       setForm({ ...form, images: [...form.images, ...uploaded] });
       URL.revokeObjectURL(cropJob.previewUrl);
@@ -163,6 +172,8 @@ export function OurWorkModule() {
       setCropJob(nextJob ?? null);
       setCropRotation(0);
       setCropZoom(1);
+      setCropPan({ x: 0, y: 0 });
+      setCropImageSize({ width: 1, height: 1 });
       if (!nextJob) setCropQueue([]);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : 'Image upload nahi hua.');
@@ -170,6 +181,30 @@ export function OurWorkModule() {
       setBusy(false);
     }
   };
+
+  const startCropDrag = (event: PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    cropDrag.current = { startX: event.clientX, startY: event.clientY, originX: cropPan.x, originY: cropPan.y };
+  };
+
+  const moveCropDrag = (event: PointerEvent<HTMLDivElement>) => {
+    const drag = cropDrag.current;
+    if (!drag) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    setCropPan({
+      x: drag.originX + (event.clientX - drag.startX) * 800 / bounds.width,
+      y: drag.originY + (event.clientY - drag.startY) * 1000 / bounds.height,
+    });
+  };
+
+  const stopCropDrag = () => {
+    cropDrag.current = null;
+  };
+
+  const cropAngle = ((cropRotation % 360) + 360) % 360;
+  const rotatedPreviewWidth = cropAngle === 90 || cropAngle === 270 ? cropImageSize.height : cropImageSize.width;
+  const rotatedPreviewHeight = cropAngle === 90 || cropAngle === 270 ? cropImageSize.width : cropImageSize.height;
+  const previewScale = Math.max(800 / rotatedPreviewWidth, 1000 / rotatedPreviewHeight) * cropZoom;
 
   const makeMainImage = (index: number) => {
     if (!form || index === 0) return;
@@ -298,10 +333,11 @@ export function OurWorkModule() {
               <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-maroon-600">Image editor</p><h2 className="mt-1 font-display text-2xl font-bold">Crop & rotate</h2><p className="mt-1 text-sm text-ink-muted">Frame ke andar ka area upload hoga.</p></div>
               <button type="button" className="btn-ghost shrink-0" aria-label="Close image editor" onClick={closeCropEditor}><X size={20} /></button>
             </div>
-            <div className="relative mx-auto mt-5 aspect-[4/5] max-h-[55vh] overflow-hidden rounded-xl bg-ink/10">
-              <img src={cropJob.previewUrl} alt="Crop preview" className="absolute inset-0 h-full w-full object-contain transition-transform" style={{ transform: `rotate(${cropRotation}deg) scale(${cropZoom})` }} />
+            <div className="relative mx-auto mt-5 aspect-[4/5] max-h-[55vh] touch-none select-none overflow-hidden rounded-xl bg-ink/10" onPointerDown={startCropDrag} onPointerMove={moveCropDrag} onPointerUp={stopCropDrag} onPointerCancel={stopCropDrag}>
+              <img src={cropJob.previewUrl} alt="Crop preview" draggable={false} onLoad={(event) => setCropImageSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} className="absolute left-1/2 top-1/2 max-w-none transition-transform" style={{ width: `${cropImageSize.width * previewScale / 800 * 100}%`, height: `${cropImageSize.height * previewScale / 1000 * 100}%`, transform: `translate(calc(-50% + ${cropPan.x / 800 * 100}%), calc(-50% + ${cropPan.y / 1000 * 100}%)) rotate(${cropRotation}deg)`, cursor: cropDrag.current ? 'grabbing' : 'grab' }} />
               <div className="pointer-events-none absolute inset-0 border-2 border-white/90 shadow-[0_0_0_9999px_rgba(20,12,15,0.38)]" />
             </div>
+            <p className="mt-3 text-center text-xs text-ink-muted">Image ko drag karke position set karein, phir zoom karein.</p>
             <div className="mt-5 flex items-center justify-center gap-3">
               <button type="button" className="btn-outline" onClick={() => setCropRotation((value) => value - 90)} title="Rotate left"><RotateCcw size={17} />Left</button>
               <button type="button" className="btn-outline" onClick={() => setCropRotation((value) => value + 90)} title="Rotate right"><RotateCw size={17} />Right</button>
