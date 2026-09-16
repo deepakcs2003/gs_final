@@ -56,9 +56,10 @@ export function OurWorkModule() {
     setBusy(true);
     setError('');
     try {
-      await api(form._id ? `/admin/our-work/${form._id}` : '/admin/our-work', {
-        method: form._id ? 'PATCH' : 'POST',
-        body: { ...form, images: form.images.map((image, order) => ({ ...image, order })) },
+      const { _id, ...payload } = form;
+      await api(_id ? `/admin/our-work/${_id}` : '/admin/our-work', {
+        method: _id ? 'PATCH' : 'POST',
+        body: { ...payload, images: form.images.map((image, order) => ({ ...image, order })) },
       });
       setForm(null);
       load();
@@ -161,7 +162,7 @@ export function OurWorkModule() {
           <div className="space-y-4 pb-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Title / design name"><TextInput value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
-              <Field label="Customer name"><TextInput value={form.customerName} placeholder="Aarohi, Riya, Sneha, Anaya, Kunal, Shreya" onChange={(e) => setForm({ ...form, customerName: e.target.value })} /></Field>
+              <Field label="Customer name"><TextInput value={form.customerName} placeholder="Aarohi, Riya, Sneha, Anaya, Shreya, Meher, Isha" onChange={(e) => setForm({ ...form, customerName: e.target.value })} /></Field>
             </div>
             <Field label="Description"><TextArea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
             <div className="grid gap-4 sm:grid-cols-2">
