@@ -57,14 +57,26 @@ export function OurWorkModule() {
     setError('');
     try {
       const { _id, ...payload } = form;
+      const images = form.images.map(({ url, publicId, width, height }, order) => ({
+        url,
+        publicId: publicId ?? '',
+        width: width ?? 0,
+        height: height ?? 0,
+        order,
+      }));
       await api(_id ? `/admin/our-work/${_id}` : '/admin/our-work', {
         method: _id ? 'PATCH' : 'POST',
-        body: { ...payload, images: form.images.map((image, order) => ({ ...image, order })) },
+        body: { ...payload, images },
       });
       setForm(null);
       load();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Save nahi hua.');
+      if (e instanceof ApiError) {
+        const fields = e.fields ? Object.entries(e.fields).map(([field, message]) => `${field}: ${message}`).join(' | ') : '';
+        setError(fields ? `${e.message} ${fields}` : e.message);
+      } else {
+        setError('Save nahi hua.');
+      }
     } finally {
       setBusy(false);
     }
