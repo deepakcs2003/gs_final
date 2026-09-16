@@ -427,7 +427,7 @@ router.post('/our-work/generate-with-qwen', adminWriteLimiter, validate({ body: 
   const { imageUrls } = (req as ValidatedRequest<{ imageUrls: string[] }>).validated.body;
   const suggestion = await generateOurWorkSuggestions(imageUrls);
   await logAction(req, 'GENERATE_WITH_QWEN', 'OUR_WORK', 'preview', `Suggested from ${imageUrls.length} image(s)`);
-  res.json({ suggestion: { ...suggestion, isDemo: true, aiGenerated: true } });
+  res.json({ suggestion: { ...suggestion, source: 'WHATSAPP_MESSAGE', isDemo: false, aiGenerated: false } });
 });
 
 /* ========================================================================== */
