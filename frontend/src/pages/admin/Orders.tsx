@@ -626,36 +626,271 @@ function escapeHtml(value: unknown): string {
 function printableOptions(label: string, options: OrderOptionSnapshot[] | undefined, fallback?: string): string {
   const values = options?.filter((option) => option.name || option.image) ?? [];
   if (values.length === 0) return fallback ? `<p><b>${escapeHtml(label)}:</b> ${escapeHtml(fallback)}</p>` : '';
-  return `<div><b>${escapeHtml(label)}</b><div class="options">${values.map((option) => `<div class="option">${option.image ? `<img src="${escapeHtml(option.image)}" alt="">` : ''}<span>${escapeHtml(option.name)}${option.material || option.colorName ? `<small>${escapeHtml([option.material, option.colorName].filter(Boolean).join(' · '))}</small>` : ''}</span></div>`).join('')}</div></div>`;
+  return `<div><b>${escapeHtml(label)}</b><div class="options">${values.map((option) => `<div class="option">${option.image ? `<img src="${escapeHtml(cloudinarySrc(option.image, 96))}" alt="">` : ''}<span>${escapeHtml(option.name)}${option.material || option.colorName ? `<small>${escapeHtml([option.material, option.colorName].filter(Boolean).join(' · '))}</small>` : ''}</span></div>`).join('')}</div></div>`;
 }
 
 function printableOrderHtml(order: AdminOrder): string {
   const items = order.items ?? [];
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(order.orderNumber)} tailor details</title><style>
-    *{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#2b2220;margin:0;padding:28px;background:#fff}h1{color:#741d3c;margin:0 0 4px}h2{font-size:18px;color:#741d3c;margin:24px 0 8px;border-bottom:1px solid #ead6dc;padding-bottom:6px}.muted{color:#6b5c56;font-size:13px}.top{display:flex;justify-content:space-between;border-bottom:2px solid #741d3c;padding-bottom:14px}.contact{margin:16px 0;padding:12px;background:#fbf4f6;border-radius:8px}.item{border:1px solid #ead6dc;border-radius:10px;padding:14px;margin:14px 0;page-break-inside:avoid}.product{display:flex;gap:14px}.product>img{width:90px;height:108px;object-fit:cover;border-radius:8px}.name{font-size:18px;font-weight:bold}.details{flex:1}.options{display:flex;flex-wrap:wrap;gap:8px;margin:7px 0 12px}.option{display:flex;align-items:center;gap:6px;border:1px solid #ead6dc;border-radius:7px;padding:5px;font-size:12px}.option img{width:42px;height:42px;object-fit:cover;border-radius:5px}.option small{display:block;color:#6b5c56;margin-top:3px}.measure{background:#fbf4f6;border-radius:8px;padding:10px;margin-top:10px}.measure-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;font-size:13px;margin-top:7px}.footer{margin-top:26px;border-top:1px solid #ead6dc;padding-top:10px;font-size:12px;color:#6b5c56}@media print{body{padding:14px}}
-  </style></head><body><div class="top"><div><h1>Guddi Silai</h1><div class="muted">Tailor order details</div></div><div><b>${escapeHtml(order.orderNumber)}</b><br><span class="muted">${escapeHtml(new Date(order.placedAt).toLocaleString('en-IN'))}</span></div></div>
-  <div class="contact"><b>${escapeHtml(order.contact?.name ?? '')}</b> · ${escapeHtml(order.contact?.mobile ?? '')}${order.contact?.email ? ` · ${escapeHtml(order.contact.email)}` : ''}<br>${escapeHtml([order.address?.line1, order.address?.line2, order.address?.city, order.address?.state, order.address?.pincode].filter(Boolean).join(', '))}</div>
-  <h2>Items</h2>${items.map((item) => `<section class="item"><div class="product">${item.image ? `<img src="${escapeHtml(item.image)}" alt="">` : ''}<div class="details"><div class="name">${escapeHtml(item.name)} <span class="muted">(${escapeHtml(item.designId)})</span></div><p class="muted">${escapeHtml([item.colorName, item.size ? `Size ${item.size}` : '', item.sku ? `SKU ${item.sku}` : ''].filter(Boolean).join(' · '))}</p>${printableOptions('Fabric', item.fabricDetails, item.fabricName)}${printableOptions('Laces', item.laceDetails, item.laceNames?.join(', '))}${printableOptions('Latkans', item.latkanDetails, item.latkanNames?.join(', '))}<p><b>Quantity:</b> ${item.quantity}</p>${item.measurement ? `<div class="measure"><b>Measurements (${escapeHtml(item.measurement.unit)})</b><div class="measure-grid">${Object.entries(item.measurement.values).map(([key, value]) => `<span><b>${escapeHtml(key.replace(/_/g, ' '))}:</b> ${escapeHtml(value)}"</span>`).join('')}</div></div>` : ''}</div></div></section>`).join('')}
-  <div class="footer">Customer note: ${escapeHtml(order.customerNote || '—')}<br>Generated from admin order detail.</div></body></html>`;
-}
+  const customerAddress = [order.address?.line1, order.address?.line2, order.address?.city, order.address?.state, order.address?.pincode, order.address?.country]
+    .filter(Boolean)
+    .join(', ');
 
+  const itemMarkup = items.map((item) => {
+    const itemImage = item.image ? `<img src="${escapeHtml(cloudinarySrc(item.image, 400))}" alt="${escapeHtml(item.name || item.designId)}">` : '';
+    const itemOptions = [
+      printableOptions('Fabric', item.fabricDetails, item.fabricName),
+      printableOptions('Laces', item.laceDetails, item.laceNames?.join(', ')),
+      printableOptions('Latkans', item.latkanDetails, item.latkanNames?.join(', ')),
+    ].join('');
+
+    const measurementMarkup = item.measurement ? `
+      <div class="measure">
+        <b>Measurements (${escapeHtml(item.measurement.unit)})</b>
+        <div class="measure-grid">
+          ${Object.entries(item.measurement.values).map(([key, value]) => `<span><b>${escapeHtml(key.replace(/_/g, ' '))}:</b> ${escapeHtml(String(value))}</span>`).join('')}
+        </div>
+      </div>
+    ` : '';
+
+    return `
+      <section class="item">
+        <div class="product">
+          ${itemImage}
+          <div class="details">
+            <div class="name">${escapeHtml(item.name || item.designId)} <span class="muted">(${escapeHtml(item.designId)})</span></div>
+            <p class="muted">${escapeHtml([item.colorName, item.size ? `Size ${item.size}` : '', item.sku ? `SKU ${item.sku}` : ''].filter(Boolean).join(' · '))}</p>
+            ${itemOptions}
+            <p><b>Quantity:</b> ${escapeHtml(String(item.quantity ?? 0))}</p>
+            ${measurementMarkup}
+          </div>
+        </div>
+      </section>
+    `;
+  }).join('');
+
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>${escapeHtml(order.orderNumber)} tailor details</title>
+    <style>
+      @page { size: A4; margin: 12mm; }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: #fff;
+        font-family: Arial, sans-serif;
+        color: #2b2220;
+      }
+      body {
+        display: flex;
+        justify-content: center;
+        padding: 18px;
+      }
+      .sheet {
+        width: 100%;
+        max-width: 980px;
+        min-height: 1122px;
+        background: #fff;
+      }
+      h1 { color: #741d3c; margin: 0 0 4px; font-size: 34px; }
+      h2 {
+        font-size: 24px; color: #741d3c; margin: 26px 0 10px; border-bottom: 2px solid #ead6dc; padding-bottom: 8px;
+      }
+      .muted { color: #6b5c56; font-size: 18px; }
+      .top { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #741d3c; padding-bottom: 18px; }
+      .contact { margin: 20px 0; padding: 16px; background: #fbf4f6; border-radius: 12px; font-size: 18px; line-height: 1.6; }
+      .item { border: 2px solid #ead6dc; border-radius: 14px; padding: 22px; margin: 22px 0; page-break-inside: avoid; }
+      .product { display: flex; gap: 28px; align-items: flex-start; }
+      .product > img { width: 240px; height: 300px; object-fit: cover; border-radius: 12px; }
+      .name { font-size: 30px; font-weight: bold; }
+      .details { flex: 1; font-size: 18px; }
+      .options { display: flex; flex-wrap: wrap; gap: 12px; margin: 12px 0 16px; }
+      .option { display: flex; align-items: center; gap: 10px; border: 1px solid #ead6dc; border-radius: 10px; padding: 10px; font-size: 17px; }
+      .option img { width: 82px; height: 82px; object-fit: cover; border-radius: 9px; }
+      .option small { display: block; color: #6b5c56; margin-top: 5px; }
+      .measure { background: #fbf4f6; border-radius: 12px; padding: 14px; margin-top: 14px; }
+      .measure-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; font-size: 16px; margin-top: 10px; }
+      .footer { margin-top: 30px; border-top: 2px solid #ead6dc; padding-top: 14px; font-size: 16px; color: #6b5c56; }
+
+      @media (max-width: 640px) {
+        body { padding: 10px; }
+        .sheet { min-height: auto; }
+        .top { flex-direction: column; gap: 10px; }
+        h1 { font-size: 28px; }
+        h2 { font-size: 22px; }
+        .muted { font-size: 15px; }
+        .contact { font-size: 15px; }
+        .item { padding: 14px; }
+        .product { flex-direction: column; gap: 14px; }
+        .product > img { width: 100%; height: 260px; }
+        .name { font-size: 24px; }
+        .details { font-size: 15px; }
+        .option { width: 100%; }
+        .option img { width: 64px; height: 64px; }
+        .measure-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      }
+
+      @media print {
+        body { padding: 0; }
+        .sheet { max-width: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="sheet">
+      <div class="top">
+        <div>
+          <h1>Guddi Silai</h1>
+          <div class="muted">Tailor order details</div>
+        </div>
+        <div>
+          <b>${escapeHtml(order.orderNumber)}</b><br>
+          <span class="muted">${escapeHtml(new Date(order.placedAt).toLocaleString('en-IN'))}</span>
+        </div>
+      </div>
+
+      <div class="contact">
+        <b>${escapeHtml(order.contact?.name ?? '')}</b> · ${escapeHtml(order.contact?.mobile ?? '')}${order.contact?.email ? ` · ${escapeHtml(order.contact.email)}` : ''}<br>
+        ${escapeHtml(customerAddress)}
+      </div>
+
+      <h2>Items</h2>
+      ${itemMarkup}
+
+      <div class="footer">
+        Customer note: ${escapeHtml(order.customerNote || '—')}<br>
+        Generated from admin order detail.
+      </div>
+    </div>
+  </body>
+</html>`;
+}
 function openPrintableOrder(order: AdminOrder) {
-  const printWindow = window.open('', '_blank', 'noopener,noreferrer');
+  // No `noopener`/`noreferrer` in the features string: those make
+  // `window.open` return `null`, so the print window would never open.
+  const printWindow = window.open('', '_blank');
   if (!printWindow) return;
-  printWindow.document.write(printableOrderHtml(order));
+
+  const html = printableOrderHtml(order);
+  printWindow.document.open();
+  printWindow.document.write(html);
   printWindow.document.close();
-  printWindow.onload = () => { printWindow.focus(); printWindow.print(); };
+
+  // Wait for the window (and its images) to finish loading before printing,
+  // otherwise the print dialog can capture a partially-rendered / blank page.
+  const printWhenReady = () => {
+    try {
+      printWindow.focus();
+      printWindow.print();
+    } catch {
+      // Print popup blocked — the generated document stays open for Save as PDF.
+    }
+  };
+
+  const images = Array.from(printWindow.document.images);
+  const pending = images.filter((img) => !img.complete);
+  if (pending.length === 0) {
+    setTimeout(printWhenReady, 120);
+    return;
+  }
+
+  let settled = false;
+  const done = () => {
+    if (settled) return;
+    settled = true;
+    setTimeout(printWhenReady, 120);
+  };
+  pending.forEach((img) => {
+    img.addEventListener('load', done, { once: true });
+    img.addEventListener('error', done, { once: true });
+  });
+  // Hard timeout so the print dialog always fires even if an image hangs.
+  setTimeout(done, 4000);
 }
 
-function downloadOrderImage(order: AdminOrder) {
-  const html = printableOrderHtml(order).match(/<body>([\s\S]*)<\/body>/)?.[1] ?? '';
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1800" viewBox="0 0 1200 1800"><foreignObject width="1200" height="1800"><div xmlns="http://www.w3.org/1999/xhtml" style="background:#fff;padding:36px;font-family:Arial,sans-serif;color:#2b2220">${html}</div></foreignObject></svg>`;
-  const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `${order.orderNumber}-tailor-details.svg`;
-  link.click();
-  URL.revokeObjectURL(url);
+function blobToDataUri(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function downloadOrderImage(order: AdminOrder) {
+  const baseHtml = printableOrderHtml(order);
+  const styleCss = baseHtml.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? '';
+  let bodyHtml = baseHtml.match(/<body>([\s\S]*)<\/body>/)?.[1] ?? '';
+  bodyHtml = bodyHtml.replace(/<script[\s\S]*?<\/script>/gi, '');
+
+  // Inline every image as a data-URI so the exported PNG isn't blank:
+  // Cloudinary images are cross-origin and would both taint the canvas and
+  // fail to load inside a bare SVG raster.
+  const srcs = Array.from(new Set(Array.from(bodyHtml.matchAll(/<img[^>]+src="([^"]+)"/g)).map((m) => m[1])));
+  const inlined = new Map<string, string>();
+  await Promise.all(srcs.map(async (src) => {
+    try {
+      const res = await fetch(src, { mode: 'cors' });
+      if (!res.ok) return;
+      inlined.set(src, await blobToDataUri(await res.blob()));
+    } catch {
+      // Keep original src — it may still render when opened in a browser.
+    }
+  }));
+  for (const [src, dataUri] of inlined) bodyHtml = bodyHtml.split(src).join(dataUri);
+
+  // <style> must live INSIDE the foreignObject div so the SVG carries the CSS.
+  const cleanBody = bodyHtml.replace(/<style[\s\S]*?<\/style>/gi, '');
+  const styledBody = `<style>${styleCss}</style>${cleanBody}`;
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1800" viewBox="0 0 1200 1800">
+      <foreignObject width="1200" height="1800">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="background:#fff;padding:36px;font-family:Arial,sans-serif;color:#2b2220;box-sizing:border-box;line-height:1.4;">
+          ${styledBody}
+        </div>
+      </foreignObject>
+    </svg>
+  `;
+
+  const svgUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
+
+  try {
+    // Rasterize the SVG (with its inlined images / styles) to a real PNG.
+    const img = new Image();
+    img.src = svgUrl;
+    const canvas = await new Promise<HTMLCanvasElement>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('image render timeout')), 6000);
+      img.onload = () => {
+        clearTimeout(timer);
+        const c = document.createElement('canvas');
+        c.width = img.naturalWidth || 1200;
+        c.height = img.naturalHeight || 1800;
+        c.getContext('2d')?.drawImage(img, 0, 0);
+        resolve(c);
+      };
+      img.onerror = () => { clearTimeout(timer); reject(new Error('svg failed to render')); };
+    });
+
+    const pngUrl = canvas.toDataURL('image/png');
+    const link = document.createElement('a');
+    link.href = pngUrl;
+    link.download = `${order.orderNumber}-tailor-details.png`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } catch {
+    // Fallback: if rasterization is unsupported, save the styled SVG instead.
+    const link = document.createElement('a');
+    link.href = svgUrl;
+    link.download = `${order.orderNumber}-tailor-details.svg`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
+  setTimeout(() => URL.revokeObjectURL(svgUrl), 3000);
 }
 
 const srTones: Record<string, string> = {
