@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from '../../lib/api';
 import { Badge, BtnGhost, BtnOutline, BtnPrimary, Field, ImageLightbox, Modal, TextInput, Toolbar, inr } from './shared';
-import { ChevronDown, ChevronRight, Eye, X, Check, Truck, Wallet, LinkIcon, Image as ImageIcon, Scissors, RefreshCw, SlidersHorizontal, UserRound } from 'lucide-react';
+import { ChevronDown, ChevronRight, Eye, X, Check, Truck, LinkIcon, Image as ImageIcon, Scissors, RefreshCw, SlidersHorizontal, UserRound, Printer, FileImage } from 'lucide-react';
 import clsx from 'clsx';
 import { cloudinarySrc } from '../../lib/image';
 
@@ -9,6 +9,7 @@ const statuses = ['AWAITING_REVIEW', 'PLACED', 'CONFIRMED', 'PROCESSING', 'STITC
 
 interface TailorHistoryEntry { tailorId: string; tailorName: string; at: string; reason: string; }
 interface TailorAssignment { tailorId: string; tailorName: string; assignedAt: string | null; status: string; notes: string; history: TailorHistoryEntry[]; }
+interface OrderOptionSnapshot { name: string; material?: string; colorName?: string; image: string; }
 
 interface AdminOrder {
   _id: string; orderNumber: string; status: string; isGuest: boolean;
@@ -16,7 +17,7 @@ interface AdminOrder {
   address: { line1: string; line2: string; city: string; state: string; pincode: string; country: string };
   currency: string; amounts: { subtotalMinor: number; discountMinor: number; shippingMinor: number; totalMinor: number; couponCode: string; codAdvanceMinor?: number; codBalanceMinor?: number };
   payment: { method: string; status: string; razorpayOrderId: string; razorpayPaymentId: string; paidAt: string | null; failureReason: string };
-  items: Array<{ designId: string; name: string; type: string; quantity: number; colorName: string; size: number | null; sku?: string; fabricName: string; laceNames: string[]; latkanNames?: string[]; measurement: { unit: string; values: Record<string, number> } | null; lineTotalMinor: number; image: string; unitBaseMinor?: number; unitFabricMinor?: number; unitLaceMinor?: number; unitLatkanMinor?: number; unitStitchingMinor?: number }>;
+  items: Array<{ designId: string; name: string; type: string; quantity: number; colorName: string; size: number | null; sku?: string; fabricName: string; fabricDetails?: OrderOptionSnapshot[]; laceNames: string[]; laceDetails?: OrderOptionSnapshot[]; latkanNames?: string[]; latkanDetails?: OrderOptionSnapshot[]; measurement: { unit: string; values: Record<string, number> } | null; lineTotalMinor: number; image: string; unitBaseMinor?: number; unitFabricMinor?: number; unitLaceMinor?: number; unitLatkanMinor?: number; unitStitchingMinor?: number }>;
   statusHistory: Array<{ status: string; at: string; note: string }>;
   shipping: {
     provider: string; shiprocketOrderId: string; shipmentId: string; awb: string; courier: string; courierId: string;
@@ -510,7 +511,16 @@ function OrderDetailModal({ order, onClose, busy, onStatus, onUpdated, onListRef
           </section>
 
           <section className="rounded-xl border border-maroon-100 p-4">
-            <h4 className="text-sm font-bold text-maroon-700">Items</h4>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-bold text-maroon-700">Items & tailor sheet</h4>
+                <p className="mt-1 text-xs text-ink-muted">Product, selected fabric/laces aur measurements ek jagah.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <BtnOutline className="min-h-9 px-2.5 text-xs" onClick={() => openPrintableOrder(order)}><Printer size={14} />Print / Save PDF</BtnOutline>
+                <BtnOutline className="min-h-9 px-2.5 text-xs" onClick={() => downloadOrderImage(order)}><FileImage size={14} />Download image</BtnOutline>
+              </div>
+            </div>
             <div className="mt-3 space-y-3">
               {items.map((item, i) => {
                 const unitBreakdown = (item.unitBaseMinor ?? 0) + (item.unitFabricMinor ?? 0) + (item.unitLaceMinor ?? 0) + (item.unitLatkanMinor ?? 0) + (item.unitStitchingMinor ?? 0);
@@ -524,7 +534,8 @@ function OrderDetailModal({ order, onClose, busy, onStatus, onUpdated, onListRef
                   item.latkanNames?.length ? `Latkan: ${item.latkanNames.join(', ')}` : '',
                 ].filter(Boolean).join(' · ');
                 return (
-                  <div className="flex gap-3 rounded-lg border border-maroon-50 p-3" key={i}>
+                  <div className="rounded-lg border border-maroon-50 p-3" key={i}>
+                    <div className="flex gap-3">
                     <button type="button" onClick={() => { if (item.image) setPreview(item.image); }} title={item.image ? 'Image preview' : 'No image'}
                       className={`h-20 w-16 shrink-0 ${item.image ? 'cursor-zoom-in bg-maroon-50' : 'cursor-default bg-ink-light/10'} grid place-items-center overflow-hidden rounded-lg text-ink-light`}>
                       {item.image ? <img src={cloudinarySrc(item.image, 128)} alt={item.name} loading="lazy" className="h-full w-full object-cover" /> : <ImageIcon size={18} />}
@@ -540,15 +551,19 @@ function OrderDetailModal({ order, onClose, busy, onStatus, onUpdated, onListRef
                       <div className="mt-1 text-xs text-ink-muted">
                         Qty <strong className="text-ink">{item.quantity}</strong> × selling price {imrs(unitMinor)} each
                       </div>
-                      {item.type === 'CUSTOMIZE' && item.measurement ? (
-                        <div className="mt-2 rounded-md bg-maroon-50/60 p-2 text-xs">
-                          <p className="font-bold text-maroon-700">Measurements ({item.measurement.unit})</p>
-                          <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 sm:grid-cols-3">
-                            {Object.entries(item.measurement.values).map(([k, v]) => <span key={k}><strong className="capitalize">{k.replace(/_/g, ' ')}</strong>: {v}"</span>)}
-                          </div>
-                        </div>
-                      ) : null}
                     </div>
+                    </div>
+                    <OptionSnapshots label="Fabric" items={item.fabricDetails} fallback={item.fabricName} onPreview={setPreview} />
+                    <OptionSnapshots label="Laces" items={item.laceDetails} fallback={item.laceNames?.join(', ')} onPreview={setPreview} />
+                    <OptionSnapshots label="Latkans" items={item.latkanDetails} fallback={item.latkanNames?.join(', ')} onPreview={setPreview} />
+                    {item.measurement ? (
+                      <div className="mt-3 rounded-md bg-maroon-50/60 p-3 text-xs">
+                        <p className="font-bold text-maroon-700">Measurements ({item.measurement.unit})</p>
+                        <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-3">
+                          {Object.entries(item.measurement.values).map(([k, v]) => <span key={k}><strong className="capitalize">{k.replace(/_/g, ' ')}</strong>: {v}</span>)}
+                        </div>
+                      </div>
+                    ) : <p className="mt-3 text-xs text-ink-muted">Measurements saved nahi hain.</p>}
                   </div>
                 );
               })}
@@ -559,7 +574,6 @@ function OrderDetailModal({ order, onClose, busy, onStatus, onUpdated, onListRef
               <Row k="Shipping" v={imrs(amounts.shippingMinor)} />
               <Row k={<strong>Total ({order.currency ?? 'INR'})</strong>} v={<strong>{imrs(amounts.totalMinor)}</strong>} />
             </div>
-            {hasCustom ? <BtnPrimary className="mt-4 w-full" onClick={() => window.print()}><Wallet size={16} />Print stitching sheet</BtnPrimary> : null}
           </section>
         </div>
       </div>
@@ -576,6 +590,72 @@ function Row({ k, v }: { k: React.ReactNode; v: React.ReactNode }) {
       <span className="text-right font-medium">{v}</span>
     </div>
   );
+}
+
+function OptionSnapshots({ label, items, fallback, onPreview }: {
+  label: string; items?: OrderOptionSnapshot[]; fallback?: string; onPreview: (url: string) => void;
+}) {
+  const snapshots = items?.filter((item) => item.name || item.image) ?? [];
+  if (snapshots.length === 0 && !fallback) return null;
+  return (
+    <div className="mt-3">
+      <p className="text-xs font-bold text-maroon-700">{label}</p>
+      {snapshots.length > 0 ? (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {snapshots.map((option, index) => (
+            <div className="flex min-w-0 items-center gap-2 rounded-lg border border-maroon-50 bg-white p-1.5 pr-2" key={`${option.name}-${index}`}>
+              <button type="button" onClick={() => option.image && onPreview(option.image)} className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-md bg-maroon-50" title={option.image ? `${label} image preview` : 'No image'}>
+                {option.image ? <img src={cloudinarySrc(option.image, 96)} alt={option.name || label} loading="lazy" className="h-full w-full object-cover" /> : <ImageIcon size={15} />}
+              </button>
+              <span className="max-w-[150px] text-xs font-semibold text-ink">
+                {option.name || 'Unnamed'}
+                {option.material || option.colorName ? <span className="block font-normal text-ink-muted">{[option.material, option.colorName].filter(Boolean).join(' · ')}</span> : null}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : <p className="mt-1 text-xs text-ink-muted">{fallback}</p>}
+    </div>
+  );
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character] ?? character));
+}
+
+function printableOptions(label: string, options: OrderOptionSnapshot[] | undefined, fallback?: string): string {
+  const values = options?.filter((option) => option.name || option.image) ?? [];
+  if (values.length === 0) return fallback ? `<p><b>${escapeHtml(label)}:</b> ${escapeHtml(fallback)}</p>` : '';
+  return `<div><b>${escapeHtml(label)}</b><div class="options">${values.map((option) => `<div class="option">${option.image ? `<img src="${escapeHtml(option.image)}" alt="">` : ''}<span>${escapeHtml(option.name)}${option.material || option.colorName ? `<small>${escapeHtml([option.material, option.colorName].filter(Boolean).join(' · '))}</small>` : ''}</span></div>`).join('')}</div></div>`;
+}
+
+function printableOrderHtml(order: AdminOrder): string {
+  const items = order.items ?? [];
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(order.orderNumber)} tailor details</title><style>
+    *{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#2b2220;margin:0;padding:28px;background:#fff}h1{color:#741d3c;margin:0 0 4px}h2{font-size:18px;color:#741d3c;margin:24px 0 8px;border-bottom:1px solid #ead6dc;padding-bottom:6px}.muted{color:#6b5c56;font-size:13px}.top{display:flex;justify-content:space-between;border-bottom:2px solid #741d3c;padding-bottom:14px}.contact{margin:16px 0;padding:12px;background:#fbf4f6;border-radius:8px}.item{border:1px solid #ead6dc;border-radius:10px;padding:14px;margin:14px 0;page-break-inside:avoid}.product{display:flex;gap:14px}.product>img{width:90px;height:108px;object-fit:cover;border-radius:8px}.name{font-size:18px;font-weight:bold}.details{flex:1}.options{display:flex;flex-wrap:wrap;gap:8px;margin:7px 0 12px}.option{display:flex;align-items:center;gap:6px;border:1px solid #ead6dc;border-radius:7px;padding:5px;font-size:12px}.option img{width:42px;height:42px;object-fit:cover;border-radius:5px}.option small{display:block;color:#6b5c56;margin-top:3px}.measure{background:#fbf4f6;border-radius:8px;padding:10px;margin-top:10px}.measure-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;font-size:13px;margin-top:7px}.footer{margin-top:26px;border-top:1px solid #ead6dc;padding-top:10px;font-size:12px;color:#6b5c56}@media print{body{padding:14px}}
+  </style></head><body><div class="top"><div><h1>Guddi Silai</h1><div class="muted">Tailor order details</div></div><div><b>${escapeHtml(order.orderNumber)}</b><br><span class="muted">${escapeHtml(new Date(order.placedAt).toLocaleString('en-IN'))}</span></div></div>
+  <div class="contact"><b>${escapeHtml(order.contact?.name ?? '')}</b> · ${escapeHtml(order.contact?.mobile ?? '')}${order.contact?.email ? ` · ${escapeHtml(order.contact.email)}` : ''}<br>${escapeHtml([order.address?.line1, order.address?.line2, order.address?.city, order.address?.state, order.address?.pincode].filter(Boolean).join(', '))}</div>
+  <h2>Items</h2>${items.map((item) => `<section class="item"><div class="product">${item.image ? `<img src="${escapeHtml(item.image)}" alt="">` : ''}<div class="details"><div class="name">${escapeHtml(item.name)} <span class="muted">(${escapeHtml(item.designId)})</span></div><p class="muted">${escapeHtml([item.colorName, item.size ? `Size ${item.size}` : '', item.sku ? `SKU ${item.sku}` : ''].filter(Boolean).join(' · '))}</p>${printableOptions('Fabric', item.fabricDetails, item.fabricName)}${printableOptions('Laces', item.laceDetails, item.laceNames?.join(', '))}${printableOptions('Latkans', item.latkanDetails, item.latkanNames?.join(', '))}<p><b>Quantity:</b> ${item.quantity}</p>${item.measurement ? `<div class="measure"><b>Measurements (${escapeHtml(item.measurement.unit)})</b><div class="measure-grid">${Object.entries(item.measurement.values).map(([key, value]) => `<span><b>${escapeHtml(key.replace(/_/g, ' '))}:</b> ${escapeHtml(value)}"</span>`).join('')}</div></div>` : ''}</div></div></section>`).join('')}
+  <div class="footer">Customer note: ${escapeHtml(order.customerNote || '—')}<br>Generated from admin order detail.</div></body></html>`;
+}
+
+function openPrintableOrder(order: AdminOrder) {
+  const printWindow = window.open('', '_blank', 'noopener,noreferrer');
+  if (!printWindow) return;
+  printWindow.document.write(printableOrderHtml(order));
+  printWindow.document.close();
+  printWindow.onload = () => { printWindow.focus(); printWindow.print(); };
+}
+
+function downloadOrderImage(order: AdminOrder) {
+  const html = printableOrderHtml(order).match(/<body>([\s\S]*)<\/body>/)?.[1] ?? '';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1800" viewBox="0 0 1200 1800"><foreignObject width="1200" height="1800"><div xmlns="http://www.w3.org/1999/xhtml" style="background:#fff;padding:36px;font-family:Arial,sans-serif;color:#2b2220">${html}</div></foreignObject></svg>`;
+  const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${order.orderNumber}-tailor-details.svg`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 const srTones: Record<string, string> = {
