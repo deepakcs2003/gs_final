@@ -23,6 +23,7 @@ import { OrdersPage } from './pages/Orders';
 import { AboutPage, ContactPage, FaqPage, PolicyPage, NotFoundPage, ManagedPageView } from './pages/Static';
 import { AdminPage } from './pages/Admin';
 import { OurWorkPage } from './pages/OurWork';
+import { CollectionPage } from './pages/Collection';
 
 /** Scrolls to the top on navigation and records the page view. */
 function RouteEffects() {
@@ -81,6 +82,7 @@ export function App() {
 
           {/* Admin-managed content pages (README §85.12) */}
           <Route path="/page/:slug" element={<ManagedPageView />} />
+          <Route path="/collection/:slug" element={<CollectionPage />} />
 
           <Route path="*" element={<NotFoundPage />} />
         </Routes>

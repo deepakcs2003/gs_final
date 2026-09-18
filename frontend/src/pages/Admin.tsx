@@ -18,6 +18,7 @@ import { ReviewsModule } from './admin/Reviews';
 import { CouponsModule } from './admin/Coupons';
 import { BannersModule } from './admin/Banners';
 import { HomepageModule } from './admin/Homepage';
+import { CollectionsModule } from './admin/Collections';
 import { AnalyticsModule } from './admin/Analytics';
 import { EnquiriesModule } from './admin/Enquiries';
 import { SeoModule } from './admin/Seo';
@@ -43,6 +44,7 @@ const nav = {
   catalog: { label: 'Categories & colours', icon: FolderTree },
   coupons: { label: 'Coupons & offers', icon: CreditCard },
   homepage: { label: 'Homepage sections', icon: GalleryHorizontalEnd },
+  collections: { label: 'Collection links', icon: FolderTree },
   banners: { label: 'Banners', icon: Image },
   'our-work': { label: 'Our Work / Hamara Kaam', icon: GalleryHorizontalEnd },
   analytics: { label: 'Analytics', icon: BarChart3 },
@@ -67,7 +69,7 @@ const bottomNavItems = [
 
 const navGroups: Array<{ label: string; items: Array<keyof typeof nav> }> = [
   { label: 'Command centre', items: ['overview', 'orders', 'tailors', 'customers', 'inventory', 'measurements', 'reviews'] },
-  { label: 'Store & catalogue', items: ['products', 'catalog', 'coupons', 'homepage', 'banners', 'our-work'] },
+  { label: 'Store & catalogue', items: ['products', 'catalog', 'coupons', 'homepage', 'collections', 'banners', 'our-work'] },
   { label: 'Growth', items: ['analytics', 'communications', 'notifications', 'seo'] },
   { label: 'Governance', items: ['shipping', 'payments', 'content', 'admin-users', 'settings', 'activity', 'backup'] },
 ];
@@ -84,6 +86,7 @@ const modules: Record<string, ComponentType<Record<string, unknown>>> = {
   catalog: CatalogModule,
   coupons: CouponsModule,
   homepage: HomepageModule,
+  collections: CollectionsModule,
   banners: BannersModule,
   'our-work': OurWorkModule,
   analytics: AnalyticsModule,

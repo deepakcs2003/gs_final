@@ -21,6 +21,7 @@ import type {
   OfferPopupResponse,
   Paged,
   ProductCard,
+  ProductCollection,
   ProductDetail,
   ProductType,
   Review,
@@ -132,6 +133,24 @@ export function useProduct(slug: string | undefined) {
     queryKey: ['product', slug],
     queryFn: () => api<{ product: ProductDetail }>(`/products/${slug}`),
     select: (data) => data.product,
+    enabled: Boolean(slug),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useProductCollections() {
+  return useQuery({
+    queryKey: ['product-collections'],
+    queryFn: () => api<{ items: ProductCollection[] }>('/collections'),
+    select: (data) => data.items,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCollection(slug: string | undefined) {
+  return useQuery({
+    queryKey: ['collection', slug],
+    queryFn: () => api<{ collection: { id: string; slug: string; title: string; description: string; productCount: number }; products: ProductCard[]; currency: Currency }>('/collections/' + encodeURIComponent(slug ?? '')),
     enabled: Boolean(slug),
     staleTime: 60 * 1000,
   });

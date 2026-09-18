@@ -196,6 +196,17 @@ export interface HomepageSection {
   categoryId: { name: string; slug: string } | null;
 }
 
+export interface ProductCollection {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  productIds: string[];
+  isActive: boolean;
+  order: number;
+  productCount?: number;
+}
+
 /** Admin-managed content page — README §85.12. */
 export interface ManagedPage {
   id: string;

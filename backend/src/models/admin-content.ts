@@ -135,3 +135,25 @@ homepageSectionSchema.index({ order: 1 });
 
 export const HomepageSection = model('HomepageSection', homepageSectionSchema);
 export type HomepageSectionDoc = InferSchemaType<typeof homepageSectionSchema> & { _id: Types.ObjectId };
+
+/* -------------------------------------------------------------------------- */
+/* ProductCollection — admin-created curated product bundles / shareable links  */
+/* -------------------------------------------------------------------------- */
+
+const productCollectionSchema = new Schema(
+  {
+    slug: { type: String, required: true, unique: true, lowercase: true, trim: true, maxlength: 80 },
+    title: { type: String, required: true, trim: true, maxlength: 120 },
+    description: { type: String, default: '', maxlength: 400 },
+    productIds: { type: [{ type: Schema.Types.ObjectId, ref: 'Product' }], default: [] },
+    isActive: { type: Boolean, default: true },
+    order: { type: Number, default: 0 },
+    createdBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  },
+  { timestamps: true },
+);
+
+productCollectionSchema.index({ isActive: 1, order: 1, createdAt: -1 });
+
+export const ProductCollection = model('ProductCollection', productCollectionSchema);
+export type ProductCollectionDoc = InferSchemaType<typeof productCollectionSchema> & { _id: Types.ObjectId };

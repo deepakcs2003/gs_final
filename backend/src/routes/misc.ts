@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AnalyticsEvent } from '../models/analytics.js';
 import { Enquiry, Review } from '../models/commerce.js';
 import { Product } from '../models/catalog.js';
-import { Banner, HomepageSection, OfferPopup, Page } from '../models/admin-content.js';
+import { Banner, HomepageSection, OfferPopup, Page, ProductCollection } from '../models/admin-content.js';
 import { validate } from '../middleware/validate.js';
 import { presentProductCard } from '../presenters/product.js';
 import { responsiveUrl } from '../services/media/cloudinary.js';
@@ -16,6 +16,7 @@ import { objectId } from '../schemas/cart.js';
 import { ANALYTICS_EVENTS } from '../domain/constants.js';
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
+import { notFound } from '../utils/errors.js';
 
 const router = Router();
 
@@ -388,6 +389,48 @@ router.get('/offer-popup', readLimiter, async (req: Request, res: Response) => {
       delaySeconds: doc.delaySeconds,
       product,
     },
+  });
+});
+
+/** Public product collections generated from the admin side — shareable links. */
+router.get('/collections', readLimiter, async (_req: Request, res: Response) => {
+  const items = await ProductCollection.find({ isActive: true })
+    .sort({ order: 1, createdAt: -1 })
+    .populate('productIds', 'designId name slug images sellingPriceInr mrpInr type isActive')
+    .lean();
+
+  res.json({ items: items.map((item) => ({
+    id: String(item._id),
+    slug: item.slug,
+    title: item.title,
+    description: item.description,
+    productCount: (item.productIds ?? []).length,
+  })) });
+});
+
+router.get('/collections/:slug', readLimiter, validate({ params: z.object({ slug: z.string().trim().min(1).max(80).regex(/^[a-z0-9-]+$/) }).strict() }), async (req: Request, res: Response) => {
+  const { slug } = (req as Request & { validated: { params: { slug: string } } }).validated.params;
+  const collection = await ProductCollection.findOne({ slug, isActive: true }).lean();
+  if (!collection) throw notFound('Collection nahi mila.');
+
+  const productIds = (collection.productIds ?? []).map((id) => String(id));
+  const products = await Product.find({ _id: { $in: productIds }, isActive: true }).lean();
+  const ranked = productIds.map((id) => products.find((product) => String(product._id) === id)).filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+
+  const geo = resolveGeo(req);
+  const settings = await getSettings();
+  const fxRate = geo.currency === 'INR' ? 1 : settings.usdRateInr;
+
+  res.json({
+    collection: {
+      id: String(collection._id),
+      slug: collection.slug,
+      title: collection.title,
+      description: collection.description,
+      productCount: ranked.length,
+    },
+    products: ranked.map((product) => presentProductCard(product, geo.currency, fxRate)),
+    currency: geo.currency,
   });
 });
 

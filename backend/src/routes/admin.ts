@@ -9,7 +9,7 @@ import { Coupon, Enquiry, Order, Review } from '../models/commerce.js';
 import { MeasurementField, User } from '../models/user.js';
 import { Tailor } from '../models/tailor.js';
 import { AdminActivityLog, AnalyticsEvent, Setting } from '../models/analytics.js';
-import { Color, Size, Banner, OfferPopup, Page, HomepageSection } from '../models/admin-content.js';
+import { Color, Size, Banner, OfferPopup, Page, HomepageSection, ProductCollection } from '../models/admin-content.js';
 import { validate, type ValidatedRequest } from '../middleware/validate.js';
 import { ORDER_STATUSES, PAYMENT_STATUSES, ADMIN_ROLES, TAILOR_SPECIALIZATIONS, TAILOR_STATUSES, COMPLEXITY_KEYS, type AdminRole, type OrderStatus, type ComplexityKey, type TailorSpecialization, type TailorStatus } from '../domain/constants.js';
 import { notFound, forbidden, badRequest, conflict } from '../utils/errors.js';
@@ -261,6 +261,15 @@ const pageSchema = z.object({
   seoTitle: z.string().max(70).default(''),
   seoDescription: z.string().max(180).default(''),
   isActive: z.boolean().default(true),
+}).strict();
+
+const productCollectionSchema = z.object({
+  slug: z.string().trim().min(1).max(80),
+  title: z.string().trim().min(1).max(120),
+  description: z.string().max(400).default(''),
+  productIds: z.array(z.string().regex(/^[0-9a-fA-F]{24}$/)).max(10).default([]),
+  isActive: z.boolean().default(true),
+  order: z.number().int().min(0).max(1000).default(0),
 }).strict();
 
 const homepageSectionSchema = z.object({
@@ -1887,6 +1896,55 @@ router.delete('/offer-popups/:id', adminWriteLimiter, validate({ params: idSchem
 router.get('/pages', adminReadLimiter, async (_req: Request, res: Response) => {
   const items = await Page.find().sort({ createdAt: -1 }).lean();
   res.json({ items });
+});
+
+router.get('/product-collections', adminReadLimiter, async (_req: Request, res: Response) => {
+  const items = await ProductCollection.find().sort({ order: 1, createdAt: -1 }).lean();
+  res.json({ items: items.map((item) => ({
+    ...item,
+    _id: String(item._id),
+    productIds: (item.productIds ?? []).map((id) => String(id)),
+  })) });
+});
+
+router.post('/product-collections', adminWriteLimiter, validate({ body: productCollectionSchema }), async (req: Request, res: Response) => {
+  const body = (req as ValidatedRequest<z.infer<typeof productCollectionSchema>>).validated.body;
+  const slug = body.slug.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'product-link';
+  const exists = await ProductCollection.findOne({ slug }).lean();
+  if (exists) throw conflict('Ye collection slug already use ho chuka hai.');
+
+  const item = await ProductCollection.create({
+    ...body,
+    slug,
+    productIds: [...new Set(body.productIds)].slice(0, 10),
+    createdBy: req.auth?.userId ?? null,
+  });
+  await logAction(req, 'CREATE', 'PRODUCT_COLLECTION', String(item._id), item.title);
+  res.status(201).json({ item });
+});
+
+router.patch('/product-collections/:id', adminWriteLimiter, validate({ params: idSchema, body: productCollectionSchema.partial() }), async (req: Request, res: Response) => {
+  const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
+  const body = (req as ValidatedRequest<Record<string, unknown>>).validated.body;
+  const updates: Record<string, unknown> = { ...body };
+
+  if (typeof updates.slug === 'string') {
+    updates.slug = updates.slug.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'product-link';
+  }
+  if (Array.isArray(updates.productIds)) updates.productIds = [...new Set(updates.productIds)].slice(0, 10);
+
+  const item = await ProductCollection.findByIdAndUpdate(id, { $set: updates }, { new: true, runValidators: true });
+  if (!item) throw notFound('Collection nahi mila.');
+  await logAction(req, 'UPDATE', 'PRODUCT_COLLECTION', id, item.title);
+  res.json({ item });
+});
+
+router.delete('/product-collections/:id', adminWriteLimiter, validate({ params: idSchema }), async (req: Request, res: Response) => {
+  const { id } = (req as ValidatedRequest<unknown, unknown, { id: string }>).validated.params;
+  const item = await ProductCollection.findByIdAndDelete(id);
+  if (!item) throw notFound('Collection nahi mila.');
+  await logAction(req, 'DELETE', 'PRODUCT_COLLECTION', id, item.title);
+  res.json({ ok: true });
 });
 
 router.post('/pages', adminWriteLimiter, validate({ body: pageSchema }), async (req: Request, res: Response) => {

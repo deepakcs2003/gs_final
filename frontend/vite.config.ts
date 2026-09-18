@@ -11,6 +11,7 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'https://guddisilai-backend.onrender.com',
+        // target: 'http://localhost:5173',
         // Dev-only: skip TLS certificate verification when proxying to the
         // remote backend (Node's trust store can reject Render's chain).
         secure: false,
