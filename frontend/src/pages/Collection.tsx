@@ -34,20 +34,20 @@ export function CollectionPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <header className="mb-8 rounded-3xl border border-maroon-100 bg-white p-6 shadow-card">
-        <p className="text-xs font-bold uppercase tracking-[0.2em] text-maroon-600">Curated collection</p>
-        <h1 className="mt-2 font-display text-3xl font-bold text-ink sm:text-4xl">{collection.title}</h1>
-        {collection.description ? <p className="mt-3 max-w-2xl text-ink-muted">{collection.description}</p> : null}
+    <div className="mx-auto max-w-7xl px-3 py-6 sm:px-6 lg:px-8">
+      <header className="mb-6 rounded-3xl border border-maroon-100 bg-white p-4 shadow-card sm:mb-8 sm:p-6">
+        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-maroon-600 sm:text-xs">Curated collection</p>
+        <h1 className="mt-2 font-display text-2xl font-bold text-ink sm:text-3xl lg:text-4xl">{collection.title}</h1>
+        {collection.description ? <p className="mt-3 max-w-2xl text-sm text-ink-muted sm:text-base">{collection.description}</p> : null}
         <p className="mt-4 text-sm text-ink-muted">{collection.productCount} products</p>
       </header>
 
       {products.length === 0 ? (
-        <div className="card p-10 text-center">
+        <div className="card p-8 text-center sm:p-10">
           <p className="text-ink-muted">Iss collection mein abhi koi product available nahi hai.</p>
         </div>
       ) : (
-        <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {products.map((product) => (
             <ProductCardView key={product.id} product={product} currency={currency} />
           ))}
