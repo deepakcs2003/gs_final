@@ -2175,8 +2175,8 @@ router.get('/analytics/products', adminReadLimiter, async (req: Request, res: Re
   const from = req.query.from ? new Date(String(req.query.from)) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const to = req.query.to ? new Date(String(req.query.to)) : new Date();
   const range = { $gte: from, $lte: to };
-  const items = await Product.find().sort({ 'stats.views': -1 }).limit(100)
-    .select('designId name type stats mrpInr sellingPriceInr isActive').lean();
+  const items = await Product.find().sort({ 'stats.views': -1 }).limit(300)
+    .select('designId name slug type stats mrpInr sellingPriceInr isActive images').lean();
   const eventCounts = await AnalyticsEvent.aggregate([
     { $match: { at: range, type: { $in: ['PRODUCT_VIEW', 'CART_ADD', 'WISHLIST_ADD', 'BUY_NOW', 'WHATSAPP_CLICK', 'SHARE'] }, product: { $ne: null } } },
     { $group: { _id: { product: '$product', type: '$type' }, count: { $sum: 1 } } },
@@ -2186,7 +2186,12 @@ router.get('/analytics/products', adminReadLimiter, async (req: Request, res: Re
     const productId = String(row._id.product);
     (perProduct[productId] ??= {})[row._id.type] = row.count;
   }
-  res.json({ items: items.map((p) => ({ ...p, events: perProduct[String(p._id)] ?? {} })) });
+  res.json({ items: items.map((p) => ({
+    ...p,
+    image: p.images?.[0]?.url ?? '',
+    imageAlt: p.images?.[0]?.alt ?? p.name,
+    events: perProduct[String(p._id)] ?? {},
+  })) });
 });
 
 /* ========================================================================== */
