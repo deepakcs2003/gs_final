@@ -18,7 +18,7 @@ export function CollectionPage() {
         <div className="animate-pulse space-y-4">
           <div className="h-8 w-52 rounded bg-maroon-100" />
           <div className="h-4 w-80 rounded bg-ink-light/10" />
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-80 rounded-xl bg-ink-light/10" />)}</div>
+          <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-4">{Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-64 rounded-xl bg-ink-light/10 sm:h-80" />)}</div>
         </div>
       </div>
     );
@@ -47,7 +47,7 @@ export function CollectionPage() {
           <p className="text-ink-muted">Iss collection mein abhi koi product available nahi hai.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
           {products.map((product) => (
             <ProductCardView key={product.id} product={product} currency={currency} />
           ))}

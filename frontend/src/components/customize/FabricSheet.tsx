@@ -1,12 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import clsx from 'clsx';
-import { AlertTriangle, Check, X, SlidersHorizontal } from 'lucide-react';
+import { AlertTriangle, Check, X, SlidersHorizontal, Ruler, BookmarkPlus, ClipboardCheck, CircleHelp } from 'lucide-react';
 import { Sheet } from '../ui';
 import { SmartImage } from '../SmartImage';
-import { useFabrics, useLaces, useLatkans, useConfig } from '../../hooks/queries';
+import { useFabrics, useLaces, useLatkans, useConfig, useMeasurementFields, useCurrentUser, useMeasurementProfiles, useSaveMeasurementProfile } from '../../hooks/queries';
+import { api, ApiError } from '../../lib/api';
 import { moneyLabel, type Currency } from '../../lib/format';
-import type { Fabric, Lace, Latkan, ProductCard } from '../../lib/types';
+import type { Fabric, Lace, Latkan, MeasurementData, ProductCard, MeasurementUnit } from '../../lib/types';
+import { FieldCard } from '../../pages/Measurement';
+import { useUi } from '../../store/ui';
 
 type Lang = 'hi' | 'en';
 
@@ -54,7 +57,7 @@ interface FabricSheetProps {
    */
   product: ProductCard & { laceOptionIds?: string[]; latkanOptionIds?: string[]; fabricOptionIds?: string[]; minFabricCount?: number; maxFabricCount?: number; minLaceCount?: number; maxLaceCount?: number; minLatkanCount?: number; maxLatkanCount?: number };
   currency: Currency;
-  onConfirm: (selection: { fabrics: Fabric[]; laces: AccessoryPick[]; latkans: AccessoryPick[] }) => void;
+  onConfirm: (selection: { fabrics: Fabric[]; laces: AccessoryPick[]; latkans: AccessoryPick[]; measurement: MeasurementData; note: string }) => void;
 }
 
 const PRICE_BUCKETS = [
@@ -64,6 +67,9 @@ const PRICE_BUCKETS = [
 ];
 
 export function FabricSheet({ open, onClose, product, currency, onConfirm }: FabricSheetProps) {
+  const { data: user } = useCurrentUser();
+  const openLogin = useUi((state) => state.openLogin);
+  const saveProfileMutation = useSaveMeasurementProfile();
   const [showFilters, setShowFilters] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [warning, setWarning] = useState('');
@@ -87,6 +93,14 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
   const [materials, setMaterials] = useState<string[]>([]);
   const [embroidery, setEmbroidery] = useState<string[]>([]);
   const [maxPriceInr, setMaxPriceInr] = useState<number | undefined>();
+  const [measurementUnit, setMeasurementUnit] = useState<MeasurementUnit>('inch');
+  const [measurementValues, setMeasurementValues] = useState<Record<string, string>>({});
+  const [measurementErrors, setMeasurementErrors] = useState<Record<string, string>>({});
+  const [measurementBusy, setMeasurementBusy] = useState(false);
+  const [measurementNote, setMeasurementNote] = useState('');
+  const [saveProfile, setSaveProfile] = useState(false);
+  const [profileName, setProfileName] = useState('');
+  const firstMeasurementCardRef = useRef<HTMLDivElement>(null);
 
   const [fabricIds, setFabricIds] = useState<string[]>([]);
   const [laceIds, setLaceIds] = useState<string[]>([]);
@@ -105,6 +119,8 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
   const { data: laces } = useLaces(open);
   const { data: latkans } = useLatkans(open);
   const { data: config } = useConfig();
+  const { data: measurementData } = useMeasurementFields(measurementUnit);
+  const { data: profiles } = useMeasurementProfiles(measurementUnit, Boolean(user));
 
   // Admin toggles — off = no colour popup, the exact item is added as-is.
   const lacePickerHidden = config ? !config.laceColorPickerEnabled : true;
@@ -144,9 +160,9 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
   const minFabricRequired = product.minFabricCount ?? 1;
   const minLaceRequired = product.minLaceCount ?? 0;
   const minLatkanRequired = product.minLatkanCount ?? 0;
-  type StepKind = 'fabric' | 'lace' | 'latkan';
+  type StepKind = 'measurement' | 'fabric' | 'lace' | 'latkan';
   const stepOrder = useMemo<StepKind[]>(
-    () => ['fabric' as const, ...(laceStepOn ? ['lace' as const] : []), ...(latkanStepOn ? ['latkan' as const] : [])],
+    () => ['measurement' as const, 'fabric' as const, ...(laceStepOn ? ['lace' as const] : []), ...(latkanStepOn ? ['latkan' as const] : [])],
     [laceStepOn, latkanStepOn],
   );
   const step = stepOrder[Math.min(stepIndex, stepOrder.length - 1)] ?? 'fabric';
@@ -160,6 +176,71 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
 
   const toggle = (list: string[], setList: (next: string[]) => void, value: string) => {
     setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
+  };
+
+  const measurementFields = measurementData?.fields ?? [];
+  const measurementReady = measurementFields.length > 0 && measurementFields.every((field) => !field.required || Boolean(measurementValues[field.key])) && Object.keys(measurementErrors).length === 0;
+
+  useEffect(() => {
+    if (!open || step !== 'measurement' || measurementFields.length === 0) return;
+    const timer = window.setTimeout(() => {
+      firstMeasurementCardRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [open, step, measurementFields.length]);
+
+  const validateMeasurementField = (key: string, raw: string) => {
+    const field = measurementFields.find((entry) => entry.key === key);
+    if (!field) return;
+    setMeasurementErrors((current) => {
+      const next = { ...current };
+      const numeric = Number(raw);
+      if (!raw) {
+        if (field.required) next[key] = `${field.label} bharna zaroori hai.`;
+        else delete next[key];
+      } else if (!Number.isFinite(numeric) || numeric <= 0) {
+        next[key] = 'Sirf number likhein, jaise 34';
+      } else if (numeric < field.min || numeric > field.max) {
+        next[key] = `${field.min} se ${field.max} ${measurementUnit} ke beech hona chahiye.`;
+      } else {
+        delete next[key];
+      }
+      return next;
+    });
+  };
+
+  const validateMeasurement = async (): Promise<MeasurementData | null> => {
+    const numericValues = Object.fromEntries(
+      Object.entries(measurementValues).filter(([, value]) => value !== '').map(([key, value]) => [key, Number(value)]),
+    );
+    try {
+      const result = await api<{ ok: boolean; errors: Record<string, string> }>('/measurements/validate', {
+        method: 'POST',
+        body: { measurement: { unit: measurementUnit, values: numericValues, confirmed: true } },
+      });
+      if (!result.ok) {
+        setMeasurementErrors(result.errors);
+        setWarning(t('Kuch measurement sahi nahi hai.', 'Please check your measurements.'));
+        return null;
+      }
+      if (saveProfile && user) {
+        await saveProfileMutation.mutateAsync({
+          name: profileName.trim() || 'Default Profile',
+          unit: measurementUnit,
+          values: numericValues,
+          isDefault: true,
+        });
+      }
+      return { unit: measurementUnit, values: numericValues, confirmed: true };
+    } catch (error) {
+      setWarning(error instanceof ApiError ? error.message : t('Measurement save nahi hua.', 'Measurement could not be validated.'));
+      return null;
+    }
+  };
+
+  const applyProfile = (profileValues: Record<string, number>) => {
+    setMeasurementValues(Object.fromEntries(Object.entries(profileValues).map(([key, value]) => [key, String(value)])));
+    setMeasurementErrors({});
   };
 
   const toggleFabric = (fabric: Fabric) => {
@@ -332,9 +413,17 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
           <button
             type="button"
             className="btn-primary btn-lg shrink-0 px-7"
-            disabled={step === 'fabric' && selectedFabrics.length < minFabricRequired}
-            onClick={() => {
+            disabled={measurementBusy || (step === 'measurement' && !measurementReady) || (step === 'fabric' && selectedFabrics.length < minFabricRequired)}
+            onClick={async () => {
               setWarning('');
+              if (step === 'measurement') {
+                setMeasurementBusy(true);
+                const measurement = await validateMeasurement();
+                setMeasurementBusy(false);
+                if (!measurement) return;
+                setStepIndex(stepIndex + 1);
+                return;
+              }
               if (step === 'fabric' && selectedFabrics.length < minFabricRequired) {
                 setWarning(t('Pehle minimum fabric select karein.', 'Please choose the minimum required fabric first.'));
                 return;
@@ -352,14 +441,19 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
                 return;
               }
               if (!selectedFabric) return;
+              const numericValues = Object.fromEntries(
+                Object.entries(measurementValues).filter(([, value]) => value !== '').map(([key, value]) => [key, Number(value)]),
+              );
               onConfirm({
                 fabrics: selectedFabrics,
                 laces: resolvePicks(laces ?? [], laceColors, laceIds, lacePickerHidden),
                 latkans: resolvePicks(latkans ?? [], latkanColors, latkanIds, latkanPickerHidden),
+                measurement: { unit: measurementUnit, values: numericValues, confirmed: true },
+                note: measurementNote,
               });
             }}
           >
-            {isLastStep ? t('Done', 'Done') : t('Next', 'Next')}
+            {measurementBusy ? t('Checking...', 'Checking...') : isLastStep ? t('Done', 'Done') : t('Next', 'Next')}
           </button>
         </div>
       }
@@ -395,7 +489,7 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
               key={label}
               type="button"
               onClick={() => {
-                if (index <= stepIndex || (index === 1 && selectedFabric)) {
+                if (index <= stepIndex || (index === 1 && measurementReady) || (index === 2 && selectedFabric)) {
                   setWarning('');
                   setStepIndex(index);
                 }
@@ -406,13 +500,72 @@ export function FabricSheet({ open, onClose, product, currency, onConfirm }: Fab
               )}
             >
               <span className="mr-1">{index < stepIndex ? '✓' : index + 1}</span>
-              {label === 'fabric' ? t('Fabric', 'Fabric') : label === 'lace' ? t('Laces', 'Laces') : t('Latkans', 'Latkans')}
+              {label === 'measurement' ? t('Measurement', 'Measurement') : label === 'fabric' ? t('Fabric', 'Fabric') : label === 'lace' ? t('Laces', 'Laces') : t('Latkans', 'Latkans')}
             </button>
           ))}
         </div>
         {warning ? <p className="mt-2 flex items-center gap-1.5 text-[12px] font-semibold text-alert"><AlertTriangle size={14} />{warning}</p> : null}
       </div>
       <div className="space-y-5 py-1">
+        {step === 'measurement' ? (
+          <section className="space-y-4">
+            <div className="flex items-center gap-3 rounded-2xl bg-maroon-50 p-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-maroon-700"><Ruler size={19} /></span>
+              <div className="min-w-0">
+                <h3 className="font-display text-xl font-bold text-ink">{t('Apna measurement dein', 'Enter your measurements')}</h3>
+                <p className="text-xs text-ink-muted">{t('Fabric choose karne se pehle naap bharna zaroori hai.', 'Add your measurements before choosing the fabric.')}</p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-[13px] font-semibold text-ink-muted">Unit:</span>
+                <div className="inline-flex rounded-xl border border-ink-light/25 bg-white p-1">
+                  {(['inch', 'cm'] as const).map((option) => (
+                    <button key={option} type="button" onClick={() => { if (option !== measurementUnit && Object.keys(measurementValues).length > 0) { setMeasurementValues({}); setMeasurementErrors({}); } setMeasurementUnit(option); }} className={clsx('min-h-[36px] rounded-lg px-4 text-sm font-bold', measurementUnit === option ? 'bg-maroon-600 text-white' : 'text-ink-muted')}>
+                      {option === 'inch' ? 'Inch' : 'CM'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-maroon-100 bg-white px-3 py-1.5 text-[12px] font-semibold text-ink-muted"><ClipboardCheck size={14} className="text-maroon-600" />Darzi tape use karein</div>
+            </div>
+            {user && profiles && profiles.length > 0 ? (
+              <section className="rounded-xl2 bg-marigold-50 p-3.5">
+                <h2 className="mb-1 flex items-center gap-1.5 text-[14px] font-bold text-ink"><BookmarkPlus size={15} className="text-marigold-700" />Aapke saved measurements</h2>
+                <p className="hint mb-2">Kisi par tap karein — measurement apne aap bhar jayega.</p>
+                <div className="flex flex-wrap gap-2">{profiles.map((profile) => <button key={profile.id} type="button" onClick={() => applyProfile(profile.values)} className="chip">{profile.name}{profile.isDefault ? ' ★' : ''}</button>)}</div>
+              </section>
+            ) : null}
+            <div className="space-y-3">
+              {measurementData?.fields.map((field, index) => (
+                <div key={field.key} ref={index === 0 ? firstMeasurementCardRef : undefined} className="scroll-mt-2">
+                  <FieldCard field={field} value={measurementValues[field.key] ?? ''} error={measurementErrors[field.key]} unit={measurementUnit} onChange={(raw) => { setMeasurementValues((current) => ({ ...current, [field.key]: raw })); validateMeasurementField(field.key, raw); }} onZoom={() => setPreviewImage({ src: field.gifUrl || field.imageUrl, alt: `${field.label} kaise measure karein` })} />
+                </div>
+              ))}
+            </div>
+            <div>
+              <label className="label">Koi special baat? <span className="font-normal text-ink-muted">(optional)</span></label>
+              <textarea value={measurementNote} maxLength={300} rows={2} onChange={(event) => setMeasurementNote(event.target.value)} placeholder="Jaise: blouse thoda lamba rakhna" className="field py-3" />
+            </div>
+            {user ? (
+              <div className="overflow-hidden rounded-xl2 bg-white shadow-card">
+                <label className="flex cursor-pointer items-center gap-3 p-3.5"><input type="checkbox" checked={saveProfile} onChange={(event) => setSaveProfile(event.target.checked)} className="h-5 w-5 accent-maroon-600" /><span className="flex items-center gap-2 text-[14px] font-semibold text-ink"><BookmarkPlus size={17} className="text-maroon-700" />Measurement save karein</span></label>
+                {saveProfile ? <div className="border-t border-maroon-100 px-3.5 pb-3.5 pt-3"><label className="label">Kiska measurement hai?</label><input value={profileName} onChange={(event) => setProfileName(event.target.value)} maxLength={40} placeholder="Jaise: Sunita, Didi, Mummy" className="field py-2.5" /></div> : null}
+              </div>
+            ) : <button type="button" onClick={() => openLogin(window.location.pathname)} className="rounded-xl bg-maroon-50 p-3.5 text-left text-sm"><span className="font-semibold text-maroon-700">Login karein</span><span className="text-ink-muted"> — measurement save ho jayega.</span></button>}
+            <div className="rounded-2xl border border-marigold-300 bg-marigold-50 p-4">
+              <div className="mb-2 flex items-center gap-2"><CircleHelp size={15} className="text-marigold-700" /><h2 className="font-display text-base font-bold text-ink">Measurement confirm karein</h2></div>
+              <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {measurementFields.filter((field) => measurementValues[field.key]).map((field) => (
+                  <div key={field.key} className="rounded-xl border border-marigold-200 bg-white px-2.5 py-2">
+                    <dt className="text-[11px] text-ink-muted">{field.label}</dt>
+                    <dd className="font-bold text-ink">{measurementValues[field.key]}{measurementUnit === 'inch' ? '"' : 'cm'}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          </section>
+        ) : null}
         {step === 'fabric' ? <>
         {/* Filters (README §15) */}
         <div>

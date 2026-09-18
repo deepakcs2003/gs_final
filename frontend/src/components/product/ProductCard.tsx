@@ -237,7 +237,7 @@ function ProductCardViewInner({ product, currency, eager }: ProductCardProps) {
           onClose={() => setFabricOpen(false)}
           product={product}
           currency={currency}
-          onConfirm={({ fabrics, laces, latkans }) => {
+          onConfirm={({ fabrics, laces, latkans, measurement, note }) => {
             const key = addToCart({
               product,
               fabricId: fabrics[0].id,
@@ -253,11 +253,12 @@ function ProductCardViewInner({ product, currency, eager }: ProductCardProps) {
               latkanName: latkans
                 .map((l) => (l.colorName && l.colorName !== l.name ? `${l.name} (${l.colorName})` : l.name))
                 .join(', '),
-              measurement: null,
+              measurement,
+              note,
             });
             setFabricOpen(false);
-            // Fabric chosen → measurement is the next obvious step (README §17).
-            navigate(`/measurement/${encodeURIComponent(key)}`, { state: { buyNow: true } });
+            startBuy(key);
+            navigate('/checkout');
           }}
         />
       ) : null}

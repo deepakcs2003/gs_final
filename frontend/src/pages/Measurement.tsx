@@ -492,7 +492,7 @@ export function MeasurementPage() {
 /* Field card — image (tap to zoom) + collapsed instruction + highlighted range */
 /* -------------------------------------------------------------------------- */
 
-function FieldCard({
+export function FieldCard({
   field,
   value,
   error,
@@ -525,16 +525,16 @@ function FieldCard({
 
   return (
     <div className="overflow-hidden rounded-2xl border border-maroon-100 bg-white shadow-card transition hover:shadow-[0_12px_28px_rgba(123,30,59,0.08)]">
-      <div className="flex gap-3 p-3.5">
+      <div className="p-3 sm:p-4">
         {hasMedia ? (
           <button
             type="button"
             onClick={onZoom}
             aria-label={`${field.label} kaise measure karein — badha kar dekhein`}
             title="Badha kar dekhein"
-            className="group relative h-24 w-20 shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-maroon-50 to-maroon-100 ring-1 ring-maroon-100"
+            className="group relative block h-44 w-full overflow-hidden rounded-2xl bg-gradient-to-br from-maroon-50 to-maroon-100 ring-1 ring-maroon-100 sm:h-56"
           >
-            <SmartImage src={field.gifUrl || field.imageUrl} alt={`${field.label} kaise measure karein`} sizes="80px" />
+            <SmartImage src={field.gifUrl || field.imageUrl} alt={`${field.label} kaise measure karein`} sizes="(max-width: 640px) 100vw, 640px" />
             <span className="absolute inset-0 grid place-items-center rounded-2xl bg-ink/0 text-white opacity-0 transition group-hover:bg-ink/25 group-hover:opacity-100">
               <ZoomIn size={22} />
             </span>
@@ -543,12 +543,12 @@ function FieldCard({
             </span>
           </button>
         ) : (
-          <div className="grid h-24 w-20 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-maroon-50 to-maroon-100 text-maroon-300 ring-1 ring-maroon-100">
+          <div className="grid h-44 w-full place-items-center rounded-2xl bg-gradient-to-br from-maroon-50 to-maroon-100 text-maroon-300 ring-1 ring-maroon-100 sm:h-56">
             <Ruler size={26} />
           </div>
         )}
 
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 pt-3">
           <div className="flex items-start justify-between gap-2">
             <label htmlFor={`m-${field.key}`} className="block text-[15px] font-bold text-ink">
               {field.label}
@@ -582,8 +582,9 @@ function FieldCard({
             </div>
           ) : null}
 
-          <div className="mt-3 flex items-center gap-2">
-            <div className="relative w-28">
+          <div className="mt-3 rounded-xl border border-maroon-100 bg-maroon-50/40 p-2.5">
+            <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-maroon-700">Apna naap yahan likhein</p>
+            <div className="relative w-full max-w-[220px]">
               <input
                 id={`m-${field.key}`}
                 type="number"
@@ -594,7 +595,7 @@ function FieldCard({
                 value={value}
                 onChange={(event) => onChange(event.target.value)}
                 placeholder={String(Math.round((field.min + field.max) / 2))}
-                className={clsx('field w-full !pr-10 text-center text-lg font-bold', error && 'border-alert')}
+                className={clsx('field w-full !pr-14 text-center text-2xl font-bold', error && 'border-alert')}
                 aria-invalid={Boolean(error)}
                 aria-describedby={error ? `err-${field.key}` : undefined}
               />

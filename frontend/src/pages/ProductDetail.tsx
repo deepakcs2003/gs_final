@@ -147,7 +147,6 @@ export function ProductDetailPage() {
   const addReadyMade = (thenCheckout: boolean) => {
     if (size === null) {
       setBuyNowRequested(true);
-      sizePickerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
     const key = addToCart({ product, colorSlug: activeColor, size, quantity });
@@ -573,7 +572,7 @@ export function ProductDetailPage() {
           onClose={() => setFabricOpen(false)}
           product={product}
           currency={currency}
-              onConfirm={({ fabrics, laces, latkans }) => {
+              onConfirm={({ fabrics, laces, latkans, measurement, note }) => {
               const key = addToCart({
                 product,
                 fabricId: fabrics[0].id,
@@ -589,10 +588,12 @@ export function ProductDetailPage() {
                 latkanName: latkans
                   .map((l) => (l.colorName && l.colorName !== l.name ? `${l.name} (${l.colorName})` : l.name))
                   .join(', '),
-                measurement: null,
+                measurement,
+                note,
               });
               setFabricOpen(false);
-              navigate(`/measurement/${encodeURIComponent(key)}`, { state: { buyNow: true } });
+              startBuy(key);
+              navigate('/checkout');
             }}
         />
       ) : null}

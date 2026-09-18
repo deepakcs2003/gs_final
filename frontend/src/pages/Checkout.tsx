@@ -37,6 +37,40 @@ interface CreateOrderResponse {
   prefill?: { name: string; contact: string; email: string };
 }
 
+const COUNTRY_CODES = [
+  { code: '91', name: 'India', iso: 'IN', min: 10, max: 10 },
+  { code: '977', name: 'Nepal', iso: 'NP', min: 10, max: 10 },
+  { code: '880', name: 'Bangladesh', iso: 'BD', min: 10, max: 10 },
+  { code: '62', name: 'Indonesia', iso: 'ID', min: 9, max: 11 },
+  { code: '92', name: 'Pakistan', iso: 'PK', min: 10, max: 10 },
+  { code: '94', name: 'Sri Lanka', iso: 'LK', min: 9, max: 9 },
+  { code: '60', name: 'Malaysia', iso: 'MY', min: 9, max: 10 },
+  { code: '1', name: 'United States', iso: 'US', min: 10, max: 10 },
+  { code: '27', name: 'South Africa', iso: 'ZA', min: 9, max: 9 },
+  { code: '44', name: 'United Kingdom', iso: 'GB', min: 10, max: 10 },
+  { code: '95', name: 'Myanmar', iso: 'MM', min: 8, max: 10 },
+  { code: '966', name: 'Saudi Arabia', iso: 'SA', min: 9, max: 9 },
+  { code: '971', name: 'United Arab Emirates', iso: 'AE', min: 9, max: 9 },
+  { code: '255', name: 'Tanzania', iso: 'TZ', min: 9, max: 9 },
+  { code: '974', name: 'Qatar', iso: 'QA', min: 8, max: 8 },
+  { code: '230', name: 'Mauritius', iso: 'MU', min: 8, max: 8 },
+  { code: '1', name: 'Canada', iso: 'CA', min: 10, max: 10 },
+  { code: '61', name: 'Australia', iso: 'AU', min: 9, max: 9 },
+  { code: '256', name: 'Uganda', iso: 'UG', min: 9, max: 9 },
+  { code: '1', name: 'Trinidad and Tobago', iso: 'TT', min: 10, max: 10 },
+  { code: '65', name: 'Singapore', iso: 'SG', min: 8, max: 8 },
+  { code: '968', name: 'Oman', iso: 'OM', min: 8, max: 8 },
+  { code: '254', name: 'Kenya', iso: 'KE', min: 9, max: 9 },
+  { code: '679', name: 'Fiji', iso: 'FJ', min: 7, max: 7 },
+  { code: '592', name: 'Guyana', iso: 'GY', min: 7, max: 7 },
+  { code: '965', name: 'Kuwait', iso: 'KW', min: 8, max: 8 },
+  { code: '39', name: 'Italy', iso: 'IT', min: 9, max: 10 },
+  { code: '597', name: 'Suriname', iso: 'SR', min: 7, max: 7 },
+  { code: '31', name: 'Netherlands', iso: 'NL', min: 9, max: 9 },
+  { code: '33', name: 'France', iso: 'FR', min: 9, max: 9 },
+  { code: '64', name: 'New Zealand', iso: 'NZ', min: 8, max: 10 },
+] as const;
+
 /** Loads Razorpay's checkout script once, on demand. */
 function loadRazorpay(): Promise<boolean> {
   if ((window as unknown as { Razorpay?: unknown }).Razorpay) return Promise.resolve(true);
@@ -78,6 +112,8 @@ export function CheckoutPage() {
 
   const [form, setForm] = useState({
     name: '',
+    countryCode: '91',
+    countryIso: 'IN',
     mobile: '',
     email: '',
     line1: '',
@@ -92,6 +128,7 @@ export function CheckoutPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [placing, setPlacing] = useState(false);
   const [itemsOpen, setItemsOpen] = useState(true);
+  const [countryMenuOpen, setCountryMenuOpen] = useState(false);
   const checkoutCompletedRef = useRef(false);
   const checkoutAbandonTrackedRef = useRef(false);
 
@@ -139,8 +176,10 @@ export function CheckoutPage() {
     }));
   }, [form.pincode, pincodeCheck.data]);
 
-  // Auto-verify the pincode the moment all 6 digits are entered.
+  // India uses the verified 6-digit pincode lookup; other countries accept
+  // their local postal-code format without calling the India lookup.
   useEffect(() => {
+    if (form.countryIso !== 'IN') return;
     if (form.pincode.length !== 6) return;
     if (pincodeCheck.data?.pincode === form.pincode) return;
     if (!pincodeCheck.isPending) pincodeCheck.mutate(form.pincode);
@@ -219,16 +258,29 @@ export function CheckoutPage() {
     });
   };
 
+  const fullMobile = `${form.countryCode}${form.mobile}`;
+  const selectedCountry = COUNTRY_CODES.find((country) => country.iso === form.countryIso) ?? COUNTRY_CODES[0];
+
   const validate = (): boolean => {
     const next: Record<string, string> = {};
     if (form.name.trim().length < 2) next.name = 'Apna naam likhein.';
-    if (!/^[6-9]\d{9}$/.test(form.mobile)) next.mobile = '10 digit ka mobile number likhein.';
+    const validLocalLength = form.mobile.length >= selectedCountry.min && form.mobile.length <= selectedCountry.max;
+    const validIndiaNumber = selectedCountry.iso !== 'IN' || /^[6-9]\d{9}$/.test(form.mobile);
+    if (!validLocalLength || !validIndiaNumber) {
+      next.mobile = selectedCountry.min === selectedCountry.max
+        ? `${selectedCountry.min} digit ka mobile number likhein.`
+        : `${selectedCountry.min}-${selectedCountry.max} digit ka mobile number likhein.`;
+    }
     if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) next.email = 'Email sahi nahi hai.';
     if (form.line1.trim().length < 4) next.line1 = 'Pura address likhein.';
     if (form.city.trim().length < 2) next.city = 'City likhein.';
     if (form.state.trim().length < 2) next.state = 'State likhein.';
-    if (!/^\d{6}$/.test(form.pincode)) next.pincode = '6 digit ka pincode likhein.';
-    else if (!pincodeCheck.data?.valid || pincodeCheck.data.pincode !== form.pincode) next.pincode = 'Pincode pehle verify karein.';
+    if (form.countryIso === 'IN') {
+      if (!/^\d{6}$/.test(form.pincode)) next.pincode = '6 digit ka pincode likhein.';
+      else if (!pincodeCheck.data?.valid || pincodeCheck.data.pincode !== form.pincode) next.pincode = 'Pincode pehle verify karein.';
+    } else if (!/^\d{4,10}$/.test(form.pincode)) {
+      next.pincode = 'Valid postal code likhein.';
+    }
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -260,14 +312,14 @@ export function CheckoutPage() {
         body: {
           lines: toApiLines(activeLines),
           checkoutMode: isBuyNow ? 'buy_now' : 'cart',
-          contact: { name: form.name.trim(), mobile: form.mobile, ...(form.email ? { email: form.email } : {}) },
+          contact: { name: form.name.trim(), mobile: fullMobile, ...(form.email ? { email: form.email } : {}) },
           address: {
             line1: form.line1.trim(),
             line2: form.line2.trim(),
             city: form.city.trim(),
             state: form.state.trim(),
             pincode: form.pincode,
-            country: config?.country ?? 'IN',
+            country: form.countryIso,
           },
           paymentMethod,
           ...(appliedCoupon ? { couponCode: appliedCoupon } : {}),
@@ -278,7 +330,7 @@ export function CheckoutPage() {
       track('ORDER_PLACED', { value: quote?.amounts.totalMinor ?? 0 });
 
       if (order.paymentMethod === 'COD' && !order.razorpayOrderId) {
-        finishOrder(order.orderNumber, form.mobile);
+        finishOrder(order.orderNumber, fullMobile);
         return;
       }
 
@@ -326,7 +378,7 @@ export function CheckoutPage() {
             },
           });
           track('PAYMENT_SUCCESS', { value: order.amountMinor ?? 0 });
-          finishOrder(order.orderNumber, form.mobile);
+          finishOrder(order.orderNumber, fullMobile);
         } catch (err) {
           track('PAYMENT_FAILED');
           toast(err instanceof ApiError ? err.message : 'Payment verify nahi hua.', 'error');
@@ -392,34 +444,65 @@ export function CheckoutPage() {
 
       <div className="lg:grid lg:grid-cols-[1fr_340px] lg:gap-6">
         <div className="space-y-4">
-          {/* Customer Details */}
-          <section className="card p-5">
-            <SectionHeading icon={<User size={17} />} title="Customer Details" />
+          {/* Customer details + delivery address */}
+          <section className="card p-4 sm:p-5">
+            <SectionHeading icon={<User size={17} />} title="Add Address & Customer Details" />
             <div className="space-y-4">
-              <Field label="Full name" error={errors.name} required>
-                <IconInput icon={<User size={16} strokeWidth={1.8} />} value={form.name} onChange={(e) => set('name', e.target.value)} invalid={Boolean(errors.name)} maxLength={80} placeholder="Apna pura naam likhein" />
-              </Field>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Full name" error={errors.name} required>
+                  <IconInput icon={<User size={16} strokeWidth={1.8} />} value={form.name} onChange={(e) => set('name', e.target.value)} invalid={Boolean(errors.name)} maxLength={80} placeholder="Apna pura naam likhein" />
+                </Field>
+                <Field label="Email" error={errors.email} hint="Optional — order updates ke liye">
+                  <IconInput icon={<Mail size={16} strokeWidth={1.8} />} type="email" value={form.email} onChange={(e) => set('email', e.target.value)} invalid={Boolean(errors.email)} maxLength={160} placeholder="name@example.com" />
+                </Field>
+              </div>
               <Field label="Mobile number" error={errors.mobile} required hint="Delivery ke liye zaroori hai">
                 <div className="flex gap-2">
-                  <span className="grid h-[48px] shrink-0 place-items-center rounded-xl border border-ink-light/30 bg-maroon-50 px-3.5 text-[15px] font-semibold text-maroon-700">+91</span>
+                  <div className="relative shrink-0">
+                    <button
+                      type="button"
+                      aria-label="Country code"
+                      aria-expanded={countryMenuOpen}
+                      onClick={() => setCountryMenuOpen((open) => !open)}
+                      className="field flex w-[112px] items-center justify-between gap-1 px-2.5 text-[14px] font-semibold text-maroon-700 sm:w-[124px]"
+                    >
+                      <span>+{form.countryCode} ({form.countryIso})</span>
+                      <ChevronDown size={15} />
+                    </button>
+                    {countryMenuOpen ? (
+                      <div className="absolute left-0 top-[calc(100%+4px)] z-40 max-h-64 w-56 overflow-y-auto rounded-xl border border-ink-light/30 bg-white p-1 shadow-xl">
+                        {COUNTRY_CODES.map((country) => (
+                          <button
+                            key={country.code}
+                            type="button"
+                            onClick={() => {
+                              pincodeCheck.reset();
+                              setForm((current) => ({ ...current, countryCode: country.code, countryIso: country.iso, mobile: '' }));
+                              setErrors((current) => { const next = { ...current }; delete next.mobile; return next; });
+                              setCountryMenuOpen(false);
+                            }}
+                            className={clsx('flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm', form.countryIso === country.iso ? 'bg-maroon-50 font-bold text-maroon-700' : 'text-ink hover:bg-maroon-50')}
+                          >
+                            <span className="w-12 shrink-0 font-semibold">+{country.code}</span>
+                            <span className="min-w-0 truncate">{country.name} ({country.iso})</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                   <input
                     value={form.mobile}
-                    onChange={(e) => set('mobile', e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    onChange={(e) => set('mobile', e.target.value.replace(/\D/g, '').slice(0, selectedCountry.max))}
                     inputMode="numeric"
-                    placeholder="10 digit number"
+                    maxLength={selectedCountry.max}
+                    placeholder={selectedCountry.min === selectedCountry.max ? `${selectedCountry.min} digit number` : `${selectedCountry.min}-${selectedCountry.max} digit number`}
                     className={inputClass(Boolean(errors.mobile))}
                   />
                 </div>
               </Field>
-              <Field label="Email" error={errors.email} hint="Optional — order updates ke liye">
-                <IconInput icon={<Mail size={16} strokeWidth={1.8} />} type="email" value={form.email} onChange={(e) => set('email', e.target.value)} invalid={Boolean(errors.email)} maxLength={160} placeholder="name@example.com" />
-              </Field>
-            </div>
-          </section>
-
-          {/* Address */}
-          <section className="card p-5">
-            <SectionHeading icon={<MapPin size={17} />} title="Delivery Address" note="Address yahan bheja jayega" />
+              <div className="border-t border-maroon-100 pt-4">
+                <SectionHeading icon={<MapPin size={17} />} title="Delivery Address" />
+              </div>
             <div className="space-y-4">
               <Field label="House / Street" error={errors.line1} required>
                 <IconInput icon={<Home size={16} strokeWidth={1.8} />} value={form.line1} onChange={(e) => set('line1', e.target.value)} invalid={Boolean(errors.line1)} maxLength={160} placeholder="House no., street, building" />
@@ -464,7 +547,9 @@ export function CheckoutPage() {
                     {pincodeCheck.isPending ? '…' : 'Check'}
                   </button>
                 </div>
-                <p className="mt-1.5 text-[11px] text-ink-muted">6 digit likhte hi pincode check hoga, city aur state apne aap bharenge.</p>
+                <p className="mt-1.5 text-[11px] text-ink-muted">
+                  {form.countryIso === 'IN' ? '6 digit likhte hi pincode check hoga, city aur state apne aap bharenge.' : 'Apne country ka postal code likhein.'}
+                </p>
               </Field>
 
               {pincodeResult ? (
@@ -491,6 +576,7 @@ export function CheckoutPage() {
                   <IconInput icon={<Map size={16} strokeWidth={1.8} />} value={form.state} onChange={(e) => set('state', e.target.value)} invalid={Boolean(errors.state)} maxLength={60} placeholder="State" />
                 </Field>
               </div>
+            </div>
             </div>
           </section>
 
